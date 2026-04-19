@@ -7,6 +7,7 @@ import { z } from 'zod'
 import {
   Plus, Trash2, Loader2, ShoppingCart, ChevronLeft, ChevronRight, X
 } from 'lucide-react'
+import { toast } from 'sonner'
 import { createClient } from '@/lib/supabase/client'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
@@ -116,20 +117,33 @@ export default function ComprasPage() {
       notas: data.numero_factura ? `Factura proveedor: ${data.numero_factura}` : null,
     }).select().single()
 
-    if (!error && oc) {
-      const items = data.items.map((item) => ({
-        orden_compra_id: oc.id,
-        producto_id: item.producto_id,
-        cantidad: item.cantidad,
-        precio_unitario: item.precio_unitario,
-        subtotal: item.cantidad * item.precio_unitario,
-      }))
-      await supabase.from('ordenes_compra_items').insert(items)
+    if (error || !oc) {
+      setSaving(false)
+      toast.error('Error al registrar compra', { description: error?.message ?? 'No se pudo crear la orden.' })
+      return
     }
+
+    const items = data.items.map((item) => ({
+      orden_compra_id: oc.id,
+      producto_id: item.producto_id,
+      cantidad: item.cantidad,
+      precio_unitario: item.precio_unitario,
+      subtotal: item.cantidad * item.precio_unitario,
+    }))
+    const { error: itemsError } = await supabase.from('ordenes_compra_items').insert(items)
 
     setSaving(false)
     setDialogOpen(false)
     reset()
+
+    if (itemsError) {
+      toast.error('Compra guardada con advertencias', { description: itemsError.message })
+    } else {
+      toast.success('Compra registrada', {
+        description: `${oc.numero} · Total ${formatCurrency(subtotalCalc + igvCalc)}`,
+      })
+    }
+
     loadData()
   }
 

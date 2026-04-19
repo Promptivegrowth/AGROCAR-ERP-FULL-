@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import { User, LogOut, ShoppingCart, DollarSign, MapPin, Package, Loader2, TrendingUp } from 'lucide-react'
 import { useRouter } from 'next/navigation'
+import { toast } from 'sonner'
 import { createClient } from '@/lib/supabase/client'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -133,7 +134,13 @@ export default function CuentaPage() {
 
   async function cerrarSesion() {
     setCerrando(true)
-    await supabase.auth.signOut()
+    const { error } = await supabase.auth.signOut()
+    if (error) {
+      setCerrando(false)
+      toast.error('Error al cerrar sesión', { description: error.message })
+      return
+    }
+    toast.success('Sesión cerrada', { description: 'Hasta pronto.' })
     router.push('/login')
   }
 

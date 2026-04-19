@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import { FileText, Loader2, CheckCircle, AlertCircle, DollarSign } from 'lucide-react'
+import { toast } from 'sonner'
 import { createClient } from '@/lib/supabase/client'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
@@ -85,7 +86,7 @@ export default function FacturacionPage() {
 
     const numero = Date.now().toString().slice(-8)
 
-    await supabase.from('comprobantes').insert({
+    const { error: compError } = await supabase.from('comprobantes').insert({
       pedido_id: pedidoSeleccionado.id,
       cliente_id: pedidoSeleccionado.cliente_id,
       tipo: tipoComprobante as any,
@@ -99,11 +100,28 @@ export default function FacturacionPage() {
       estado: 'emitido',
     } as any)
 
-    await supabase.from('pedidos').update({ estado: 'facturado', updated_at: new Date().toISOString() }).eq('id', pedidoSeleccionado.id)
+    if (compError) {
+      setSaving(false)
+      toast.error('Error al emitir comprobante', { description: compError.message })
+      return
+    }
+
+    const { error: pedError } = await supabase
+      .from('pedidos')
+      .update({ estado: 'facturado', updated_at: new Date().toISOString() })
+      .eq('id', pedidoSeleccionado.id)
 
     setSaving(false)
     setFacturarDialog(false)
-    setSuccessMsg(`Comprobante ${serie}-${numero} generado correctamente`)
+
+    if (pedError) {
+      toast.error('Error al actualizar pedido', { description: pedError.message })
+      return
+    }
+
+    const mensaje = `Comprobante ${serie}-${numero} generado correctamente`
+    setSuccessMsg(mensaje)
+    toast.success('Comprobante emitido', { description: mensaje })
     setTimeout(() => setSuccessMsg(''), 4000)
     loadData()
   }

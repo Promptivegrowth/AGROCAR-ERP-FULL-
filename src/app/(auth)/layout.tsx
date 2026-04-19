@@ -1,7 +1,4 @@
 export default function AuthLayout({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-      {children}
-    </div>
-  )
+  // El fondo con gradiente se aplica en la página de login directamente
+  return <div className="min-h-screen">{children}</div>
 }

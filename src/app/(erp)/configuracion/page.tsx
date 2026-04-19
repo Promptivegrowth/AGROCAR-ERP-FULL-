@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import { Settings, Plus, Edit, Loader2, CheckCircle } from 'lucide-react'
+import { toast } from 'sonner'
 import { createClient } from '@/lib/supabase/client'
 import { ROLES_LABELS } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
@@ -72,29 +73,43 @@ export default function ConfiguracionPage() {
     setSaving(true)
     // Guardar en tabla de configuración o parametros_sistema
     const sb = supabase as any
+    let errorOcurrido: string | null = null
     for (const [key, value] of Object.entries(empresa)) {
-      await sb.from('parametros_sistema').upsert(
+      const { error } = await sb.from('parametros_sistema').upsert(
         { clave: `empresa_${key}`, valor: String(value) },
         { onConflict: 'clave' }
       )
+      if (error && !errorOcurrido) errorOcurrido = error.message
     }
     setSaving(false)
-    setMsg('Datos de empresa guardados')
-    setTimeout(() => setMsg(''), 3000)
+    if (errorOcurrido) {
+      toast.error('Error al guardar empresa', { description: errorOcurrido })
+    } else {
+      setMsg('Datos de empresa guardados')
+      toast.success('Datos de empresa guardados', { description: 'Los cambios se aplicaron correctamente.' })
+      setTimeout(() => setMsg(''), 3000)
+    }
   }
 
   const saveParametros = async () => {
     setSaving(true)
     const sb2 = supabase as any
+    let errorOcurrido: string | null = null
     for (const [key, value] of Object.entries(parametros)) {
-      await sb2.from('parametros_sistema').upsert(
+      const { error } = await sb2.from('parametros_sistema').upsert(
         { clave: key, valor: String(value) },
         { onConflict: 'clave' }
       )
+      if (error && !errorOcurrido) errorOcurrido = error.message
     }
     setSaving(false)
-    setMsg('Parámetros guardados correctamente')
-    setTimeout(() => setMsg(''), 3000)
+    if (errorOcurrido) {
+      toast.error('Error al guardar parámetros', { description: errorOcurrido })
+    } else {
+      setMsg('Parámetros guardados correctamente')
+      toast.success('Parámetros actualizados', { description: 'La configuración del sistema se actualizó.' })
+      setTimeout(() => setMsg(''), 3000)
+    }
   }
 
   const openEditUser = (user: any) => {
@@ -106,20 +121,40 @@ export default function ConfiguracionPage() {
   const saveUser = async () => {
     setSaving(true)
     if (editingUser) {
-      await supabase.from('profiles').update({
+      const { error } = await supabase.from('profiles').update({
         full_name: userForm.full_name,
         role: userForm.role as any,
         activo: userForm.activo,
         updated_at: new Date().toISOString(),
       }).eq('id', editingUser.id)
+      setSaving(false)
+      setUserDialog(false)
+      if (error) {
+        toast.error('Error al guardar usuario', { description: error.message })
+      } else {
+        toast.success('Usuario actualizado', {
+          description: `${userForm.full_name || editingUser.email} guardado correctamente.`,
+        })
+      }
+    } else {
+      setSaving(false)
+      setUserDialog(false)
     }
-    setSaving(false)
-    setUserDialog(false)
     loadData()
   }
 
   const toggleUserActivo = async (user: any) => {
-    await supabase.from('profiles').update({ activo: !user.activo, updated_at: new Date().toISOString() }).eq('id', user.id)
+    const { error } = await supabase.from('profiles').update({
+      activo: !user.activo,
+      updated_at: new Date().toISOString(),
+    }).eq('id', user.id)
+    if (error) {
+      toast.error('Error al cambiar estado', { description: error.message })
+    } else {
+      toast.success(!user.activo ? 'Usuario activado' : 'Usuario desactivado', {
+        description: user.full_name ?? user.email,
+      })
+    }
     loadData()
   }
 

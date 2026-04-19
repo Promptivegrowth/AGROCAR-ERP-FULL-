@@ -91,7 +91,7 @@ export default function ReportesPage() {
     const { data: deudas } = await supabase
       .from('clientes')
       .select(`id, razon_social, credito_limite, credito_dias`)
-      .eq('estado', 'deudor')
+      .eq('estado', 'suspendido')
       .order('razon_social')
     setCuentasPorCobrar(
       (deudas ?? []).map((d) => ({

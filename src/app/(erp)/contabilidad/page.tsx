@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import { BookOpen, Download, RefreshCw, Loader2, AlertCircle, CheckCircle } from 'lucide-react'
+import { toast } from 'sonner'
 import { createClient } from '@/lib/supabase/client'
 import { formatDate } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
@@ -113,7 +114,11 @@ export default function ContabilidadPage() {
     URL.revokeObjectURL(url)
 
     setGenerando(null)
-    setMsg({ text: `Archivo ${tipo === 'ventas' ? 'RVIE' : 'RCPE'} generado correctamente`, tipo: 'success' })
+    const nombreArchivo = tipo === 'ventas' ? 'RVIE' : 'RCPE'
+    setMsg({ text: `Archivo ${nombreArchivo} generado correctamente`, tipo: 'success' })
+    toast.success(`Archivo ${nombreArchivo} generado`, {
+      description: `${data.length} registros exportados para el período ${anio}-${mesNum}.`,
+    })
     setTimeout(() => setMsg(null), 4000)
   }
 
@@ -134,8 +139,11 @@ export default function ContabilidadPage() {
     setActualizandoTC(false)
     if (error) {
       setMsg({ text: 'Error al actualizar el tipo de cambio', tipo: 'error' })
+      toast.error('Error al actualizar tipo de cambio', { description: error.message })
     } else {
-      setMsg({ text: `Tipo de cambio actualizado: Compra S/ ${compra.toFixed(3)} / Venta S/ ${venta.toFixed(3)}`, tipo: 'success' })
+      const detalle = `Compra S/ ${compra.toFixed(3)} · Venta S/ ${venta.toFixed(3)}`
+      setMsg({ text: `Tipo de cambio actualizado: ${detalle}`, tipo: 'success' })
+      toast.success('Tipo de cambio actualizado', { description: detalle })
       loadData()
     }
     setTimeout(() => setMsg(null), 5000)

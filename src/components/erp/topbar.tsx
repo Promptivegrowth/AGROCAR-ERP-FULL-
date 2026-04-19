@@ -9,6 +9,7 @@ import {
   User,
   KeyRound,
   ChevronRight,
+  Menu,
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { cn, ROLES_LABELS } from '@/lib/utils'
@@ -22,6 +23,7 @@ interface TopbarUser {
 
 interface TopbarProps {
   user: TopbarUser
+  onMenuClick?: () => void
 }
 
 const BREADCRUMB_MAP: Record<string, string> = {
@@ -44,7 +46,7 @@ const BREADCRUMB_MAP: Record<string, string> = {
   configuracion: 'Configuración',
 }
 
-export default function Topbar({ user }: TopbarProps) {
+export default function Topbar({ user, onMenuClick }: TopbarProps) {
   const pathname = usePathname()
   const router = useRouter()
   const [dropdownOpen, setDropdownOpen] = useState(false)
@@ -69,25 +71,35 @@ export default function Topbar({ user }: TopbarProps) {
     .toUpperCase()
 
   return (
-    <header className="h-14 bg-white border-b border-gray-200 flex items-center justify-between px-6 flex-shrink-0 z-10">
-      {/* Breadcrumb */}
-      <nav className="flex items-center gap-1 text-sm text-gray-500">
-        <span className="text-gray-400">AGROCAR</span>
-        {breadcrumbs.map((crumb, idx) => (
-          <span key={idx} className="flex items-center gap-1">
-            <ChevronRight className="w-3.5 h-3.5 text-gray-300" />
-            <span
-              className={cn(
-                idx === breadcrumbs.length - 1
-                  ? 'text-gray-800 font-semibold'
-                  : 'text-gray-500'
-              )}
-            >
-              {crumb}
+    <header className="h-14 bg-white border-b border-gray-200 flex items-center justify-between px-4 sm:px-6 flex-shrink-0 z-10">
+      {/* Hamburger + Breadcrumb */}
+      <div className="flex items-center gap-2 min-w-0">
+        <button
+          onClick={onMenuClick}
+          className="lg:hidden p-2 -ml-2 rounded-lg hover:bg-gray-100 transition-colors"
+          aria-label="Abrir menú"
+        >
+          <Menu className="w-5 h-5 text-gray-600" />
+        </button>
+        <nav className="flex items-center gap-1 text-sm text-gray-500 min-w-0">
+          <span className="text-gray-400 hidden sm:inline">AGROCAR</span>
+          {breadcrumbs.map((crumb, idx) => (
+            <span key={idx} className="flex items-center gap-1 min-w-0">
+              <ChevronRight className="w-3.5 h-3.5 text-gray-300 shrink-0 hidden sm:inline" />
+              <span
+                className={cn(
+                  'truncate',
+                  idx === breadcrumbs.length - 1
+                    ? 'text-gray-800 font-semibold'
+                    : 'text-gray-500 hidden sm:inline'
+                )}
+              >
+                {crumb}
+              </span>
             </span>
-          </span>
-        ))}
-      </nav>
+          ))}
+        </nav>
+      </div>
 
       {/* Right side */}
       <div className="flex items-center gap-3">

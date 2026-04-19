@@ -22,7 +22,7 @@ export type UserRole =
   | 'repartidor'
   | 'contador'
 
-export type EstadoCliente = 'activo' | 'inactivo' | 'deudor' | 'de_baja'
+export type EstadoCliente = 'activo' | 'suspendido' | 'bloqueado'
 export type TipoCliente = 'consumidor_final' | 'tienda'
 export type EstadoPedido =
   | 'borrador'

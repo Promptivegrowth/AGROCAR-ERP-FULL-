@@ -4,7 +4,11 @@ import { useEffect, useState, useCallback } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
-import { Plus, Edit, ToggleLeft, ToggleRight, Loader2, Map } from 'lucide-react'
+import {
+  Plus, Edit, ToggleLeft, ToggleRight, Loader2, Map, Eye, Search,
+  MapPin, Users,
+} from 'lucide-react'
+import { toast } from 'sonner'
 import { createClient } from '@/lib/supabase/client'
 import { formatDate } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
@@ -30,10 +34,16 @@ export default function ZonasPage() {
   const [zonas, setZonas] = useState<any[]>([])
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
+  const [search, setSearch] = useState('')
   const [dialogOpen, setDialogOpen] = useState(false)
+  const [detailOpen, setDetailOpen] = useState(false)
+  const [selected, setSelected] = useState<any>(null)
   const [editingZona, setEditingZona] = useState<any>(null)
   const [saving, setSaving] = useState(false)
   const [activoVal, setActivoVal] = useState(true)
+
+  // Cantidad de clientes por zona
+  const [clientesPorZona, setClientesPorZona] = useState<Record<string, number>>({})
 
   const { register, handleSubmit, reset, formState: { errors } } = useForm<ZonaFormData>({
     resolver: zodResolver(zonaSchema) as any,
@@ -42,17 +52,19 @@ export default function ZonasPage() {
 
   const loadZonas = useCallback(async () => {
     setLoading(true)
-    const { data, count } = await supabase
+    let query = supabase
       .from('zonas')
-      .select('*, profiles(count)', { count: 'exact' })
+      .select('id, nombre, descripcion, activo, created_at', { count: 'exact' })
       .order('nombre')
+
+    if (search) query = query.ilike('nombre', `%${search}%`)
+
+    const { data, count, error } = await query
+    if (error) toast.error('Error al cargar zonas', { description: error.message })
     setZonas(data ?? [])
     setTotal(count ?? 0)
     setLoading(false)
-  }, [])
-
-  // Carga la cantidad de clientes por zona
-  const [clientesPorZona, setClientesPorZona] = useState<Record<string, number>>({})
+  }, [search])
 
   const loadClientesPorZona = useCallback(async () => {
     const { data } = await supabase
@@ -89,43 +101,74 @@ export default function ZonasPage() {
     setDialogOpen(true)
   }
 
+  const openDetail = (z: any) => { setSelected(z); setDetailOpen(true) }
+
   const onSubmit = async (data: ZonaFormData) => {
     setSaving(true)
-    const payload = {
-      nombre: data.nombre,
-      descripcion: data.descripcion || null,
-      activo: activoVal,
-    }
+    try {
+      const payload = {
+        nombre: data.nombre,
+        descripcion: data.descripcion || null,
+        activo: activoVal,
+      }
 
-    if (editingZona) {
-      await supabase.from('zonas').update(payload).eq('id', editingZona.id)
-    } else {
-      await supabase.from('zonas').insert({ ...payload, created_at: new Date().toISOString() })
-    }
+      if (editingZona) {
+        const { error } = await (supabase.from('zonas') as any)
+          .update(payload)
+          .eq('id', editingZona.id)
+        if (error) throw error
+        toast.success('Zona actualizada', { description: `${data.nombre} se guardó correctamente.` })
+      } else {
+        const { error } = await (supabase.from('zonas') as any).insert(payload)
+        if (error) throw error
+        toast.success('Zona creada', { description: `${data.nombre} se registró correctamente.` })
+      }
 
-    setSaving(false)
-    setDialogOpen(false)
-    loadZonas()
+      setDialogOpen(false)
+      loadZonas()
+    } catch (err: any) {
+      toast.error('No se pudo guardar', { description: err?.message ?? 'Intenta nuevamente.' })
+    } finally {
+      setSaving(false)
+    }
   }
 
   const toggleActivo = async (zona: any) => {
-    await supabase.from('zonas').update({ activo: !zona.activo }).eq('id', zona.id)
-    loadZonas()
+    const { error } = await supabase.from('zonas').update({ activo: !zona.activo }).eq('id', zona.id)
+    if (error) {
+      toast.error('No se pudo cambiar el estado', { description: error.message })
+    } else {
+      toast.success(zona.activo ? 'Zona desactivada' : 'Zona activada')
+      loadZonas()
+    }
   }
 
   return (
     <div className="space-y-5">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Zonas de Distribución</h1>
           <p className="text-sm text-gray-500 mt-0.5">{total} zonas registradas</p>
         </div>
-        <Button onClick={openCreate} className="bg-green-600 hover:bg-green-700 gap-2">
+        <Button onClick={openCreate} className="bg-green-600 hover:bg-green-700 gap-2 w-full sm:w-auto">
           <Plus className="w-4 h-4" /> Nueva Zona
         </Button>
       </div>
 
-      {/* Cards de zonas */}
+      <Card className="border-gray-200 shadow-sm">
+        <CardContent className="p-4">
+          <div className="relative w-full max-w-sm">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+            <Input
+              placeholder="Buscar zona..."
+              className="pl-9"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+          </div>
+        </CardContent>
+      </Card>
+
       {loading ? (
         <div className="flex items-center justify-center py-16">
           <Loader2 className="w-6 h-6 text-green-600 animate-spin" />
@@ -133,54 +176,51 @@ export default function ZonasPage() {
       ) : zonas.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-16 text-gray-400">
           <Map className="w-10 h-10 mb-3 text-gray-300" />
-          <p className="text-sm">No hay zonas registradas</p>
+          <p className="text-sm">No se encontraron zonas</p>
         </div>
       ) : (
         <>
-          {/* Vista tarjetas */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+          {/* Vista móvil: cards grid */}
+          <div className="md:hidden grid grid-cols-1 sm:grid-cols-2 gap-3">
             {zonas.map((z) => (
               <Card
                 key={z.id}
-                className={`border shadow-sm transition-all hover:shadow-md ${z.activo ? 'border-gray-200' : 'border-gray-100 opacity-60'}`}
+                className={`border shadow-sm transition-all ${z.activo ? 'border-gray-200' : 'border-gray-100 opacity-60'}`}
               >
-                <CardContent className="p-5">
+                <CardContent className="p-4">
                   <div className="flex items-start justify-between">
                     <div className="w-10 h-10 bg-green-100 rounded-xl flex items-center justify-center">
                       <Map className="w-5 h-5 text-green-600" />
                     </div>
-                    <div className="flex items-center gap-1">
-                      <Button variant="ghost" size="sm" onClick={() => openEdit(z)} className="h-7 w-7 p-0">
-                        <Edit className="w-3.5 h-3.5 text-gray-400" />
-                      </Button>
-                      <Button variant="ghost" size="sm" onClick={() => toggleActivo(z)} className="h-7 w-7 p-0">
-                        {z.activo
-                          ? <ToggleRight className="w-4 h-4 text-green-500" />
-                          : <ToggleLeft className="w-4 h-4 text-gray-300" />
-                        }
-                      </Button>
-                    </div>
+                    {z.activo
+                      ? <Badge className="text-xs bg-green-100 text-green-700 border-green-200">Activa</Badge>
+                      : <Badge variant="secondary" className="text-xs">Inactiva</Badge>}
                   </div>
                   <p className="font-bold text-gray-900 mt-3">{z.nombre}</p>
                   {z.descripcion && (
                     <p className="text-xs text-gray-500 mt-1 line-clamp-2">{z.descripcion}</p>
                   )}
-                  <div className="flex items-center justify-between mt-3">
-                    <span className="text-xs text-gray-400">
-                      {clientesPorZona[z.id] ?? 0} clientes activos
-                    </span>
-                    {z.activo
-                      ? <Badge className="text-xs bg-green-100 text-green-700 border-green-200">Activa</Badge>
-                      : <Badge variant="secondary" className="text-xs">Inactiva</Badge>
-                    }
+                  <p className="text-xs text-gray-400 mt-2">
+                    {clientesPorZona[z.id] ?? 0} clientes activos
+                  </p>
+                  <div className="flex items-center gap-1 mt-3">
+                    <Button variant="outline" size="sm" onClick={() => openDetail(z)} className="h-7 text-xs gap-1">
+                      <Eye className="w-3.5 h-3.5" /> Ver
+                    </Button>
+                    <Button variant="outline" size="sm" onClick={() => openEdit(z)} className="h-7 text-xs gap-1">
+                      <Edit className="w-3.5 h-3.5" /> Editar
+                    </Button>
+                    <Button variant="outline" size="sm" onClick={() => toggleActivo(z)} className="h-7 text-xs gap-1">
+                      {z.activo ? <ToggleRight className="w-3.5 h-3.5 text-green-600" /> : <ToggleLeft className="w-3.5 h-3.5 text-gray-400" />}
+                    </Button>
                   </div>
                 </CardContent>
               </Card>
             ))}
           </div>
 
-          {/* Tabla resumen */}
-          <Card className="border-gray-200 shadow-sm">
+          {/* Vista desktop: tabla */}
+          <Card className="hidden md:block border-gray-200 shadow-sm">
             <CardContent className="p-0">
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
@@ -195,7 +235,7 @@ export default function ZonasPage() {
                     {zonas.map((z) => (
                       <tr key={z.id} className="hover:bg-gray-50/50 transition-colors">
                         <td className="py-3 px-4 font-semibold text-gray-800">{z.nombre}</td>
-                        <td className="py-3 px-4 text-gray-500 text-xs max-w-[200px] truncate">{z.descripcion ?? '—'}</td>
+                        <td className="py-3 px-4 text-gray-500 text-xs max-w-[280px] truncate">{z.descripcion ?? '—'}</td>
                         <td className="py-3 px-4 text-gray-600">{clientesPorZona[z.id] ?? 0}</td>
                         <td className="py-3 px-4 text-gray-500 text-xs">{z.created_at ? formatDate(z.created_at) : '—'}</td>
                         <td className="py-3 px-4">
@@ -206,8 +246,14 @@ export default function ZonasPage() {
                         </td>
                         <td className="py-3 px-4">
                           <div className="flex items-center gap-1">
-                            <Button variant="ghost" size="sm" onClick={() => openEdit(z)} className="h-7 gap-1 text-xs px-2">
-                              <Edit className="w-3 h-3" /> Editar
+                            <Button variant="ghost" size="sm" onClick={() => openDetail(z)} className="h-7 w-7 p-0" title="Ver detalle">
+                              <Eye className="w-3.5 h-3.5 text-gray-500" />
+                            </Button>
+                            <Button variant="ghost" size="sm" onClick={() => openEdit(z)} className="h-7 w-7 p-0" title="Editar">
+                              <Edit className="w-3.5 h-3.5 text-gray-500" />
+                            </Button>
+                            <Button variant="ghost" size="sm" onClick={() => toggleActivo(z)} className="h-7 w-7 p-0" title={z.activo ? 'Desactivar' : 'Activar'}>
+                              {z.activo ? <ToggleRight className="w-4 h-4 text-green-600" /> : <ToggleLeft className="w-4 h-4 text-gray-400" />}
                             </Button>
                           </div>
                         </td>
@@ -221,7 +267,7 @@ export default function ZonasPage() {
         </>
       )}
 
-      {/* Dialog */}
+      {/* Dialog Crear/Editar */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="max-w-md">
           <DialogHeader>
@@ -249,7 +295,7 @@ export default function ZonasPage() {
               <Label>Zona activa</Label>
             </div>
 
-            <div className="flex justify-end gap-3 pt-2 border-t border-gray-100">
+            <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-3 pt-2 border-t border-gray-100">
               <Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>Cancelar</Button>
               <Button type="submit" disabled={saving} className="bg-green-600 hover:bg-green-700 gap-2">
                 {saving && <Loader2 className="w-4 h-4 animate-spin" />}
@@ -257,6 +303,59 @@ export default function ZonasPage() {
               </Button>
             </div>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialog Detalle */}
+      <Dialog open={detailOpen} onOpenChange={setDetailOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Detalle de la Zona</DialogTitle>
+          </DialogHeader>
+          {selected && (
+            <div className="space-y-4 mt-2">
+              <div className="flex items-center gap-3 pb-4 border-b border-gray-100">
+                <div className="w-12 h-12 bg-green-50 rounded-xl flex items-center justify-center">
+                  <Map className="w-6 h-6 text-green-600" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="font-semibold text-gray-900 truncate">{selected.nombre}</p>
+                  <p className="text-xs text-gray-500">
+                    Creada el {selected.created_at ? formatDate(selected.created_at) : '—'}
+                  </p>
+                </div>
+                {selected.activo
+                  ? <Badge className="text-xs bg-green-100 text-green-700 border-green-200">Activa</Badge>
+                  : <Badge variant="secondary" className="text-xs">Inactiva</Badge>}
+              </div>
+
+              <div className="space-y-3 text-sm">
+                {selected.descripcion && (
+                  <div className="flex items-start gap-3">
+                    <MapPin className="w-4 h-4 text-gray-400 mt-0.5 shrink-0" />
+                    <div>
+                      <p className="text-xs text-gray-500">Descripción</p>
+                      <p className="text-gray-800">{selected.descripcion}</p>
+                    </div>
+                  </div>
+                )}
+                <div className="flex items-start gap-3">
+                  <Users className="w-4 h-4 text-gray-400 mt-0.5 shrink-0" />
+                  <div>
+                    <p className="text-xs text-gray-500">Clientes activos</p>
+                    <p className="text-gray-800 font-medium">{clientesPorZona[selected.id] ?? 0}</p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-3 pt-3 border-t border-gray-100">
+                <Button variant="outline" onClick={() => setDetailOpen(false)}>Cerrar</Button>
+                <Button onClick={() => { setDetailOpen(false); openEdit(selected) }} className="bg-green-600 hover:bg-green-700 gap-2">
+                  <Edit className="w-4 h-4" /> Editar
+                </Button>
+              </div>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
     </div>

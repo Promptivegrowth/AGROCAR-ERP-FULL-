@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { ShoppingCart, Search, Plus, Minus, Trash2, AlertCircle, CheckCircle, Loader2, Package } from 'lucide-react'
+import { toast } from 'sonner'
 import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -266,7 +267,11 @@ export default function PedidosPage() {
         .single()
 
       if (pedidoError || !pedido) {
-        setMensajeError('Error al crear el pedido: ' + (pedidoError?.message ?? 'Desconocido'))
+        const msg = 'Error al crear el pedido: ' + (pedidoError?.message ?? 'Desconocido')
+        setMensajeError(msg)
+        toast.error('No se pudo enviar el pedido', {
+          description: pedidoError?.message ?? 'Error desconocido',
+        })
         return
       }
 
@@ -283,10 +288,14 @@ export default function PedidosPage() {
 
       if (itemsError) {
         setMensajeError('Error al guardar los items: ' + itemsError.message)
+        toast.error('Error al guardar los items', { description: itemsError.message })
         return
       }
 
       setMensajeExito('Pedido enviado correctamente')
+      toast.success('Pedido enviado', {
+        description: `${numero} · ${clienteSeleccionado.razon_social}`,
+      })
       setClienteSeleccionado(null)
       setClienteSearch('')
       setSeleccionados([])
@@ -297,6 +306,7 @@ export default function PedidosPage() {
       cargarMisPedidos()
     } catch {
       setMensajeError('Error inesperado al enviar el pedido')
+      toast.error('Error inesperado', { description: 'No se pudo enviar el pedido.' })
     } finally {
       setLoadingEnvio(false)
     }

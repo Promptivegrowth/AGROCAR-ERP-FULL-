@@ -2,7 +2,8 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Eye, EyeOff, Loader2, Package } from 'lucide-react'
+import { toast } from 'sonner'
+import { ChevronDown, ChevronUp, Eye, EyeOff, KeyRound, Loader2, Package } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -20,6 +21,17 @@ const roleRedirects: Record<UserRole, string> = {
   repartidor: '/pwa/cobros',
 }
 
+// Credenciales de prueba para facilitar testing de cada rol
+const CREDENCIALES_PRUEBA = [
+  { rol: 'Administrador', email: 'admin@agrocar.pe', password: 'admin123' },
+  { rol: 'Gerente', email: 'gerente@agrocar.pe', password: 'gerente123' },
+  { rol: 'Facturador', email: 'facturador@agrocar.pe', password: 'facturador123' },
+  { rol: 'Almacenero', email: 'almacen@agrocar.pe', password: 'almacen123' },
+  { rol: 'Contador', email: 'contador@agrocar.pe', password: 'contador123' },
+  { rol: 'Vendedor', email: 'vendedor1@agrocar.pe', password: 'vendedor123' },
+  { rol: 'Repartidor', email: 'repartidor1@agrocar.pe', password: 'repartidor123' },
+]
+
 export default function LoginPage() {
   const router = useRouter()
   const [email, setEmail] = useState('')
@@ -27,6 +39,7 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [showCredenciales, setShowCredenciales] = useState(false)
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
@@ -42,140 +55,211 @@ export default function LoginPage() {
       })
 
       if (authError) {
+        let mensaje: string
         if (authError.message.includes('Invalid login credentials')) {
-          setError('Correo o contraseña incorrectos. Verifica tus datos.')
+          mensaje = 'Correo o contraseña incorrectos. Verifica tus datos.'
         } else if (authError.message.includes('Email not confirmed')) {
-          setError('Tu cuenta no ha sido confirmada. Revisa tu correo.')
+          mensaje = 'Tu cuenta no ha sido confirmada. Revisa tu correo.'
         } else {
-          setError(authError.message)
+          mensaje = authError.message
         }
+        setError(mensaje)
+        toast.error('No se pudo iniciar sesión', { description: mensaje })
         return
       }
 
       if (!data.user) {
-        setError('No se pudo iniciar sesión. Intenta nuevamente.')
+        const mensaje = 'No se pudo iniciar sesión. Intenta nuevamente.'
+        setError(mensaje)
+        toast.error('Error de autenticación', { description: mensaje })
         return
       }
 
       const { data: profile, error: profileError } = await supabase
         .from('profiles')
-        .select('role, activo')
+        .select('full_name, role, activo')
         .eq('id', data.user.id)
         .single()
 
       if (profileError || !profile) {
-        setError('No se encontró el perfil de usuario. Contacta al administrador.')
+        const mensaje = 'No se encontró el perfil de usuario. Contacta al administrador.'
+        setError(mensaje)
+        toast.error('Perfil no encontrado', { description: mensaje })
         return
       }
 
       if (!profile.activo) {
         await supabase.auth.signOut()
-        setError('Tu cuenta está desactivada. Contacta al administrador.')
+        const mensaje = 'Tu cuenta está desactivada. Contacta al administrador.'
+        setError(mensaje)
+        toast.error('Cuenta desactivada', { description: mensaje })
         return
       }
 
       const destination = roleRedirects[profile.role as UserRole] ?? '/dashboard'
+      toast.success(`Bienvenido, ${profile.full_name ?? email}`, {
+        description: 'Redirigiendo...',
+      })
       router.push(destination)
     } catch {
-      setError('Ocurrió un error inesperado. Intenta nuevamente.')
+      const mensaje = 'Ocurrió un error inesperado. Intenta nuevamente.'
+      setError(mensaje)
+      toast.error('Error inesperado', { description: mensaje })
     } finally {
       setLoading(false)
     }
   }
 
+  // Rellena las credenciales en el formulario al hacer clic en una fila de prueba
+  const usarCredencial = (cred: typeof CREDENCIALES_PRUEBA[number]) => {
+    setEmail(cred.email)
+    setPassword(cred.password)
+    setShowCredenciales(false)
+  }
+
   return (
-    <div className="w-full max-w-md px-4">
-      {/* Logo y título */}
-      <div className="flex flex-col items-center mb-8">
-        <div className="w-16 h-16 bg-green-600 rounded-2xl flex items-center justify-center mb-4 shadow-lg">
-          <Package className="w-9 h-9 text-white" />
-        </div>
-        <h1 className="text-2xl font-bold text-gray-900 tracking-tight">AGROCAR ERP</h1>
-        <p className="text-sm text-gray-500 mt-1">Sistema ERP Integral · AGROCAR S.R.L.</p>
-      </div>
-
-      <Card className="shadow-xl border-0 bg-white">
-        <CardHeader className="pb-4">
-          <CardTitle className="text-lg text-gray-800">Iniciar Sesión</CardTitle>
-          <CardDescription>Ingresa tus credenciales para acceder al sistema</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <form onSubmit={handleSubmit} className="space-y-4">
-            {/* Error message */}
-            {error && (
-              <div className="bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-3 rounded-lg">
-                {error}
-              </div>
-            )}
-
-            {/* Email */}
-            <div className="space-y-1.5">
-              <Label htmlFor="email" className="text-sm font-medium text-gray-700">
-                Correo electrónico
-              </Label>
-              <Input
-                id="email"
-                type="email"
-                autoComplete="email"
-                placeholder="usuario@agrocar.pe"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                required
-                disabled={loading}
-                className="h-11 border-gray-200 focus:border-green-500 focus:ring-green-500"
-              />
+    <div className="w-full min-h-screen flex items-center justify-center px-4 py-8 bg-gradient-to-br from-green-50 via-white to-emerald-100">
+      <div className="w-full max-w-md animate-in fade-in slide-in-from-bottom-4 duration-500">
+        {/* Logo y título con halo verde */}
+        <div className="flex flex-col items-center mb-8">
+          <div className="relative">
+            {/* Halo pulsante detrás del icono */}
+            <div className="absolute inset-0 bg-green-500/30 rounded-3xl blur-2xl animate-pulse" />
+            <div className="relative w-20 h-20 bg-gradient-to-br from-green-500 to-emerald-600 rounded-3xl flex items-center justify-center shadow-xl shadow-green-500/30">
+              <Package className="w-11 h-11 text-white" />
             </div>
+          </div>
+          <h1 className="text-3xl font-bold text-gray-900 tracking-tight mt-5">AGROCAR ERP</h1>
+          <p className="text-sm text-gray-500 mt-1 text-center">
+            Sistema ERP Integral &middot; AGROCAR S.R.L.
+          </p>
+        </div>
 
-            {/* Password */}
-            <div className="space-y-1.5">
-              <Label htmlFor="password" className="text-sm font-medium text-gray-700">
-                Contraseña
-              </Label>
-              <div className="relative">
+        <Card className="shadow-2xl shadow-green-900/10 border-0 bg-white/95 backdrop-blur">
+          <CardHeader className="pb-4">
+            <CardTitle className="text-lg text-gray-800">Iniciar Sesión</CardTitle>
+            <CardDescription>Ingresa tus credenciales para acceder al sistema</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <form onSubmit={handleSubmit} className="space-y-4">
+              {/* Mensaje de error inline */}
+              {error && (
+                <div className="bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-3 rounded-lg animate-in fade-in slide-in-from-top-1 duration-200">
+                  {error}
+                </div>
+              )}
+
+              {/* Email */}
+              <div className="space-y-1.5">
+                <Label htmlFor="email" className="text-sm font-medium text-gray-700">
+                  Correo electrónico
+                </Label>
                 <Input
-                  id="password"
-                  type={showPassword ? 'text' : 'password'}
-                  autoComplete="current-password"
-                  placeholder="••••••••"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
+                  id="email"
+                  type="email"
+                  autoComplete="email"
+                  placeholder="usuario@agrocar.pe"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
                   required
                   disabled={loading}
-                  className="h-11 pr-11 border-gray-200 focus:border-green-500 focus:ring-green-500"
+                  className="h-11 border-gray-200 focus:border-green-500 focus:ring-green-500"
                 />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
-                  tabIndex={-1}
-                >
-                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                </button>
               </div>
+
+              {/* Contraseña */}
+              <div className="space-y-1.5">
+                <Label htmlFor="password" className="text-sm font-medium text-gray-700">
+                  Contraseña
+                </Label>
+                <div className="relative">
+                  <Input
+                    id="password"
+                    type={showPassword ? 'text' : 'password'}
+                    autoComplete="current-password"
+                    placeholder="••••••••"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    required
+                    disabled={loading}
+                    className="h-11 pr-11 border-gray-200 focus:border-green-500 focus:ring-green-500"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
+                    tabIndex={-1}
+                  >
+                    {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+              </div>
+
+              {/* Botón de envío */}
+              <Button
+                type="submit"
+                disabled={loading || !email || !password}
+                className="w-full h-11 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white font-semibold mt-2 shadow-md shadow-green-600/20 transition-all"
+              >
+                {loading ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    Iniciando sesión...
+                  </>
+                ) : (
+                  'Iniciar Sesión'
+                )}
+              </Button>
+            </form>
+          </CardContent>
+        </Card>
+
+        {/* Card colapsable con credenciales de prueba para testing */}
+        <Card className="mt-4 border border-gray-200 bg-white/70 backdrop-blur">
+          <button
+            type="button"
+            onClick={() => setShowCredenciales(!showCredenciales)}
+            className="w-full flex items-center justify-between px-4 py-3 text-sm font-medium text-gray-700 hover:bg-gray-50 rounded-lg transition-colors"
+          >
+            <span className="flex items-center gap-2">
+              <KeyRound className="w-4 h-4 text-green-600" />
+              Ver credenciales de prueba
+            </span>
+            {showCredenciales ? (
+              <ChevronUp className="w-4 h-4 text-gray-400" />
+            ) : (
+              <ChevronDown className="w-4 h-4 text-gray-400" />
+            )}
+          </button>
+          {showCredenciales && (
+            <div className="border-t border-gray-100 px-2 py-2 space-y-1 animate-in fade-in slide-in-from-top-1 duration-200">
+              {CREDENCIALES_PRUEBA.map((c) => (
+                <button
+                  key={c.email}
+                  type="button"
+                  onClick={() => usarCredencial(c)}
+                  className="w-full text-left px-3 py-2 rounded-md hover:bg-green-50 transition-colors flex items-center justify-between gap-2"
+                >
+                  <div className="min-w-0 flex-1">
+                    <div className="text-xs font-semibold text-gray-800">{c.rol}</div>
+                    <div className="text-xs text-gray-500 font-mono truncate">{c.email}</div>
+                  </div>
+                  <span className="text-xs text-gray-400 font-mono shrink-0 hidden sm:inline">
+                    {c.password}
+                  </span>
+                </button>
+              ))}
+              <p className="text-[10px] text-gray-400 px-3 py-1 text-center">
+                Haz clic en cualquier fila para autocompletar el formulario.
+              </p>
             </div>
+          )}
+        </Card>
 
-            {/* Submit button */}
-            <Button
-              type="submit"
-              disabled={loading || !email || !password}
-              className="w-full h-11 bg-green-600 hover:bg-green-700 text-white font-semibold mt-2 transition-colors"
-            >
-              {loading ? (
-                <>
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  Iniciando sesión...
-                </>
-              ) : (
-                'Iniciar Sesión'
-              )}
-            </Button>
-          </form>
-        </CardContent>
-      </Card>
-
-      <p className="text-center text-xs text-gray-400 mt-6">
-        AGROCAR S.R.L. · Tacna, Perú · {new Date().getFullYear()}
-      </p>
+        <p className="text-center text-xs text-gray-400 mt-6">
+          AGROCAR S.R.L. &middot; Tacna, Perú &middot; {new Date().getFullYear()}
+        </p>
+      </div>
     </div>
   )
 }

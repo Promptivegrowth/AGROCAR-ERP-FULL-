@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import { Plus, Printer, Truck, Loader2, ChevronDown, ChevronRight, Package } from 'lucide-react'
+import { toast } from 'sonner'
 import { createClient } from '@/lib/supabase/client'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
@@ -82,25 +83,54 @@ export default function DespachoPage() {
       estado: 'preparacion' as any,
     } as any).select().single()
 
-    if (!error && despacho) {
-      const items = selectedPedidos.map((pid) => ({
-        despacho_id: despacho.id,
-        pedido_id: pid,
-        estado: 'pendiente',
-      }))
-      await supabase.from('despachos_items').insert(items as any)
-      await supabase.from('pedidos').update({ estado: 'despachado', updated_at: new Date().toISOString() }).in('id', selectedPedidos)
+    if (error || !despacho) {
+      setSaving(false)
+      toast.error('Error al crear consolidado', { description: error?.message ?? 'No se pudo crear el despacho.' })
+      return
     }
+
+    const items = selectedPedidos.map((pid) => ({
+      despacho_id: despacho.id,
+      pedido_id: pid,
+      estado: 'pendiente',
+    }))
+    const { error: itemsError } = await supabase.from('despachos_items').insert(items as any)
+    if (itemsError) {
+      setSaving(false)
+      toast.error('Error al asignar pedidos', { description: itemsError.message })
+      return
+    }
+
+    const { error: updError } = await supabase
+      .from('pedidos')
+      .update({ estado: 'despachado', updated_at: new Date().toISOString() })
+      .in('id', selectedPedidos)
 
     setSaving(false)
     setDialogOpen(false)
     setSelectedPedidos([])
     setSelectedVehiculo('')
+
+    if (updError) {
+      toast.error('Consolidado creado con advertencias', { description: updError.message })
+    } else {
+      toast.success('Consolidado creado', {
+        description: `${selectedPedidos.length} pedido(s) asignado(s) al despacho.`,
+      })
+    }
+
     loadData()
   }
 
   const cambiarEstado = async (despachoId: string, nuevoEstado: string) => {
-    await supabase.from('despachos').update({ estado: nuevoEstado as any }).eq('id', despachoId)
+    const { error } = await supabase.from('despachos').update({ estado: nuevoEstado as any }).eq('id', despachoId)
+    if (error) {
+      toast.error('Error al cambiar estado', { description: error.message })
+    } else {
+      toast.success('Estado actualizado', {
+        description: `Despacho marcado como "${ESTADO_CONFIG[nuevoEstado]?.label ?? nuevoEstado}".`,
+      })
+    }
     loadData()
   }
 

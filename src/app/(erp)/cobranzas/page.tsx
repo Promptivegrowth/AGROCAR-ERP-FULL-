@@ -5,6 +5,7 @@ import {
   DollarSign, Plus, Loader2, CreditCard, Banknote, Smartphone, Building2,
   Lock, Unlock, RefreshCw
 } from 'lucide-react'
+import { toast } from 'sonner'
 import { createClient } from '@/lib/supabase/client'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
@@ -89,13 +90,18 @@ export default function CobranzasPage() {
   const abrirCaja = async () => {
     setSaving(true)
     const { data: { user } } = await supabase.auth.getUser()
-    await supabase.from('caja_sesiones').insert({
+    const { error } = await supabase.from('caja_sesiones').insert({
       cajero_id: user?.id ?? null,
       fecha_apertura: new Date().toISOString(),
       saldo_inicial: 0,
       estado: 'abierta',
     } as any)
     setSaving(false)
+    if (error) {
+      toast.error('Error al abrir caja', { description: error.message })
+    } else {
+      toast.success('Caja aperturada', { description: 'La caja del día quedó abierta.' })
+    }
     loadData()
   }
 
@@ -103,12 +109,17 @@ export default function CobranzasPage() {
     if (!caja) return
     setSaving(true)
     const totalFinal = cobros.reduce((acc: number, c: any) => acc + (c.total ?? 0), 0)
-    await supabase.from('caja_sesiones').update({
+    const { error } = await supabase.from('caja_sesiones').update({
       estado: 'cerrada',
       fecha_cierre: new Date().toISOString(),
       saldo_final: totalFinal,
     } as any).eq('id', caja.id)
     setSaving(false)
+    if (error) {
+      toast.error('Error al cerrar caja', { description: error.message })
+    } else {
+      toast.success('Caja cerrada', { description: `Saldo final registrado: ${totalFinal.toFixed(2)} S/.` })
+    }
     loadData()
   }
 
@@ -117,7 +128,7 @@ export default function CobranzasPage() {
     setSaving(true)
     const { data: { user } } = await supabase.auth.getUser()
     const monto = parseFloat(form.monto)
-    await supabase.from('cobros').insert({
+    const { error } = await supabase.from('cobros').insert({
       cliente_id: form.cliente_id,
       cobrador_id: user?.id ?? null,
       tipo: 'cobranza' as const,
@@ -131,6 +142,13 @@ export default function CobranzasPage() {
     })
     setSaving(false)
     setDialogOpen(false)
+    if (error) {
+      toast.error('Error al registrar cobro', { description: error.message })
+    } else {
+      toast.success('Cobro registrado', {
+        description: `S/ ${monto.toFixed(2)} · ${form.metodo_pago}`,
+      })
+    }
     setForm({ cliente_id: '', vendedor_id: '', monto: '', metodo_pago: 'efectivo', referencia: '', tipo: 'cobranza' })
     loadData()
   }

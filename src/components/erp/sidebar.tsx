@@ -22,6 +22,7 @@ import {
   Building2,
   Car,
   Map,
+  Tags,
   ShoppingCart,
   ClipboardList,
   RotateCcw,
@@ -53,6 +54,7 @@ const NAV_ITEMS: NavItem[] = [
     children: [
       { label: 'Clientes', href: '/maestros/clientes', icon: Users },
       { label: 'Productos', href: '/maestros/productos', icon: Package },
+      { label: 'Familias', href: '/maestros/familias', icon: Tags },
       { label: 'Proveedores', href: '/maestros/proveedores', icon: Building2 },
       { label: 'Vehículos', href: '/maestros/vehiculos', icon: Car },
       { label: 'Zonas', href: '/maestros/zonas', icon: Map },
@@ -111,9 +113,10 @@ const NAV_ITEMS: NavItem[] = [
 
 interface SidebarProps {
   userRole: string
+  onNavigate?: () => void
 }
 
-export default function Sidebar({ userRole }: SidebarProps) {
+export default function Sidebar({ userRole, onNavigate }: SidebarProps) {
   const pathname = usePathname()
   const [openMenus, setOpenMenus] = useState<string[]>(['Maestros', 'Almacén'])
 
@@ -134,7 +137,7 @@ export default function Sidebar({ userRole }: SidebarProps) {
   }
 
   return (
-    <aside className="w-[250px] min-h-screen bg-white border-r border-gray-200 flex flex-col shadow-sm flex-shrink-0">
+    <aside className="w-[260px] h-dvh bg-white border-r border-gray-200 flex flex-col shadow-sm flex-shrink-0">
       {/* Logo */}
       <div className="flex items-center gap-3 px-5 py-5 border-b border-gray-100">
         <div className="flex items-center justify-center w-9 h-9 bg-green-600 rounded-lg shadow">
@@ -193,8 +196,9 @@ export default function Sidebar({ userRole }: SidebarProps) {
                         <Link
                           key={child.href}
                           href={child.href}
+                          onClick={onNavigate}
                           className={cn(
-                            'flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-sm transition-colors',
+                            'flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm transition-colors',
                             active
                               ? 'bg-green-600 text-white font-medium shadow-sm'
                               : 'text-gray-500 hover:bg-gray-50 hover:text-gray-800'
@@ -216,6 +220,7 @@ export default function Sidebar({ userRole }: SidebarProps) {
             <Link
               key={item.href}
               href={item.href!}
+              onClick={onNavigate}
               className={cn(
                 'flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors group',
                 active

@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { MapPin, Loader2, CheckCircle, AlertCircle, Navigation, Clock } from 'lucide-react'
+import { toast } from 'sonner'
 import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
@@ -127,18 +128,21 @@ export default function CheckinPage() {
 
       if (error) {
         setMensajeError('Error al registrar el check-in: ' + error.message)
+        toast.error('No se pudo registrar el check-in', { description: error.message })
         return
       }
 
       const clienteNombre = clientes.find((c) => c.id === clienteSeleccionado)?.razon_social ?? ''
       const tipoLabel = tipoLabels[tipoVisita]
       setMensajeExito(`${tipoLabel} registrado en ${clienteNombre}`)
+      toast.success(`${tipoLabel} registrado`, { description: clienteNombre })
       setClienteSeleccionado('')
       setCoordenadas(null)
       setTipoVisita('entrada')
       await cargarCheckinsDia(userId)
     } catch {
       setMensajeError('Error inesperado al registrar el check-in')
+      toast.error('Error inesperado', { description: 'No se pudo registrar el check-in.' })
     } finally {
       setEnviando(false)
     }

@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { Plus, Loader2, AlertCircle, CheckCircle, ArrowUpCircle, ArrowDownCircle, SlidersHorizontal } from 'lucide-react'
+import { toast } from 'sonner'
 import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -182,19 +183,21 @@ export default function AjustesInventarioPage() {
 
       if (error) {
         setFormError('Error al guardar el ajuste: ' + error.message)
+        toast.error('Error al registrar ajuste', { description: error.message })
         return
       }
 
-      setMensajeExito(
-        requiereAprobacion
-          ? 'Ajuste registrado y enviado para aprobación del administrador'
-          : 'Ajuste de inventario registrado correctamente'
-      )
+      const mensaje = requiereAprobacion
+        ? 'Ajuste registrado y enviado para aprobación del administrador'
+        : 'Ajuste de inventario registrado correctamente'
+      setMensajeExito(mensaje)
+      toast.success('Ajuste registrado', { description: mensaje })
       setDialogOpen(false)
       resetForm()
       await cargarAjustes()
     } catch {
       setFormError('Error inesperado al guardar el ajuste')
+      toast.error('Error inesperado', { description: 'No se pudo guardar el ajuste.' })
     } finally {
       setEnviando(false)
     }

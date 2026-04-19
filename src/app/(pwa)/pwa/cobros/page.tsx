@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react'
 import {
   DollarSign, Search, Camera, Loader2, CheckCircle, AlertCircle, X
 } from 'lucide-react'
+import { toast } from 'sonner'
 import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -152,10 +153,14 @@ export default function CobrosPage() {
 
       if (cobroError) {
         setMensajeError('Error al registrar el cobro: ' + cobroError.message)
+        toast.error('No se pudo registrar el cobro', { description: cobroError.message })
         return
       }
 
       setMensajeExito(`Cobro de ${formatCurrency(totalCobro)} registrado correctamente`)
+      toast.success('Cobro registrado', {
+        description: `${formatCurrency(totalCobro)} · ${clienteSeleccionado.razon_social}`,
+      })
       setClienteSeleccionado(null)
       setClienteSearch('')
       setMontos({ efectivo: 0, yape: 0, plin: 0, transferencia: 0 })
@@ -167,6 +172,7 @@ export default function CobrosPage() {
       cargarCobrosDia()
     } catch {
       setMensajeError('Error inesperado al registrar el cobro')
+      toast.error('Error inesperado', { description: 'No se pudo registrar el cobro.' })
     } finally {
       setLoadingEnvio(false)
     }

@@ -1,7 +1,6 @@
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
-import Sidebar from '@/components/erp/sidebar'
-import Topbar from '@/components/erp/topbar'
+import ErpShell from '@/components/erp/erp-shell'
 
 export default async function ERPLayout({
   children,
@@ -40,20 +39,8 @@ export default async function ERPLayout({
   }
 
   return (
-    <div className="flex h-screen bg-[#f9fafb] overflow-hidden">
-      {/* Sidebar fijo */}
-      <Sidebar userRole={profile.role} />
-
-      {/* Contenido principal */}
-      <div className="flex flex-col flex-1 min-w-0 overflow-hidden">
-        {/* Topbar */}
-        <Topbar user={userForTopbar} />
-
-        {/* Main content */}
-        <main className="flex-1 overflow-y-auto p-6">
-          {children}
-        </main>
-      </div>
-    </div>
+    <ErpShell userRole={profile.role} user={userForTopbar}>
+      {children}
+    </ErpShell>
   )
 }
