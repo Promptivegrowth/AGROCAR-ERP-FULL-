@@ -1,0 +1,306 @@
+'use client'
+
+import { useState, useEffect } from 'react'
+import { User, LogOut, ShoppingCart, DollarSign, MapPin, Package, Loader2, TrendingUp } from 'lucide-react'
+import { useRouter } from 'next/navigation'
+import { createClient } from '@/lib/supabase/client'
+import { Card, CardContent } from '@/components/ui/card'
+import { Button } from '@/components/ui/button'
+import { formatCurrency } from '@/lib/utils'
+import type { Profile } from '@/types'
+
+interface ResumenDia {
+  pedidosEnviados: number
+  montoTotalPedidos: number
+  cobrosRegistrados: number
+  montoTotalCobros: number
+  clientesVisitados: number
+}
+
+interface ComisionMes {
+  porcentaje: number
+  monto_base: number
+  comision_calculada: number
+  meta: number | null
+  porcentaje_meta: number | null
+}
+
+export default function CuentaPage() {
+  const router = useRouter()
+  const [profile, setProfile] = useState<Profile | null>(null)
+  const [zona, setZona] = useState<string | null>(null)
+  const [resumen, setResumen] = useState<ResumenDia | null>(null)
+  const [comision, setComision] = useState<ComisionMes | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [cerrando, setCerrando] = useState(false)
+
+  const supabase = createClient()
+
+  useEffect(() => {
+    async function init() {
+      setLoading(true)
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) {
+        router.push('/login')
+        return
+      }
+
+      // Cargar perfil
+      const { data: profileData } = await supabase
+        .from('profiles')
+        .select('*, zonas(nombre)')
+        .eq('id', user.id)
+        .single()
+
+      if (profileData) {
+        setProfile(profileData as Profile)
+        setZona((profileData as Profile & { zonas?: { nombre?: string } }).zonas?.nombre ?? null)
+      }
+
+      // Resumen del día
+      const hoy = new Date().toISOString().split('T')[0]
+
+      const [{ data: pedidos }, { data: cobros }, { data: checkins }] = await Promise.all([
+        supabase
+          .from('pedidos')
+          .select('total')
+          .eq('vendedor_id', user.id)
+          .gte('created_at', hoy),
+        supabase
+          .from('cobros')
+          .select('monto_total')
+          .eq('cobrador_id', user.id)
+          .gte('created_at', hoy),
+        supabase
+          .from('gps_checkins')
+          .select('cliente_id')
+          .eq('usuario_id', user.id)
+          .eq('tipo', 'entrada')
+          .gte('created_at', hoy),
+      ])
+
+      const clientesUnicosDia = new Set(checkins?.map((c) => c.cliente_id) ?? []).size
+      const montoPedidos = pedidos?.reduce((acc, p) => acc + ((p as { total?: number }).total ?? 0), 0) ?? 0
+      const montoCobros = cobros?.reduce((acc, c) => acc + ((c as { monto_total?: number }).monto_total ?? 0), 0) ?? 0
+
+      setResumen({
+        pedidosEnviados: pedidos?.length ?? 0,
+        montoTotalPedidos: montoPedidos,
+        cobrosRegistrados: cobros?.length ?? 0,
+        montoTotalCobros: montoCobros,
+        clientesVisitados: clientesUnicosDia,
+      })
+
+      // Comisiones del mes
+      const inicioMes = new Date()
+      inicioMes.setDate(1)
+      const inicioMesStr = inicioMes.toISOString().split('T')[0]
+
+      const { data: pedidosMes } = await supabase
+        .from('pedidos')
+        .select('total')
+        .eq('vendedor_id', user.id)
+        .gte('created_at', inicioMesStr)
+        .in('estado', ['validado', 'facturado', 'despachado', 'entregado'])
+
+      const montoMes = pedidosMes?.reduce((acc, p) => acc + ((p as { total?: number }).total ?? 0), 0) ?? 0
+
+      // Buscar regla de comisión
+      const { data: regla } = await (supabase as any)
+        .from('comision_reglas')
+        .select('*')
+        .eq('rol', 'vendedor')
+        .eq('activo', true)
+        .single()
+
+      if (regla && montoMes > 0) {
+        const pct = (regla as { porcentaje?: number }).porcentaje ?? 0
+        const meta = (regla as { meta_mensual?: number }).meta_mensual ?? null
+        setComision({
+          porcentaje: pct,
+          monto_base: montoMes,
+          comision_calculada: montoMes * (pct / 100),
+          meta,
+          porcentaje_meta: meta ? Math.round((montoMes / meta) * 100) : null,
+        })
+      }
+
+      setLoading(false)
+    }
+
+    init()
+  }, [])
+
+  async function cerrarSesion() {
+    setCerrando(true)
+    await supabase.auth.signOut()
+    router.push('/login')
+  }
+
+  const rolesLabels: Record<string, string> = {
+    gerente: 'Gerente',
+    administrador: 'Administrador',
+    facturador: 'Facturador',
+    almacenero: 'Almacenero',
+    vendedor: 'Vendedor',
+    repartidor: 'Repartidor',
+    contador: 'Contador',
+  }
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <Loader2 className="w-8 h-8 animate-spin text-green-600" />
+      </div>
+    )
+  }
+
+  return (
+    <div className="min-h-full">
+      {/* Header */}
+      <div className="bg-green-600 text-white px-4 pt-6 pb-8">
+        <div className="flex items-center gap-4">
+          <div className="w-16 h-16 bg-white/20 rounded-2xl flex items-center justify-center">
+            <User className="w-9 h-9 text-white" />
+          </div>
+          <div>
+            <h1 className="text-xl font-bold">{profile?.full_name ?? 'Usuario'}</h1>
+            <div className="text-green-200 text-sm">{rolesLabels[profile?.role ?? ''] ?? profile?.role}</div>
+            {zona && <div className="text-green-300 text-xs mt-0.5">Zona: {zona}</div>}
+          </div>
+        </div>
+      </div>
+
+      <div className="p-4 space-y-4 -mt-4">
+        {/* Resumen del día */}
+        {resumen && (
+          <Card className="border-0 shadow-sm">
+            <CardContent className="p-4">
+              <h3 className="font-semibold text-gray-800 mb-3 flex items-center gap-2">
+                <TrendingUp className="w-4 h-4 text-green-600" />
+                Resumen de Hoy
+              </h3>
+              <div className="grid grid-cols-3 gap-3">
+                <div className="bg-blue-50 rounded-xl p-3 text-center">
+                  <div className="flex justify-center mb-1">
+                    <ShoppingCart className="w-5 h-5 text-blue-600" />
+                  </div>
+                  <div className="text-2xl font-bold text-blue-700">{resumen.pedidosEnviados}</div>
+                  <div className="text-xs text-blue-600 font-medium">Pedidos</div>
+                  <div className="text-xs text-blue-500 mt-0.5">{formatCurrency(resumen.montoTotalPedidos)}</div>
+                </div>
+
+                <div className="bg-green-50 rounded-xl p-3 text-center">
+                  <div className="flex justify-center mb-1">
+                    <DollarSign className="w-5 h-5 text-green-600" />
+                  </div>
+                  <div className="text-2xl font-bold text-green-700">{resumen.cobrosRegistrados}</div>
+                  <div className="text-xs text-green-600 font-medium">Cobros</div>
+                  <div className="text-xs text-green-500 mt-0.5">{formatCurrency(resumen.montoTotalCobros)}</div>
+                </div>
+
+                <div className="bg-purple-50 rounded-xl p-3 text-center">
+                  <div className="flex justify-center mb-1">
+                    <MapPin className="w-5 h-5 text-purple-600" />
+                  </div>
+                  <div className="text-2xl font-bold text-purple-700">{resumen.clientesVisitados}</div>
+                  <div className="text-xs text-purple-600 font-medium">Visitas</div>
+                  <div className="text-xs text-purple-400 mt-0.5">clientes</div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Comisiones del mes */}
+        {comision && (
+          <Card className="border-0 shadow-sm">
+            <CardContent className="p-4">
+              <h3 className="font-semibold text-gray-800 mb-3 flex items-center gap-2">
+                <Package className="w-4 h-4 text-green-600" />
+                Comisiones del Mes
+              </h3>
+              <div className="space-y-3">
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-600">Ventas del mes</span>
+                  <span className="font-semibold text-gray-900">{formatCurrency(comision.monto_base)}</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-600">Porcentaje ({comision.porcentaje}%)</span>
+                  <span className="font-semibold text-green-700">{formatCurrency(comision.comision_calculada)}</span>
+                </div>
+                {comision.meta && (
+                  <div>
+                    <div className="flex justify-between text-sm mb-1.5">
+                      <span className="text-gray-600">Meta mensual</span>
+                      <span className="text-gray-700">{comision.porcentaje_meta}% ({formatCurrency(comision.meta)})</span>
+                    </div>
+                    <div className="w-full bg-gray-100 rounded-full h-2">
+                      <div
+                        className="bg-green-500 h-2 rounded-full transition-all"
+                        style={{ width: `${Math.min(comision.porcentaje_meta ?? 0, 100)}%` }}
+                      />
+                    </div>
+                  </div>
+                )}
+                <div className="pt-2 border-t border-gray-100 flex justify-between">
+                  <span className="font-semibold text-gray-800">Comisión estimada</span>
+                  <span className="font-bold text-green-700 text-lg">{formatCurrency(comision.comision_calculada)}</span>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Datos de contacto */}
+        {profile?.email && (
+          <Card className="border-0 shadow-sm">
+            <CardContent className="p-4">
+              <h3 className="font-semibold text-gray-800 mb-2">Datos de Cuenta</h3>
+              <div className="text-sm text-gray-600">
+                <div className="flex justify-between py-1.5 border-b border-gray-50">
+                  <span>Correo</span>
+                  <span className="text-gray-900 font-medium">{profile.email}</span>
+                </div>
+                <div className="flex justify-between py-1.5 border-b border-gray-50">
+                  <span>Rol</span>
+                  <span className="text-gray-900 font-medium">{rolesLabels[profile.role] ?? profile.role}</span>
+                </div>
+                {zona && (
+                  <div className="flex justify-between py-1.5">
+                    <span>Zona</span>
+                    <span className="text-gray-900 font-medium">{zona}</span>
+                  </div>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Cerrar sesión */}
+        <Button
+          onClick={cerrarSesion}
+          disabled={cerrando}
+          variant="outline"
+          className="w-full h-12 border-red-200 text-red-600 hover:bg-red-50 hover:border-red-300 font-semibold"
+        >
+          {cerrando ? (
+            <>
+              <Loader2 className="w-4 h-4 animate-spin" />
+              Cerrando sesión...
+            </>
+          ) : (
+            <>
+              <LogOut className="w-4 h-4" />
+              Cerrar Sesión
+            </>
+          )}
+        </Button>
+
+        <div className="text-center text-xs text-gray-400 pb-2">
+          AGROCAR ERP v1.0 · AGROCAR S.R.L. · Tacna, Perú
+        </div>
+      </div>
+    </div>
+  )
+}
