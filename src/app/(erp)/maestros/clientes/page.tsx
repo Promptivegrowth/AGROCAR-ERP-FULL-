@@ -7,7 +7,7 @@ import { z } from 'zod'
 import {
   Plus, Search, Filter, Edit, Eye, ToggleLeft, ToggleRight, Loader2,
   ChevronLeft, ChevronRight, User, MapPin, Phone, Mail, DollarSign,
-  Tag, Hash, Building2,
+  Tag, Hash, Building2, Crosshair, X,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { createClient } from '@/lib/supabase/client'
@@ -22,6 +22,7 @@ import {
 } from '@/components/ui/select'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
+import LeafletMap from '@/components/maps/leaflet-map'
 
 const clienteSchema = z.object({
   codigo: z.string().min(1, 'Requerido'),
@@ -77,6 +78,8 @@ export default function ClientesPage() {
   const [zonaId, setZonaId] = useState<string>('')
   const [vendedorId, setVendedorId] = useState<string>('')
   const [estado, setEstado] = useState<EstadoCliente>('activo')
+  const [picked, setPicked] = useState<[number, number] | null>(null)
+  const [locLoading, setLocLoading] = useState(false)
 
   const {
     register,
@@ -132,6 +135,7 @@ export default function ClientesPage() {
     setZonaId('')
     setVendedorId('')
     setEstado('activo')
+    setPicked(null)
     reset({
       codigo: '',
       razon_social: '',
@@ -151,6 +155,28 @@ export default function ClientesPage() {
     setDialogOpen(true)
   }
 
+  const usarMiUbicacion = () => {
+    if (!navigator.geolocation) {
+      toast.error('Geolocalización no soportada por el navegador')
+      return
+    }
+    setLocLoading(true)
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setPicked([pos.coords.latitude, pos.coords.longitude])
+        toast.success('Ubicación capturada', {
+          description: `±${Math.round(pos.coords.accuracy)}m de precisión`,
+        })
+        setLocLoading(false)
+      },
+      (err) => {
+        toast.error('No se pudo obtener la ubicación', { description: err.message })
+        setLocLoading(false)
+      },
+      { enableHighAccuracy: true, timeout: 10000 },
+    )
+  }
+
   const openEdit = (cliente: any) => {
     setEditingCliente(cliente)
     setTipoCliente((cliente.tipo_cliente as TipoCliente) ?? 'tienda')
@@ -158,6 +184,11 @@ export default function ClientesPage() {
     setZonaId(cliente.zona_id ?? '')
     setVendedorId(cliente.vendedor_id ?? '')
     setEstado((cliente.estado as EstadoCliente) ?? 'activo')
+    setPicked(
+      cliente.latitud != null && cliente.longitud != null
+        ? [Number(cliente.latitud), Number(cliente.longitud)]
+        : null,
+    )
     reset({
       codigo: cliente.codigo,
       razon_social: cliente.razon_social,
@@ -198,8 +229,8 @@ export default function ClientesPage() {
         credito_dias: data.credito_dias ?? 0,
         credito_limite: data.credito_limite ?? 0,
         estado,
-        latitud: data.latitud ?? null,
-        longitud: data.longitud ?? null,
+        latitud: picked ? picked[0] : null,
+        longitud: picked ? picked[1] : null,
         notas: data.notas || null,
         updated_at: new Date().toISOString(),
       }
@@ -558,15 +589,44 @@ export default function ClientesPage() {
               </div>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <Label>Latitud</Label>
-                <Input {...register('latitud')} type="number" step="any" placeholder="-18.0117" className="mt-1" />
+            <div>
+              <div className="flex items-center justify-between mb-1.5">
+                <Label className="flex items-center gap-1.5">
+                  <MapPin className="w-3.5 h-3.5 text-green-600" /> Ubicación en el mapa
+                </Label>
+                <div className="flex items-center gap-2">
+                  {picked && (
+                    <button
+                      type="button"
+                      onClick={() => setPicked(null)}
+                      className="text-xs text-red-600 hover:underline flex items-center gap-1"
+                    >
+                      <X className="w-3 h-3" /> Quitar
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={usarMiUbicacion}
+                    disabled={locLoading}
+                    className="text-xs text-green-700 hover:underline flex items-center gap-1 disabled:opacity-50"
+                  >
+                    {locLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Crosshair className="w-3 h-3" />}
+                    Usar mi ubicación
+                  </button>
+                </div>
               </div>
-              <div>
-                <Label>Longitud</Label>
-                <Input {...register('longitud')} type="number" step="any" placeholder="-70.2536" className="mt-1" />
-              </div>
+              <LeafletMap
+                height="260px"
+                pickable
+                pickedPosition={picked}
+                onPick={(lat, lng) => setPicked([lat, lng])}
+                fitBounds={!!picked}
+              />
+              <p className="text-xs text-gray-500 mt-1.5">
+                {picked
+                  ? <>Coordenadas: <span className="font-mono">{picked[0].toFixed(5)}, {picked[1].toFixed(5)}</span></>
+                  : 'Haz clic en el mapa o usa tu GPS para fijar la ubicación del cliente.'}
+              </p>
             </div>
 
             <div>
@@ -614,6 +674,21 @@ export default function ClientesPage() {
                     {estadoCfg.label}
                   </span>
                 </div>
+
+                {selected.latitud != null && selected.longitud != null && (
+                  <div>
+                    <LeafletMap
+                      height="200px"
+                      markers={[{
+                        id: 'c',
+                        lat: Number(selected.latitud),
+                        lng: Number(selected.longitud),
+                        label: selected.razon_social,
+                        description: selected.direccion ?? undefined,
+                      }]}
+                    />
+                  </div>
+                )}
 
                 <div className="grid grid-cols-2 gap-3 text-sm">
                   <div className="flex items-start gap-2">

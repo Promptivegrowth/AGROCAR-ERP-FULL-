@@ -1,7 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
-import { MapPin, Clock, User, Navigation } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Badge } from '@/components/ui/badge'
+import GpsMapPanel from './gps-map-panel'
 
 export const dynamic = 'force-dynamic'
 
@@ -9,11 +8,11 @@ async function getGPSData() {
   const supabase = await createClient()
   const today = new Date().toISOString().split('T')[0]
 
-  const [{ data: checkins }, { data: vendedoresActivos }] = await Promise.all([
+  const [{ data: checkins }, { data: vendedoresActivos }, { data: clientesConGeo }] = await Promise.all([
     supabase
       .from('gps_checkins')
       .select(`
-        id, tipo, latitud, longitud, cliente_id, created_at,
+        id, tipo, latitud, longitud, vendedor_id, cliente_id, created_at,
         profiles!gps_checkins_vendedor_id_fkey(full_name, role),
         clientes(razon_social)
       `)
@@ -26,21 +25,27 @@ async function getGPSData() {
       .in('role', ['vendedor', 'repartidor'])
       .eq('activo', true)
       .order('full_name'),
+    supabase
+      .from('clientes')
+      .select('id, razon_social, latitud, longitud')
+      .not('latitud', 'is', null)
+      .not('longitud', 'is', null)
+      .limit(200),
   ])
 
-  // Última ubicación por vendedor
   const ultimaUbicacion: Record<string, any> = {}
-  checkins?.forEach((c) => {
-    const vid = (c as any).vendedor_id
+  checkins?.forEach((c: any) => {
+    const vid = c.vendedor_id
     if (vid && !ultimaUbicacion[vid]) {
       ultimaUbicacion[vid] = c
     }
   })
 
   return {
-    checkins: checkins ?? [],
+    checkins: (checkins ?? []) as any[],
     vendedoresActivos: vendedoresActivos ?? [],
     ultimaUbicacion,
+    clientesConGeo: (clientesConGeo ?? []) as any[],
   }
 }
 
@@ -51,10 +56,10 @@ const TIPO_CONFIG: Record<string, { label: string; className: string }> = {
 }
 
 export default async function GPSPage() {
-  const { checkins, vendedoresActivos, ultimaUbicacion } = await getGPSData()
+  const { checkins, vendedoresActivos, ultimaUbicacion, clientesConGeo } = await getGPSData()
 
   const today = new Date().toLocaleDateString('es-PE', {
-    weekday: 'long', year: 'numeric', month: 'long', day: 'numeric'
+    weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
   })
 
   return (
@@ -65,72 +70,9 @@ export default async function GPSPage() {
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-5">
-        {/* Mapa placeholder */}
+        {/* Mapa real */}
         <div className="xl:col-span-2">
-          <Card className="border-gray-200 shadow-sm overflow-hidden">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-base font-semibold text-gray-800 flex items-center gap-2">
-                <Navigation className="w-4 h-4 text-green-600" />
-                Mapa de Seguimiento — Tacna, Perú
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="p-0">
-              {/* Mapa placeholder profesional */}
-              <div
-                className="relative h-[420px] bg-gradient-to-br from-green-50 via-blue-50 to-green-100 flex flex-col items-center justify-center"
-                style={{
-                  backgroundImage: `
-                    radial-gradient(circle at 30% 40%, rgba(22,163,74,0.08) 0%, transparent 60%),
-                    radial-gradient(circle at 70% 60%, rgba(59,130,246,0.08) 0%, transparent 60%),
-                    repeating-linear-gradient(0deg, transparent, transparent 39px, rgba(156,163,175,0.15) 40px),
-                    repeating-linear-gradient(90deg, transparent, transparent 39px, rgba(156,163,175,0.15) 40px)
-                  `,
-                }}
-              >
-                {/* Pines simulados */}
-                {vendedoresActivos.slice(0, 5).map((v, i) => {
-                  const positions = [
-                    { top: '30%', left: '25%' },
-                    { top: '55%', left: '45%' },
-                    { top: '40%', left: '65%' },
-                    { top: '65%', left: '30%' },
-                    { top: '25%', left: '70%' },
-                  ]
-                  const pos = positions[i] ?? { top: '50%', left: '50%' }
-                  const initials = v.full_name?.split(' ').slice(0, 2).map((n: string) => n[0]).join('') ?? '?'
-                  return (
-                    <div
-                      key={v.id}
-                      className="absolute flex flex-col items-center"
-                      style={pos}
-                    >
-                      <div className="w-9 h-9 bg-green-600 rounded-full border-2 border-white shadow-lg flex items-center justify-center text-white text-xs font-bold">
-                        {initials}
-                      </div>
-                      <div className="w-0 h-0 border-l-4 border-r-4 border-t-6 border-l-transparent border-r-transparent border-t-green-600" />
-                      <div className="mt-1 bg-white rounded px-1.5 py-0.5 text-xs font-medium text-gray-700 shadow whitespace-nowrap border border-gray-200">
-                        {v.full_name?.split(' ')[0] ?? 'Vendedor'}
-                      </div>
-                    </div>
-                  )
-                })}
-
-                <div className="absolute bottom-4 right-4 bg-white rounded-lg border border-gray-200 shadow px-3 py-2 text-xs text-gray-500">
-                  <p className="font-semibold text-gray-700 mb-1">Mapa en desarrollo</p>
-                  <p>Integración con Google Maps API</p>
-                  <p className="text-green-600 font-medium mt-0.5">Tacna, Perú — 18°S 70°W</p>
-                </div>
-
-                <div className="text-center z-10">
-                  <div className="w-16 h-16 bg-white rounded-2xl shadow-lg flex items-center justify-center mb-3 mx-auto border border-gray-100">
-                    <MapPin className="w-8 h-8 text-green-600" />
-                  </div>
-                  <p className="text-gray-600 font-semibold text-sm">Mapa GPS Activo</p>
-                  <p className="text-gray-400 text-xs mt-1">{vendedoresActivos.length} vendedores en ruta hoy</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
+          <GpsMapPanel checkins={checkins} clientes={clientesConGeo} />
         </div>
 
         {/* Panel de vendedores */}
@@ -145,12 +87,9 @@ export default async function GPSPage() {
               {vendedoresActivos.length === 0 ? (
                 <p className="text-sm text-gray-400 text-center py-4">Sin vendedores activos</p>
               ) : (
-                vendedoresActivos.map((v) => {
-                  const ultima = Object.values(ultimaUbicacion).find((u: any) =>
-                    u?.profiles?.full_name === v.full_name
-                  ) as any
+                vendedoresActivos.map((v: any) => {
+                  const ultima = ultimaUbicacion[v.id]
                   const initials = v.full_name?.split(' ').slice(0, 2).map((n: string) => n[0]).join('') ?? '?'
-                  const tieneUbicacion = !!ultima
                   return (
                     <div key={v.id} className="flex items-center gap-3 p-2.5 rounded-lg hover:bg-gray-50 transition-colors">
                       <div className="w-9 h-9 rounded-full bg-green-600 flex items-center justify-center flex-shrink-0">
@@ -165,7 +104,7 @@ export default async function GPSPage() {
                           </p>
                         )}
                       </div>
-                      <div className={`w-2 h-2 rounded-full ${tieneUbicacion ? 'bg-green-500' : 'bg-gray-300'}`} />
+                      <div className={`w-2 h-2 rounded-full ${ultima ? 'bg-green-500 animate-pulse' : 'bg-gray-300'}`} />
                     </div>
                   )
                 })
@@ -200,6 +139,9 @@ export default async function GPSPage() {
                 <tbody className="divide-y divide-gray-50">
                   {checkins.map((c: any) => {
                     const tipoCfg = TIPO_CONFIG[c.tipo] ?? { label: c.tipo, className: 'bg-gray-100 text-gray-600' }
+                    const mapsLink = c.latitud && c.longitud
+                      ? `https://www.openstreetmap.org/?mlat=${c.latitud}&mlon=${c.longitud}&zoom=17`
+                      : null
                     return (
                       <tr key={c.id} className="hover:bg-gray-50/50 transition-colors">
                         <td className="py-2.5 px-4 text-gray-500 text-xs font-mono">
@@ -213,10 +155,16 @@ export default async function GPSPage() {
                         </td>
                         <td className="py-2.5 px-4 text-gray-600">{c.clientes?.razon_social ?? '—'}</td>
                         <td className="py-2.5 px-4 text-gray-400 font-mono text-xs">
-                          {c.latitud && c.longitud
-                            ? `${Number(c.latitud).toFixed(5)}, ${Number(c.longitud).toFixed(5)}`
-                            : '—'
-                          }
+                          {mapsLink ? (
+                            <a
+                              href={mapsLink}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="hover:text-green-600 hover:underline"
+                            >
+                              {Number(c.latitud).toFixed(5)}, {Number(c.longitud).toFixed(5)}
+                            </a>
+                          ) : '—'}
                         </td>
                       </tr>
                     )

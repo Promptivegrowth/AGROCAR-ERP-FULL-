@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { formatDate } from '@/lib/utils'
 import type { Cliente, GpsCheckin } from '@/types'
+import LeafletMap from '@/components/maps/leaflet-map'
 
 type TipoVisita = 'entrada' | 'salida' | 'visita_sin_compra'
 
@@ -265,15 +266,27 @@ export default function CheckinPage() {
             )}
 
             {coordenadas && (
-              <div className="mt-3 bg-green-50 rounded-xl p-3">
-                <div className="flex items-center gap-1.5 text-green-700 font-medium text-sm mb-2">
-                  <CheckCircle className="w-4 h-4" />
-                  Ubicación obtenida
-                </div>
-                <div className="text-xs text-green-700 space-y-1">
-                  <div>Latitud: <span className="font-mono font-medium">{coordenadas.lat.toFixed(6)}</span></div>
-                  <div>Longitud: <span className="font-mono font-medium">{coordenadas.lng.toFixed(6)}</span></div>
-                  <div>Precisión: <span className="font-medium">±{coordenadas.precision} m</span></div>
+              <div className="mt-3 space-y-2">
+                <LeafletMap
+                  height="200px"
+                  markers={[{
+                    id: 'me',
+                    lat: coordenadas.lat,
+                    lng: coordenadas.lng,
+                    label: 'Tu ubicación',
+                    description: `±${coordenadas.precision}m`,
+                  }]}
+                />
+                <div className="bg-green-50 rounded-xl p-3">
+                  <div className="flex items-center gap-1.5 text-green-700 font-medium text-sm mb-1">
+                    <CheckCircle className="w-4 h-4" />
+                    Ubicación obtenida
+                  </div>
+                  <div className="text-xs text-green-700 space-y-0.5">
+                    <div>Lat: <span className="font-mono font-medium">{coordenadas.lat.toFixed(6)}</span></div>
+                    <div>Lng: <span className="font-mono font-medium">{coordenadas.lng.toFixed(6)}</span></div>
+                    <div>Precisión: <span className="font-medium">±{coordenadas.precision} m</span></div>
+                  </div>
                 </div>
               </div>
             )}
