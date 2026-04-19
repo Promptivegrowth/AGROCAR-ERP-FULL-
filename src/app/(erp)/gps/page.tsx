@@ -12,8 +12,8 @@ async function getGPSData() {
     supabase
       .from('gps_checkins')
       .select(`
-        id, tipo, latitud, longitud, vendedor_id, cliente_id, created_at,
-        profiles!gps_checkins_vendedor_id_fkey(full_name, role),
+        id, tipo, latitud, longitud, usuario_id, cliente_id, precision_metros, created_at,
+        profiles!gps_checkins_usuario_id_fkey(full_name, role),
         clientes(razon_social)
       `)
       .gte('created_at', `${today}T00:00:00`)
@@ -35,7 +35,7 @@ async function getGPSData() {
 
   const ultimaUbicacion: Record<string, any> = {}
   checkins?.forEach((c: any) => {
-    const vid = c.vendedor_id
+    const vid = c.usuario_id
     if (vid && !ultimaUbicacion[vid]) {
       ultimaUbicacion[vid] = c
     }
@@ -92,8 +92,8 @@ export default async function GPSPage() {
                   const initials = v.full_name?.split(' ').slice(0, 2).map((n: string) => n[0]).join('') ?? '?'
                   return (
                     <div key={v.id} className="flex items-center gap-3 p-2.5 rounded-lg hover:bg-gray-50 transition-colors">
-                      <div className="w-9 h-9 rounded-full bg-green-600 flex items-center justify-center flex-shrink-0">
-                        <span className="text-white text-xs font-bold">{initials}</span>
+                      <div className="w-9 h-9 rounded-full bg-[#FBE600] flex items-center justify-center flex-shrink-0">
+                        <span className="text-black text-xs font-bold">{initials}</span>
                       </div>
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-medium text-gray-800 truncate">{v.full_name}</p>

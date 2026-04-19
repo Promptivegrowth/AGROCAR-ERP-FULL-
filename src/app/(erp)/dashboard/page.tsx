@@ -26,6 +26,7 @@ async function getDashboardData() {
     { data: pedidosPendientes },
     { data: ultimos10Pedidos },
     { data: ventasSemana },
+    { count: solicitudesPendientes },
   ] = await Promise.all([
     supabase
       .from('pedidos')
@@ -68,6 +69,10 @@ async function getDashboardData() {
       .gte('fecha_emision', new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0])
       .neq('estado', 'anulado')
       .order('fecha_emision', { ascending: true }),
+    supabase
+      .from('solicitudes_cliente' as any)
+      .select('id', { count: 'exact', head: true })
+      .eq('estado', 'pendiente'),
   ])
 
   const totalPedidos = pedidosHoy?.length ?? 0
@@ -100,6 +105,7 @@ async function getDashboardData() {
     totalCobrado,
     clientesVisitados,
     pedidosPendientesCount,
+    solicitudesPendientesCount: solicitudesPendientes ?? 0,
     ultimos10Pedidos: ultimos10Pedidos ?? [],
     chartData,
   }
@@ -178,6 +184,18 @@ export default async function DashboardPage() {
             <strong>{data.pedidosPendientesCount} pedidos</strong> pendientes de facturar.{' '}
             <a href="/facturacion" className="underline font-medium">
               Ir a Facturación →
+            </a>
+          </p>
+        </div>
+      )}
+
+      {data.solicitudesPendientesCount > 0 && (
+        <div className="flex items-center gap-3 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
+          <AlertTriangle className="w-5 h-5 text-amber-500 flex-shrink-0" />
+          <p className="text-sm text-amber-800">
+            <strong>{data.solicitudesPendientesCount} solicitudes</strong> de nuevos clientes esperando revisión.{' '}
+            <a href="/solicitudes-cliente" className="underline font-medium">
+              Revisar solicitudes →
             </a>
           </p>
         </div>

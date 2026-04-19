@@ -217,7 +217,7 @@ export default function ContabilidadPage() {
                     <Button
                       onClick={() => generarPLE('ventas')}
                       disabled={generando === 'ventas' || comprobantes.length === 0}
-                      className="mt-4 bg-green-600 hover:bg-green-700 gap-2 w-full"
+                      className="mt-4 bg-[#FBE600] hover:bg-[#E5D100] text-black font-semibold gap-2 w-full"
                     >
                       {generando === 'ventas' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
                       Generar RVIE

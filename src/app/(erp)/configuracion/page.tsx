@@ -249,7 +249,7 @@ export default function ConfiguracionPage() {
                 />
               </div>
               <div className="pt-2">
-                <Button onClick={saveEmpresa} disabled={saving} className="bg-green-600 hover:bg-green-700 gap-2">
+                <Button onClick={saveEmpresa} disabled={saving} className="bg-[#FBE600] hover:bg-[#E5D100] text-black font-semibold gap-2">
                   {saving && <Loader2 className="w-4 h-4 animate-spin" />}
                   Guardar Datos
                 </Button>
@@ -409,7 +409,7 @@ export default function ConfiguracionPage() {
               </div>
 
               <div className="pt-2 border-t border-gray-100">
-                <Button onClick={saveParametros} disabled={saving} className="bg-green-600 hover:bg-green-700 gap-2">
+                <Button onClick={saveParametros} disabled={saving} className="bg-[#FBE600] hover:bg-[#E5D100] text-black font-semibold gap-2">
                   {saving && <Loader2 className="w-4 h-4 animate-spin" />}
                   Guardar Parámetros
                 </Button>
@@ -460,7 +460,7 @@ export default function ConfiguracionPage() {
             </div>
             <div className="flex justify-end gap-3 pt-2 border-t border-gray-100">
               <Button variant="outline" onClick={() => setUserDialog(false)}>Cancelar</Button>
-              <Button onClick={saveUser} disabled={saving} className="bg-green-600 hover:bg-green-700 gap-2">
+              <Button onClick={saveUser} disabled={saving} className="bg-[#FBE600] hover:bg-[#E5D100] text-black font-semibold gap-2">
                 {saving && <Loader2 className="w-4 h-4 animate-spin" />}
                 Guardar Cambios
               </Button>

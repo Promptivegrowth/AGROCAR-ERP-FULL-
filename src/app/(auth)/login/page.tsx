@@ -1,9 +1,10 @@
 'use client'
 
 import { useState } from 'react'
+import Image from 'next/image'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
-import { ChevronDown, ChevronUp, Eye, EyeOff, KeyRound, Loader2, Package } from 'lucide-react'
+import { ChevronDown, ChevronUp, Eye, EyeOff, KeyRound, Loader2 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -118,24 +119,30 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="w-full min-h-screen flex items-center justify-center px-4 py-8 bg-gradient-to-br from-green-50 via-white to-emerald-100">
+    <div className="w-full min-h-screen flex items-center justify-center px-4 py-8 bg-gradient-to-br from-yellow-50 via-white to-yellow-100">
       <div className="w-full max-w-md animate-in fade-in slide-in-from-bottom-4 duration-500">
-        {/* Logo y título con halo verde */}
+        {/* Logo y título con halo amarillo */}
         <div className="flex flex-col items-center mb-8">
           <div className="relative">
-            {/* Halo pulsante detrás del icono */}
-            <div className="absolute inset-0 bg-green-500/30 rounded-3xl blur-2xl animate-pulse" />
-            <div className="relative w-20 h-20 bg-gradient-to-br from-green-500 to-emerald-600 rounded-3xl flex items-center justify-center shadow-xl shadow-green-500/30">
-              <Package className="w-11 h-11 text-white" />
+            {/* Halo pulsante detrás del logo */}
+            <div className="absolute inset-0 bg-yellow-300/40 rounded-3xl blur-2xl animate-pulse" />
+            <div className="relative flex items-center justify-center">
+              <Image
+                src="/logo-agrocar.png"
+                alt="AGROCAR"
+                width={200}
+                height={100}
+                priority
+                className="object-contain"
+              />
             </div>
           </div>
-          <h1 className="text-3xl font-bold text-gray-900 tracking-tight mt-5">AGROCAR ERP</h1>
-          <p className="text-sm text-gray-500 mt-1 text-center">
+          <p className="text-sm text-gray-500 mt-4 text-center">
             Sistema ERP Integral &middot; AGROCAR S.R.L.
           </p>
         </div>
 
-        <Card className="shadow-2xl shadow-green-900/10 border-0 bg-white/95 backdrop-blur">
+        <Card className="shadow-2xl shadow-black/10 border-0 bg-white/95 backdrop-blur">
           <CardHeader className="pb-4">
             <CardTitle className="text-lg text-gray-800">Iniciar Sesión</CardTitle>
             <CardDescription>Ingresa tus credenciales para acceder al sistema</CardDescription>
@@ -163,7 +170,7 @@ export default function LoginPage() {
                   onChange={(e) => setEmail(e.target.value)}
                   required
                   disabled={loading}
-                  className="h-11 border-gray-200 focus:border-green-500 focus:ring-green-500"
+                  className="h-11 border-gray-200 focus:border-[#FBE600] focus:ring-[#FBE600]"
                 />
               </div>
 
@@ -182,7 +189,7 @@ export default function LoginPage() {
                     onChange={(e) => setPassword(e.target.value)}
                     required
                     disabled={loading}
-                    className="h-11 pr-11 border-gray-200 focus:border-green-500 focus:ring-green-500"
+                    className="h-11 pr-11 border-gray-200 focus:border-[#FBE600] focus:ring-[#FBE600]"
                   />
                   <button
                     type="button"
@@ -199,7 +206,7 @@ export default function LoginPage() {
               <Button
                 type="submit"
                 disabled={loading || !email || !password}
-                className="w-full h-11 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white font-semibold mt-2 shadow-md shadow-green-600/20 transition-all"
+                className="w-full h-11 bg-[#FBE600] hover:bg-[#E5D100] text-black font-bold mt-2 shadow-md shadow-yellow-400/30 transition-all"
               >
                 {loading ? (
                   <>
@@ -222,7 +229,7 @@ export default function LoginPage() {
             className="w-full flex items-center justify-between px-4 py-3 text-sm font-medium text-gray-700 hover:bg-gray-50 rounded-lg transition-colors"
           >
             <span className="flex items-center gap-2">
-              <KeyRound className="w-4 h-4 text-green-600" />
+              <KeyRound className="w-4 h-4 text-gray-700" />
               Ver credenciales de prueba
             </span>
             {showCredenciales ? (
@@ -238,7 +245,7 @@ export default function LoginPage() {
                   key={c.email}
                   type="button"
                   onClick={() => usarCredencial(c)}
-                  className="w-full text-left px-3 py-2 rounded-md hover:bg-green-50 transition-colors flex items-center justify-between gap-2"
+                  className="w-full text-left px-3 py-2 rounded-md hover:bg-yellow-50 transition-colors flex items-center justify-between gap-2"
                 >
                   <div className="min-w-0 flex-1">
                     <div className="text-xs font-semibold text-gray-800">{c.rol}</div>

@@ -10,6 +10,7 @@ import {
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { createClient } from '@/lib/supabase/client'
+import { useDebounce } from '@/lib/hooks/use-debounce'
 import { formatDate } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -35,6 +36,7 @@ export default function ZonasPage() {
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
+  const debouncedSearch = useDebounce(search, 300)
   const [dialogOpen, setDialogOpen] = useState(false)
   const [detailOpen, setDetailOpen] = useState(false)
   const [selected, setSelected] = useState<any>(null)
@@ -57,14 +59,14 @@ export default function ZonasPage() {
       .select('id, nombre, descripcion, activo, created_at', { count: 'exact' })
       .order('nombre')
 
-    if (search) query = query.ilike('nombre', `%${search}%`)
+    if (debouncedSearch) query = query.ilike('nombre', `%${debouncedSearch}%`)
 
     const { data, count, error } = await query
     if (error) toast.error('Error al cargar zonas', { description: error.message })
     setZonas(data ?? [])
     setTotal(count ?? 0)
     setLoading(false)
-  }, [search])
+  }, [debouncedSearch])
 
   const loadClientesPorZona = useCallback(async () => {
     const { data } = await supabase
@@ -150,7 +152,7 @@ export default function ZonasPage() {
           <h1 className="text-2xl font-bold text-gray-900">Zonas de Distribución</h1>
           <p className="text-sm text-gray-500 mt-0.5">{total} zonas registradas</p>
         </div>
-        <Button onClick={openCreate} className="bg-green-600 hover:bg-green-700 gap-2 w-full sm:w-auto">
+        <Button onClick={openCreate} className="bg-[#FBE600] hover:bg-[#E5D100] text-black font-semibold gap-2 w-full sm:w-auto">
           <Plus className="w-4 h-4" /> Nueva Zona
         </Button>
       </div>
@@ -297,7 +299,7 @@ export default function ZonasPage() {
 
             <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-3 pt-2 border-t border-gray-100">
               <Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>Cancelar</Button>
-              <Button type="submit" disabled={saving} className="bg-green-600 hover:bg-green-700 gap-2">
+              <Button type="submit" disabled={saving} className="bg-[#FBE600] hover:bg-[#E5D100] text-black font-semibold gap-2">
                 {saving && <Loader2 className="w-4 h-4 animate-spin" />}
                 {editingZona ? 'Guardar Cambios' : 'Crear Zona'}
               </Button>
@@ -350,7 +352,7 @@ export default function ZonasPage() {
 
               <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-3 pt-3 border-t border-gray-100">
                 <Button variant="outline" onClick={() => setDetailOpen(false)}>Cerrar</Button>
-                <Button onClick={() => { setDetailOpen(false); openEdit(selected) }} className="bg-green-600 hover:bg-green-700 gap-2">
+                <Button onClick={() => { setDetailOpen(false); openEdit(selected) }} className="bg-[#FBE600] hover:bg-[#E5D100] text-black font-semibold gap-2">
                   <Edit className="w-4 h-4" /> Editar
                 </Button>
               </div>

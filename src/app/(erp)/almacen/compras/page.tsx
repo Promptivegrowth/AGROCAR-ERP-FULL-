@@ -156,7 +156,7 @@ export default function ComprasPage() {
           <h1 className="text-2xl font-bold text-gray-900">Compras</h1>
           <p className="text-sm text-gray-500 mt-0.5">Registro de órdenes de compra y facturas de proveedores</p>
         </div>
-        <Button onClick={() => setDialogOpen(true)} className="bg-green-600 hover:bg-green-700 gap-2">
+        <Button onClick={() => setDialogOpen(true)} className="bg-[#FBE600] hover:bg-[#E5D100] text-black font-semibold gap-2">
           <Plus className="w-4 h-4" /> Nueva Compra
         </Button>
       </div>
@@ -384,7 +384,7 @@ export default function ComprasPage() {
 
             <div className="flex justify-end gap-3 pt-2 border-t border-gray-100">
               <Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>Cancelar</Button>
-              <Button type="submit" disabled={saving} className="bg-green-600 hover:bg-green-700 gap-2">
+              <Button type="submit" disabled={saving} className="bg-[#FBE600] hover:bg-[#E5D100] text-black font-semibold gap-2">
                 {saving && <Loader2 className="w-4 h-4 animate-spin" />}
                 Registrar Compra
               </Button>

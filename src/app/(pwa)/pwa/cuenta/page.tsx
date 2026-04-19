@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import Image from 'next/image'
 import { User, LogOut, ShoppingCart, DollarSign, MapPin, Package, Loader2, TrendingUp } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
@@ -157,7 +158,7 @@ export default function CuentaPage() {
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
-        <Loader2 className="w-8 h-8 animate-spin text-green-600" />
+        <Loader2 className="w-8 h-8 animate-spin text-gray-600" />
       </div>
     )
   }
@@ -165,15 +166,18 @@ export default function CuentaPage() {
   return (
     <div className="min-h-full">
       {/* Header */}
-      <div className="bg-green-600 text-white px-4 pt-6 pb-8">
+      <div className="bg-black text-white px-4 pt-6 pb-8 border-b-4 border-[#FBE600]">
+        <div className="flex items-center justify-end mb-3">
+          <Image src="/logo-agrocar.png" alt="AGROCAR" width={120} height={32} className="object-contain" />
+        </div>
         <div className="flex items-center gap-4">
-          <div className="w-16 h-16 bg-white/20 rounded-2xl flex items-center justify-center">
-            <User className="w-9 h-9 text-white" />
+          <div className="w-16 h-16 bg-[#FBE600] rounded-2xl flex items-center justify-center">
+            <User className="w-9 h-9 text-black" />
           </div>
           <div>
             <h1 className="text-xl font-bold">{profile?.full_name ?? 'Usuario'}</h1>
-            <div className="text-green-200 text-sm">{rolesLabels[profile?.role ?? ''] ?? profile?.role}</div>
-            {zona && <div className="text-green-300 text-xs mt-0.5">Zona: {zona}</div>}
+            <div className="text-gray-300 text-sm">{rolesLabels[profile?.role ?? ''] ?? profile?.role}</div>
+            {zona && <div className="text-gray-400 text-xs mt-0.5">Zona: {zona}</div>}
           </div>
         </div>
       </div>

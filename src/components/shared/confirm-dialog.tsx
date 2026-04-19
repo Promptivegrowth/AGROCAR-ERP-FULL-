@@ -35,9 +35,9 @@ const variantConfig = {
     buttonClass: 'bg-amber-600 hover:bg-amber-700 text-white',
   },
   default: {
-    iconColor: 'text-green-600',
-    iconBg: 'bg-green-100',
-    buttonClass: 'bg-green-600 hover:bg-green-700 text-white',
+    iconColor: 'text-black',
+    iconBg: 'bg-yellow-100',
+    buttonClass: 'bg-[#FBE600] hover:bg-[#E5D100] text-black font-semibold',
   },
 }
 

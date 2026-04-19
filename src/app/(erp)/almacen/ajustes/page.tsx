@@ -226,7 +226,7 @@ export default function AjustesInventarioPage() {
         {puedeCrearAjuste && (
           <Button
             onClick={() => { resetForm(); setDialogOpen(true) }}
-            className="bg-green-600 hover:bg-green-700 text-white"
+            className="bg-[#FBE600] hover:bg-[#E5D100] text-black font-semibold"
           >
             <Plus className="w-4 h-4" />
             Nuevo Ajuste
@@ -443,7 +443,7 @@ export default function AjustesInventarioPage() {
             <Button
               onClick={enviarAjuste}
               disabled={enviando || !productoId || !cantidad || !motivo}
-              className="bg-green-600 hover:bg-green-700 text-white"
+              className="bg-[#FBE600] hover:bg-[#E5D100] text-black font-semibold"
             >
               {enviando ? (
                 <>

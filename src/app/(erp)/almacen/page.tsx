@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { toast } from 'sonner'
 import { AlertTriangle, Package, TrendingDown, Eye, Loader2, Search } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
+import { useDebounce } from '@/lib/hooks/use-debounce'
 import { formatCurrency, formatDate, formatDatetime } from '@/lib/utils'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -25,6 +26,7 @@ export default function AlmacenPage() {
   const [stocks, setStocks] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
+  const debouncedSearch = useDebounce(search, 300)
 
   // Detalle
   const [detailOpen, setDetailOpen] = useState(false)
@@ -72,9 +74,9 @@ export default function AlmacenPage() {
 
   // Filtrado local por código o nombre
   const stocksFiltrados = stocks.filter((s) => {
-    if (!search) return true
+    if (!debouncedSearch) return true
     const producto = s.productos as any
-    const q = search.toLowerCase()
+    const q = debouncedSearch.toLowerCase()
     return (
       (producto?.codigo ?? '').toLowerCase().includes(q) ||
       (producto?.nombre ?? '').toLowerCase().includes(q)

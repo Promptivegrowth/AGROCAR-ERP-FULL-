@@ -149,8 +149,8 @@ export default function Topbar({ user, onMenuClick }: TopbarProps) {
             onClick={() => { setDropdownOpen(!dropdownOpen); setNotifOpen(false) }}
             className="flex items-center gap-2.5 px-3 py-1.5 rounded-lg hover:bg-gray-100 transition-colors"
           >
-            <div className="w-7 h-7 rounded-full bg-green-600 flex items-center justify-center">
-              <span className="text-white text-xs font-bold">{initials}</span>
+            <div className="w-7 h-7 rounded-full bg-[#FBE600] flex items-center justify-center">
+              <span className="text-black text-xs font-bold">{initials}</span>
             </div>
             <div className="text-left hidden sm:block">
               <p className="text-sm font-medium text-gray-800 leading-none">{user.full_name}</p>

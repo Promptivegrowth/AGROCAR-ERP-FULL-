@@ -1,9 +1,11 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
+import Image from 'next/image'
 import { ShoppingCart, Search, Plus, Minus, Trash2, AlertCircle, CheckCircle, Loader2, Package } from 'lucide-react'
 import { toast } from 'sonner'
 import { createClient } from '@/lib/supabase/client'
+import { useDebounce } from '@/lib/hooks/use-debounce'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
@@ -34,6 +36,7 @@ export default function PedidosPage() {
   // Nuevo pedido
   const [clientes, setClientes] = useState<Cliente[]>([])
   const [clienteSearch, setClienteSearch] = useState('')
+  const debouncedClienteSearch = useDebounce(clienteSearch, 300)
   const [clientesFiltrados, setClientesFiltrados] = useState<Cliente[]>([])
   const [clienteSeleccionado, setClienteSeleccionado] = useState<Cliente | null>(null)
   const [deudaCliente, setDeudaCliente] = useState<number>(0)
@@ -42,6 +45,7 @@ export default function PedidosPage() {
   const [fechaDespacho, setFechaDespacho] = useState('')
   const [productosDisponibles, setProductosDisponibles] = useState<(Producto & { precio: number })[]>([])
   const [productoSearch, setProductoSearch] = useState('')
+  const debouncedProductoSearch = useDebounce(productoSearch, 300)
   const [productosFiltrados, setProductosFiltrados] = useState<(Producto & { precio: number })[]>([])
   const [showProductoDropdown, setShowProductoDropdown] = useState(false)
   const [seleccionados, setSeleccionados] = useState<ProductoSeleccionado[]>([])
@@ -69,34 +73,37 @@ export default function PedidosPage() {
       if (!user) return
       setUserId(user.id)
 
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('role')
-        .eq('id', user.id)
-        .single()
+      // Ejecutar en paralelo: perfil, clientes asignados y productos activos
+      const [
+        { data: profile },
+        { data: clientesData },
+        { data: productosData },
+      ] = await Promise.all([
+        supabase
+          .from('profiles')
+          .select('role')
+          .eq('id', user.id)
+          .single(),
+        supabase
+          .from('clientes')
+          .select('*')
+          .eq('vendedor_id', user.id)
+          .eq('estado', 'activo')
+          .order('razon_social'),
+        supabase
+          .from('productos')
+          .select('id, nombre, codigo, activo')
+          .eq('activo', true)
+          .order('nombre'),
+      ])
 
       if (profile) {
         setUserRole(profile.role)
       }
 
-      // Cargar clientes asignados al vendedor
-      const { data: clientesData } = await supabase
-        .from('clientes')
-        .select('*')
-        .eq('vendedor_id', user.id)
-        .eq('estado', 'activo')
-        .order('razon_social')
-
       if (clientesData) {
         setClientes(clientesData)
       }
-
-      // Cargar productos activos con precio 0 como default (se actualizará al seleccionar cliente)
-      const { data: productosData } = await supabase
-        .from('productos')
-        .select('id, nombre, codigo, activo')
-        .eq('activo', true)
-        .order('nombre')
 
       if (productosData) {
         const mapped = productosData.map((p: { id: string; nombre: string; codigo?: string; activo?: boolean }) => ({
@@ -111,12 +118,12 @@ export default function PedidosPage() {
 
   // Filtrar clientes
   useEffect(() => {
-    if (clienteSearch.length < 2) {
+    if (debouncedClienteSearch.length < 2) {
       setClientesFiltrados([])
       setShowClienteDropdown(false)
       return
     }
-    const q = clienteSearch.toLowerCase()
+    const q = debouncedClienteSearch.toLowerCase()
     const filtrados = clientes.filter(
       (c) =>
         c.razon_social.toLowerCase().includes(q) ||
@@ -124,16 +131,16 @@ export default function PedidosPage() {
     )
     setClientesFiltrados(filtrados.slice(0, 8))
     setShowClienteDropdown(true)
-  }, [clienteSearch, clientes])
+  }, [debouncedClienteSearch, clientes])
 
   // Filtrar productos
   useEffect(() => {
-    if (productoSearch.length < 2) {
+    if (debouncedProductoSearch.length < 2) {
       setProductosFiltrados([])
       setShowProductoDropdown(false)
       return
     }
-    const q = productoSearch.toLowerCase()
+    const q = debouncedProductoSearch.toLowerCase()
     const filtrados = productosDisponibles.filter(
       (p) =>
         p.nombre.toLowerCase().includes(q) ||
@@ -141,7 +148,7 @@ export default function PedidosPage() {
     )
     setProductosFiltrados(filtrados.slice(0, 8))
     setShowProductoDropdown(true)
-  }, [productoSearch, productosDisponibles])
+  }, [debouncedProductoSearch, productosDisponibles])
 
   async function seleccionarCliente(cliente: Cliente) {
     setClienteSeleccionado(cliente)
@@ -149,52 +156,49 @@ export default function PedidosPage() {
     setShowClienteDropdown(false)
     setSeleccionados([])
 
-    // Obtener deuda: sumar total de cobros del cliente
-    const { data: cobros } = await supabase
-      .from('cobros')
-      .select('total')
-      .eq('cliente_id', cliente.id)
+    // Ejecutar en paralelo: cobros, productos activos y (si aplica) items de lista de precio
+    const [
+      { data: cobros },
+      { data: allProductos },
+      itemsResult,
+    ] = await Promise.all([
+      supabase
+        .from('cobros')
+        .select('total')
+        .eq('cliente_id', cliente.id),
+      supabase
+        .from('productos')
+        .select('id, nombre, codigo, activo')
+        .eq('activo', true)
+        .order('nombre'),
+      cliente.lista_precio_id
+        ? supabase
+            .from('lista_precio_items')
+            .select('producto_id, precio')
+            .eq('lista_precio_id', cliente.lista_precio_id)
+            .eq('activo', true)
+        : Promise.resolve({ data: null as any }),
+    ])
 
     const deuda = cobros?.reduce((acc, c) => acc + ((c as any).total ?? 0), 0) ?? 0
     setDeudaCliente(deuda)
 
-    // Cargar productos con precio según lista del cliente
-    if (cliente.lista_precio_id) {
-      const { data: productosData } = await supabase
-        .from('lista_precio_items')
-        .select('producto_id, precio, productos!inner(id, nombre, codigo, activo)')
-        .eq('lista_precio_id', cliente.lista_precio_id)
-        .eq('activo', true)
-
-      if (productosData) {
-        const mapped = productosData
-          .filter((item: { productos?: { activo?: boolean } }) => item.productos?.activo)
-          .map((item: { producto_id: string; precio: number; productos?: { id?: string; nombre?: string; codigo?: string; activo?: boolean } }) => ({
-            id: item.producto_id,
-            nombre: item.productos?.nombre ?? '',
-            codigo: item.productos?.codigo ?? null,
-            activo: item.productos?.activo ?? true,
-            precio: item.precio,
-          }))
-        setProductosDisponibles(mapped as (Producto & { precio: number })[])
-        return
-      }
-    }
-    // Fallback: cargar todos sin precio específico
-    const { data: productosData } = await supabase
-      .from('productos')
-      .select('id, nombre, codigo, activo')
-      .eq('activo', true)
-      .order('nombre')
-
-    if (productosData) {
-      const mapped = productosData.map((p: { id: string; nombre: string; codigo?: string; activo?: boolean }) => ({
-        ...p,
-        precio: 0,
-      }))
-      setProductosDisponibles(mapped as (Producto & { precio: number })[])
+    // Si el cliente tiene lista de precios asignada, mapear precios específicos
+    const precioMap = new Map<string, number>()
+    if (cliente.lista_precio_id && itemsResult?.data) {
+      ;(itemsResult.data as any[]).forEach((item: any) => {
+        precioMap.set(item.producto_id, Number(item.precio ?? 0))
+      })
     }
 
+    const mapped = (allProductos ?? []).map((p: any) => ({
+      id: p.id,
+      nombre: p.nombre,
+      codigo: p.codigo ?? null,
+      activo: p.activo ?? true,
+      precio: precioMap.get(p.id) ?? 0,
+    }))
+    setProductosDisponibles(mapped as (Producto & { precio: number })[])
   }
 
   function agregarProducto(producto: Producto & { precio: number }) {
@@ -347,19 +351,22 @@ export default function PedidosPage() {
   return (
     <div className="min-h-full">
       {/* Header */}
-      <div className="bg-green-600 text-white px-4 pt-6 pb-4">
-        <div className="flex items-center gap-3 mb-4">
-          <ShoppingCart className="w-6 h-6" />
-          <h1 className="text-xl font-bold">Pedidos</h1>
+      <div className="bg-black text-white px-4 pt-6 pb-4 border-b-4 border-[#FBE600]">
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-3">
+            <ShoppingCart className="w-6 h-6" />
+            <h1 className="text-xl font-bold">Pedidos</h1>
+          </div>
+          <Image src="/logo-agrocar.png" alt="AGROCAR" width={120} height={32} className="object-contain" />
         </div>
         {/* Tabs */}
-        <div className="flex bg-green-700/50 rounded-xl p-1 gap-1">
+        <div className="flex bg-white/10 rounded-xl p-1 gap-1">
           {(['nuevo', 'mis-pedidos'] as Tab[]).map((t) => (
             <button
               key={t}
               onClick={() => setTab(t)}
               className={`flex-1 py-2 text-sm font-medium rounded-lg transition-all ${
-                tab === t ? 'bg-white text-green-700' : 'text-green-100 hover:text-white'
+                tab === t ? 'bg-[#FBE600] text-black' : 'text-gray-300 hover:text-white'
               }`}
             >
               {t === 'nuevo' ? 'Nuevo Pedido' : 'Mis Pedidos'}
@@ -518,7 +525,7 @@ export default function PedidosPage() {
                             <span className="font-bold text-gray-900 w-8 text-center">{cantidad}</span>
                             <button
                               onClick={() => cambiarCantidad(producto.id, 1)}
-                              className="w-8 h-8 rounded-full bg-green-600 hover:bg-green-700 flex items-center justify-center text-white transition-colors"
+                              className="w-8 h-8 rounded-full bg-[#FBE600] hover:bg-[#E5D100] flex items-center justify-center text-black transition-colors"
                             >
                               <Plus className="w-3.5 h-3.5" />
                             </button>
@@ -599,7 +606,7 @@ export default function PedidosPage() {
                 totalFinal < MINIMO_PEDIDO ||
                 loadingEnvio
               }
-              className="w-full h-14 bg-green-600 hover:bg-green-700 text-white font-bold text-base rounded-xl shadow-md"
+              className="w-full h-14 bg-[#FBE600] hover:bg-[#E5D100] text-black font-bold text-base rounded-xl shadow-md"
             >
               {loadingEnvio ? (
                 <>
@@ -620,7 +627,7 @@ export default function PedidosPage() {
           <div className="space-y-3">
             {loadingPedidos ? (
               <div className="flex justify-center py-12">
-                <Loader2 className="w-6 h-6 animate-spin text-green-600" />
+                <Loader2 className="w-6 h-6 animate-spin text-gray-600" />
               </div>
             ) : misPedidos.length === 0 ? (
               <div className="text-center py-12">

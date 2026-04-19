@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import Image from 'next/image'
 import { MapPin, Loader2, CheckCircle, AlertCircle, Navigation, Clock } from 'lucide-react'
 import { toast } from 'sonner'
 import { createClient } from '@/lib/supabase/client'
@@ -37,16 +38,34 @@ export default function CheckinPage() {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) return
       setUserId(user.id)
+      setLoadingCheckins(true)
 
-      const { data: clientesData } = await supabase
-        .from('clientes')
-        .select('id, razon_social, codigo')
-        .eq('vendedor_id', user.id)
-        .eq('estado', 'activo')
-        .order('razon_social')
+      const hoy = new Date().toISOString().split('T')[0]
+
+      // Paralelizar: clientes asignados + check-ins del día
+      const [{ data: clientesData }, { data: checkinsData }] = await Promise.all([
+        supabase
+          .from('clientes')
+          .select('id, razon_social, codigo')
+          .eq('vendedor_id', user.id)
+          .eq('estado', 'activo')
+          .order('razon_social'),
+        supabase
+          .from('gps_checkins')
+          .select('*, clientes(razon_social)')
+          .eq('usuario_id', user.id)
+          .gte('created_at', hoy)
+          .order('created_at', { ascending: false }),
+      ])
 
       setClientes((clientesData ?? []) as Cliente[])
-      await cargarCheckinsDia(user.id)
+
+      const mapped = (checkinsData ?? [] as any[]).map((c: any) => ({
+        ...c,
+        cliente_nombre: c.clientes?.razon_social ?? '',
+      }))
+      setCheckinsDia(mapped)
+      setLoadingCheckins(false)
     }
     init()
   }, [])
@@ -170,12 +189,15 @@ export default function CheckinPage() {
   return (
     <div className="min-h-full">
       {/* Header */}
-      <div className="bg-green-600 text-white px-4 pt-6 pb-4">
-        <div className="flex items-center gap-3">
-          <MapPin className="w-6 h-6" />
-          <h1 className="text-xl font-bold">Check-in GPS</h1>
+      <div className="bg-black text-white px-4 pt-6 pb-4 border-b-4 border-[#FBE600]">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <MapPin className="w-6 h-6" />
+            <h1 className="text-xl font-bold">Check-in GPS</h1>
+          </div>
+          <Image src="/logo-agrocar.png" alt="AGROCAR" width={120} height={32} className="object-contain" />
         </div>
-        <p className="text-green-200 text-sm mt-1">Registra tus visitas con ubicación</p>
+        <p className="text-gray-300 text-sm mt-1">Registra tus visitas con ubicación</p>
       </div>
 
       <div className="p-4 space-y-4">
@@ -199,7 +221,7 @@ export default function CheckinPage() {
             <select
               value={clienteSeleccionado}
               onChange={(e) => setClienteSeleccionado(e.target.value)}
-              className="w-full h-12 px-3 border border-gray-200 rounded-xl text-sm bg-white focus:outline-none focus:border-green-500"
+              className="w-full h-12 px-3 border border-gray-200 rounded-xl text-sm bg-white focus:outline-none focus:border-[#FBE600]"
             >
               <option value="">Selecciona un cliente...</option>
               {clientes.map((c) => (
@@ -222,7 +244,7 @@ export default function CheckinPage() {
                   onClick={() => setTipoVisita(tipo)}
                   className={`py-3 px-2 rounded-xl border-2 text-center text-sm font-medium transition-all ${
                     tipoVisita === tipo
-                      ? 'border-green-500 bg-green-50 text-green-700'
+                      ? 'border-[#FBE600] bg-yellow-50 text-black'
                       : 'border-gray-200 text-gray-600 hover:border-gray-300'
                   }`}
                 >
@@ -243,7 +265,7 @@ export default function CheckinPage() {
               onClick={obtenerGPS}
               disabled={obteniendoGPS}
               variant="outline"
-              className="w-full h-12 border-green-300 text-green-700 hover:bg-green-50"
+              className="w-full h-12 border-gray-300 text-gray-800 hover:bg-yellow-50 hover:border-[#FBE600]"
             >
               {obteniendoGPS ? (
                 <>
@@ -297,7 +319,7 @@ export default function CheckinPage() {
         <Button
           onClick={registrarCheckin}
           disabled={!clienteSeleccionado || !coordenadas || enviando}
-          className="w-full h-16 bg-green-600 hover:bg-green-700 text-white font-bold text-lg rounded-2xl shadow-md"
+          className="w-full h-16 bg-[#FBE600] hover:bg-[#E5D100] text-black font-bold text-lg rounded-2xl shadow-md"
         >
           {enviando ? (
             <>
@@ -317,7 +339,7 @@ export default function CheckinPage() {
           <h3 className="font-semibold text-gray-800 mb-3">Check-ins de Hoy</h3>
           {loadingCheckins ? (
             <div className="flex justify-center py-6">
-              <Loader2 className="w-5 h-5 animate-spin text-green-600" />
+              <Loader2 className="w-5 h-5 animate-spin text-gray-600" />
             </div>
           ) : checkinsDia.length === 0 ? (
             <div className="text-center py-8 text-gray-400 bg-gray-50 rounded-xl">

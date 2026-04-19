@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
+import Image from 'next/image'
 import {
   DollarSign, Search, Camera, Loader2, CheckCircle, AlertCircle, X
 } from 'lucide-react'
@@ -205,18 +206,21 @@ export default function CobrosPage() {
   return (
     <div className="min-h-full">
       {/* Header */}
-      <div className="bg-green-600 text-white px-4 pt-6 pb-4">
-        <div className="flex items-center gap-3 mb-4">
-          <DollarSign className="w-6 h-6" />
-          <h1 className="text-xl font-bold">Cobros</h1>
+      <div className="bg-black text-white px-4 pt-6 pb-4 border-b-4 border-[#FBE600]">
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-3">
+            <DollarSign className="w-6 h-6" />
+            <h1 className="text-xl font-bold">Cobros</h1>
+          </div>
+          <Image src="/logo-agrocar.png" alt="AGROCAR" width={120} height={32} className="object-contain" />
         </div>
-        <div className="flex bg-green-700/50 rounded-xl p-1 gap-1">
+        <div className="flex bg-white/10 rounded-xl p-1 gap-1">
           {(['registrar', 'del-dia'] as Tab[]).map((t) => (
             <button
               key={t}
               onClick={() => setTab(t)}
               className={`flex-1 py-2 text-sm font-medium rounded-lg transition-all ${
-                tab === t ? 'bg-white text-green-700' : 'text-green-100 hover:text-white'
+                tab === t ? 'bg-[#FBE600] text-black' : 'text-gray-300 hover:text-white'
               }`}
             >
               {t === 'registrar' ? 'Registrar Cobro' : 'Cobros del Día'}
@@ -336,7 +340,7 @@ export default function CobrosPage() {
                     </button>
                   </div>
                 ) : (
-                  <label className="flex flex-col items-center justify-center h-32 border-2 border-dashed border-gray-300 rounded-xl cursor-pointer hover:border-green-400 hover:bg-green-50 transition-colors">
+                  <label className="flex flex-col items-center justify-center h-32 border-2 border-dashed border-gray-300 rounded-xl cursor-pointer hover:border-[#FBE600] hover:bg-yellow-50 transition-colors">
                     <Camera className="w-8 h-8 text-gray-400 mb-2" />
                     <span className="text-sm text-gray-500">Tomar foto o seleccionar</span>
                     <input
@@ -360,7 +364,7 @@ export default function CobrosPage() {
                   value={notas}
                   onChange={(e) => setNotas(e.target.value)}
                   rows={3}
-                  className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm resize-none focus:outline-none focus:border-green-500"
+                  className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm resize-none focus:outline-none focus:border-[#FBE600]"
                 />
               </CardContent>
             </Card>
@@ -369,7 +373,7 @@ export default function CobrosPage() {
             <Button
               onClick={registrarCobro}
               disabled={!clienteSeleccionado || totalCobro <= 0 || loadingEnvio}
-              className="w-full h-14 bg-green-600 hover:bg-green-700 text-white font-bold text-base rounded-xl shadow-md"
+              className="w-full h-14 bg-[#FBE600] hover:bg-[#E5D100] text-black font-bold text-base rounded-xl shadow-md"
             >
               {loadingEnvio ? (
                 <>
@@ -390,9 +394,9 @@ export default function CobrosPage() {
           <div className="space-y-3">
             {/* Resumen del día */}
             {cobrosDia.length > 0 && (
-              <div className="bg-green-600 rounded-2xl p-4 text-white">
+              <div className="bg-black rounded-2xl p-4 text-white border-l-4 border-[#FBE600]">
                 <div className="text-sm opacity-80">Total cobrado hoy</div>
-                <div className="text-3xl font-bold mt-1">{formatCurrency(totalDia)}</div>
+                <div className="text-3xl font-bold mt-1 text-[#FBE600]">{formatCurrency(totalDia)}</div>
                 <div className="text-sm opacity-70 mt-1">{cobrosDia.length} cobros registrados</div>
               </div>
             )}

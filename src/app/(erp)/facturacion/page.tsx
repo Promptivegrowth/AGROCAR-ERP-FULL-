@@ -207,7 +207,7 @@ export default function FacturacionPage() {
                             <Button
                               size="sm"
                               onClick={() => handleFacturar(pedido)}
-                              className="h-7 bg-green-600 hover:bg-green-700 text-xs gap-1"
+                              className="h-7 bg-[#FBE600] hover:bg-[#E5D100] text-black font-semibold text-xs gap-1"
                             >
                               <FileText className="w-3.5 h-3.5" /> Facturar
                             </Button>
@@ -334,7 +334,7 @@ export default function FacturacionPage() {
                 <Button
                   onClick={confirmarFacturacion}
                   disabled={saving}
-                  className="bg-green-600 hover:bg-green-700 gap-2"
+                  className="bg-[#FBE600] hover:bg-[#E5D100] text-black font-semibold gap-2"
                 >
                   {saving && <Loader2 className="w-4 h-4 animate-spin" />}
                   Confirmar y Emitir

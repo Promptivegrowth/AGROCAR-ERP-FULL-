@@ -10,6 +10,7 @@ import {
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { createClient } from '@/lib/supabase/client'
+import { useDebounce } from '@/lib/hooks/use-debounce'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
@@ -40,6 +41,7 @@ export default function ProveedoresPage() {
   const [page, setPage] = useState(0)
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
+  const debouncedSearch = useDebounce(search, 300)
   const [dialogOpen, setDialogOpen] = useState(false)
   const [detailOpen, setDetailOpen] = useState(false)
   const [selected, setSelected] = useState<any>(null)
@@ -59,14 +61,14 @@ export default function ProveedoresPage() {
       .order('razon_social')
       .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1)
 
-    if (search) query = query.ilike('razon_social', `%${search}%`)
+    if (debouncedSearch) query = query.ilike('razon_social', `%${debouncedSearch}%`)
 
     const { data, count, error } = await query
     if (error) toast.error('Error al cargar proveedores', { description: error.message })
     setProveedores(data ?? [])
     setTotal(count ?? 0)
     setLoading(false)
-  }, [page, search])
+  }, [page, debouncedSearch])
 
   useEffect(() => { loadProveedores() }, [loadProveedores])
 
@@ -147,7 +149,7 @@ export default function ProveedoresPage() {
           <h1 className="text-2xl font-bold text-gray-900">Proveedores</h1>
           <p className="text-sm text-gray-500 mt-0.5">{total} proveedores registrados</p>
         </div>
-        <Button onClick={openCreate} className="bg-green-600 hover:bg-green-700 gap-2 w-full sm:w-auto">
+        <Button onClick={openCreate} className="bg-[#FBE600] hover:bg-[#E5D100] text-black font-semibold gap-2 w-full sm:w-auto">
           <Plus className="w-4 h-4" /> Nuevo Proveedor
         </Button>
       </div>
@@ -317,7 +319,7 @@ export default function ProveedoresPage() {
 
             <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-3 pt-2 border-t border-gray-100">
               <Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>Cancelar</Button>
-              <Button type="submit" disabled={saving} className="bg-green-600 hover:bg-green-700 gap-2">
+              <Button type="submit" disabled={saving} className="bg-[#FBE600] hover:bg-[#E5D100] text-black font-semibold gap-2">
                 {saving && <Loader2 className="w-4 h-4 animate-spin" />}
                 {editingProveedor ? 'Guardar Cambios' : 'Crear Proveedor'}
               </Button>
@@ -388,7 +390,7 @@ export default function ProveedoresPage() {
 
               <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-3 pt-3 border-t border-gray-100">
                 <Button variant="outline" onClick={() => setDetailOpen(false)}>Cerrar</Button>
-                <Button onClick={() => { setDetailOpen(false); openEdit(selected) }} className="bg-green-600 hover:bg-green-700 gap-2">
+                <Button onClick={() => { setDetailOpen(false); openEdit(selected) }} className="bg-[#FBE600] hover:bg-[#E5D100] text-black font-semibold gap-2">
                   <Edit className="w-4 h-4" /> Editar
                 </Button>
               </div>

@@ -186,7 +186,7 @@ export default function ReportesPage() {
                 </SelectContent>
               </Select>
             </div>
-            <Button onClick={loadReportes} disabled={loading} className="bg-green-600 hover:bg-green-700 gap-2">
+            <Button onClick={loadReportes} disabled={loading} className="bg-[#FBE600] hover:bg-[#E5D100] text-black font-semibold gap-2">
               {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Filter className="w-4 h-4" />}
               Aplicar Filtros
             </Button>

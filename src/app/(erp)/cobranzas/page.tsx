@@ -188,12 +188,12 @@ export default function CobranzasPage() {
         </div>
         <div className="flex gap-2">
           {!caja ? (
-            <Button onClick={abrirCaja} disabled={saving} className="bg-green-600 hover:bg-green-700 gap-2">
+            <Button onClick={abrirCaja} disabled={saving} className="bg-[#FBE600] hover:bg-[#E5D100] text-black font-semibold gap-2">
               <Unlock className="w-4 h-4" /> Abrir Caja
             </Button>
           ) : cajaAbierta ? (
             <>
-              <Button onClick={() => setDialogOpen(true)} className="bg-green-600 hover:bg-green-700 gap-2">
+              <Button onClick={() => setDialogOpen(true)} className="bg-[#FBE600] hover:bg-[#E5D100] text-black font-semibold gap-2">
                 <Plus className="w-4 h-4" /> Registrar Cobro
               </Button>
               <Button onClick={cerrarCaja} disabled={saving} variant="outline" className="gap-2">
@@ -415,7 +415,7 @@ export default function CobranzasPage() {
               <Button
                 onClick={registrarCobro}
                 disabled={saving || !form.cliente_id || !form.monto}
-                className="bg-green-600 hover:bg-green-700 gap-2"
+                className="bg-[#FBE600] hover:bg-[#E5D100] text-black font-semibold gap-2"
               >
                 {saving && <Loader2 className="w-4 h-4 animate-spin" />}
                 Registrar Cobro

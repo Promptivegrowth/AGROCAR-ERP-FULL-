@@ -1,5 +1,6 @@
 'use client'
 
+import Image from 'next/image'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useState } from 'react'
@@ -16,7 +17,6 @@ import {
   Settings,
   ChevronDown,
   ChevronRight,
-  Leaf,
   Users,
   Package,
   Building2,
@@ -26,6 +26,7 @@ import {
   ShoppingCart,
   ClipboardList,
   RotateCcw,
+  UserPlus,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -53,6 +54,12 @@ const NAV_ITEMS: NavItem[] = [
     icon: Database,
     children: [
       { label: 'Clientes', href: '/maestros/clientes', icon: Users },
+      {
+        label: 'Solicitudes',
+        href: '/solicitudes-cliente',
+        icon: UserPlus,
+        roles: ['gerente', 'administrador'],
+      },
       { label: 'Productos', href: '/maestros/productos', icon: Package },
       { label: 'Familias', href: '/maestros/familias', icon: Tags },
       { label: 'Proveedores', href: '/maestros/proveedores', icon: Building2 },
@@ -140,13 +147,14 @@ export default function Sidebar({ userRole, onNavigate }: SidebarProps) {
     <aside className="w-[260px] h-dvh bg-white border-r border-gray-200 flex flex-col shadow-sm flex-shrink-0">
       {/* Logo */}
       <div className="flex items-center gap-3 px-5 py-5 border-b border-gray-100">
-        <div className="flex items-center justify-center w-9 h-9 bg-green-600 rounded-lg shadow">
-          <Leaf className="w-5 h-5 text-white" />
-        </div>
-        <div>
-          <p className="text-sm font-bold text-gray-900 leading-none">AGROCAR ERP</p>
-          <p className="text-[10px] text-gray-400 mt-0.5">AGROCAR SRL</p>
-        </div>
+        <Image
+          src="/logo-agrocar.png"
+          alt="AGROCAR"
+          width={140}
+          height={40}
+          priority
+          className="object-contain"
+        />
       </div>
 
       {/* Navigation */}
@@ -167,7 +175,7 @@ export default function Sidebar({ userRole, onNavigate }: SidebarProps) {
                   className={cn(
                     'w-full flex items-center justify-between px-3 py-2 rounded-lg text-sm font-medium transition-colors group',
                     hasActiveChild
-                      ? 'bg-green-50 text-green-700'
+                      ? 'bg-yellow-50 text-black'
                       : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
                   )}
                 >
@@ -175,7 +183,7 @@ export default function Sidebar({ userRole, onNavigate }: SidebarProps) {
                     <item.icon
                       className={cn(
                         'w-4 h-4',
-                        hasActiveChild ? 'text-green-600' : 'text-gray-400 group-hover:text-gray-600'
+                        hasActiveChild ? 'text-black' : 'text-gray-400 group-hover:text-gray-600'
                       )}
                     />
                     {item.label}
@@ -200,11 +208,11 @@ export default function Sidebar({ userRole, onNavigate }: SidebarProps) {
                           className={cn(
                             'flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm transition-colors',
                             active
-                              ? 'bg-green-600 text-white font-medium shadow-sm'
+                              ? 'bg-[#FBE600] text-black font-semibold shadow-sm'
                               : 'text-gray-500 hover:bg-gray-50 hover:text-gray-800'
                           )}
                         >
-                          <child.icon className={cn('w-3.5 h-3.5', active ? 'text-white' : 'text-gray-400')} />
+                          <child.icon className={cn('w-3.5 h-3.5', active ? 'text-black' : 'text-gray-400')} />
                           {child.label}
                         </Link>
                       )
@@ -224,14 +232,14 @@ export default function Sidebar({ userRole, onNavigate }: SidebarProps) {
               className={cn(
                 'flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors group',
                 active
-                  ? 'bg-green-600 text-white shadow-sm'
+                  ? 'bg-[#FBE600] text-black shadow-sm'
                   : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
               )}
             >
               <item.icon
                 className={cn(
                   'w-4 h-4',
-                  active ? 'text-white' : 'text-gray-400 group-hover:text-gray-600'
+                  active ? 'text-black' : 'text-gray-400 group-hover:text-gray-600'
                 )}
               />
               {item.label}

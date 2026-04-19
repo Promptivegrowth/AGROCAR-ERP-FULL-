@@ -29,20 +29,20 @@ export default function BottomNav() {
               className={cn(
                 'flex flex-col items-center justify-center gap-0.5 px-3 py-1.5 rounded-xl transition-all min-w-[56px]',
                 isActive
-                  ? 'bg-green-50 text-green-700'
+                  ? 'bg-[#FBE600] text-black shadow-sm'
                   : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'
               )}
             >
               <Icon
                 className={cn(
                   'w-5 h-5 transition-colors',
-                  isActive ? 'text-green-600' : 'text-gray-400'
+                  isActive ? 'text-black' : 'text-gray-400'
                 )}
               />
               <span
                 className={cn(
                   'text-[10px] font-medium leading-none transition-colors',
-                  isActive ? 'text-green-700' : 'text-gray-500'
+                  isActive ? 'text-black' : 'text-gray-500'
                 )}
               >
                 {label}
