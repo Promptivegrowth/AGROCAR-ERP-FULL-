@@ -11,6 +11,8 @@ import {
   Truck,
   FileText,
   DollarSign,
+  Wallet,
+  Landmark,
   MapPin,
   BarChart3,
   BookOpen,
@@ -88,9 +90,16 @@ const NAV_ITEMS: NavItem[] = [
     roles: ['gerente', 'administrador', 'facturador'],
   },
   {
+    label: 'Caja',
+    href: '/caja',
+    icon: Wallet,
+    roles: ['gerente', 'administrador', 'contador'],
+  },
+  {
     label: 'Cobranzas',
     href: '/cobranzas',
-    icon: DollarSign,
+    icon: Landmark,
+    roles: ['gerente', 'administrador', 'contador'],
   },
   {
     label: 'GPS',

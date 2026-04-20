@@ -6,7 +6,7 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import {
   Plus, Search, Edit, Eye, Loader2, ChevronLeft, ChevronRight,
-  Package, ToggleLeft, ToggleRight, Tag, Hash,
+  Package, ToggleLeft, ToggleRight, Tag, Hash, DollarSign,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { createClient } from '@/lib/supabase/client'
@@ -58,18 +58,24 @@ export default function ProductosPage() {
   const [activo, setActivo] = useState(true)
   const [familiaId, setFamiliaId] = useState<string>('')
   const [unidadMedidaId, setUnidadMedidaId] = useState<string>('')
+  const [precioA, setPrecioA] = useState<string>('')
+  const [precioB, setPrecioB] = useState<string>('')
+  const [precioC, setPrecioC] = useState<string>('')
+  const [listasPrecio, setListasPrecio] = useState<any[]>([])
 
   const { register, handleSubmit, reset, formState: { errors } } = useForm<ProductoFormData>({
     resolver: zodResolver(productoSchema) as any,
   })
 
   const loadMeta = useCallback(async () => {
-    const [{ data: f }, { data: u }] = await Promise.all([
+    const [{ data: f }, { data: u }, { data: lp }] = await Promise.all([
       supabase.from('familias').select('id, nombre').eq('activo', true).order('nombre'),
       supabase.from('unidades_medida').select('id, nombre, simbolo').eq('activo', true),
+      supabase.from('listas_precio').select('id, nombre').eq('activo', true),
     ])
     setFamilias(f ?? [])
     setUnidades(u ?? [])
+    setListasPrecio(lp ?? [])
   }, [])
 
   const loadProductos = useCallback(async () => {
@@ -107,11 +113,14 @@ export default function ProductosPage() {
     setActivo(true)
     setFamiliaId('')
     setUnidadMedidaId('')
+    setPrecioA('')
+    setPrecioB('')
+    setPrecioC('')
     reset({ codigo: '', nombre: '', descripcion: '', familia_id: '', unidad_medida_id: '', tasa_percepcion: 0 })
     setDialogOpen(true)
   }
 
-  const openEdit = (producto: any) => {
+  const openEdit = async (producto: any) => {
     setEditingProducto(producto)
     setTieneLote(!!producto.tiene_lote)
     setTieneVencimiento(!!producto.tiene_vencimiento)
@@ -126,6 +135,22 @@ export default function ProductosPage() {
       familia_id: producto.familia_id ?? '',
       unidad_medida_id: producto.unidad_medida_id ?? '',
       tasa_percepcion: producto.tasa_percepcion ?? 0,
+    })
+    // Cargar precios actuales
+    setPrecioA('')
+    setPrecioB('')
+    setPrecioC('')
+    const { data: precios } = await supabase
+      .from('lista_precio_items')
+      .select('precio, listas_precio(nombre)')
+      .eq('producto_id', producto.id)
+      .eq('activo', true)
+    ;(precios ?? []).forEach((pi: any) => {
+      const nombre = pi.listas_precio?.nombre
+      const val = pi.precio != null ? String(pi.precio) : ''
+      if (nombre === 'A') setPrecioA(val)
+      if (nombre === 'B') setPrecioB(val)
+      if (nombre === 'C') setPrecioC(val)
     })
     setDialogOpen(true)
   }
@@ -149,17 +174,55 @@ export default function ProductosPage() {
         updated_at: new Date().toISOString(),
       }
 
+      let productoId: string | null = null
       if (editingProducto) {
         const { error } = await (supabase.from('productos') as any)
           .update(payload)
           .eq('id', editingProducto.id)
         if (error) throw error
-        toast.success('Producto actualizado', { description: `${data.nombre} se guardó correctamente.` })
+        productoId = editingProducto.id
       } else {
-        const { error } = await (supabase.from('productos') as any).insert(payload)
+        const { data: inserted, error } = await (supabase.from('productos') as any)
+          .insert(payload)
+          .select('id')
+          .single()
         if (error) throw error
-        toast.success('Producto creado', { description: `${data.nombre} se registró correctamente.` })
+        productoId = inserted?.id ?? null
       }
+
+      // Upsert precios por lista (solo los que tienen valor > 0)
+      let listasConfiguradas = 0
+      if (productoId && listasPrecio.length > 0) {
+        const parseNum = (v: string) => {
+          const n = parseFloat(v)
+          return Number.isFinite(n) && n > 0 ? n : null
+        }
+        const precios: Record<string, number | null> = {
+          A: parseNum(precioA),
+          B: parseNum(precioB),
+          C: parseNum(precioC),
+        }
+        const items = listasPrecio
+          .filter((lp: any) => precios[lp.nombre] != null)
+          .map((lp: any) => ({
+            lista_precio_id: lp.id,
+            producto_id: productoId,
+            precio: precios[lp.nombre],
+            activo: true,
+          }))
+        if (items.length > 0) {
+          const { error: priceError } = await (supabase.from('lista_precio_items') as any)
+            .upsert(items, { onConflict: 'lista_precio_id,producto_id' })
+          if (priceError) throw priceError
+          listasConfiguradas = items.length
+        }
+      }
+
+      const base = editingProducto ? 'Producto actualizado' : 'Producto creado'
+      const desc = listasConfiguradas > 0
+        ? `${data.nombre} guardado. ${listasConfiguradas} lista${listasConfiguradas !== 1 ? 's' : ''} de precio configurada${listasConfiguradas !== 1 ? 's' : ''}.`
+        : `${data.nombre} se guardó correctamente.`
+      toast.success(base, { description: desc })
 
       setDialogOpen(false)
       loadProductos()
@@ -395,6 +458,52 @@ export default function ProductosPage() {
                     ))}
                   </SelectContent>
                 </Select>
+              </div>
+            </div>
+
+            <div className="space-y-3 pt-2 border-t border-gray-100">
+              <div className="flex items-center gap-2">
+                <DollarSign className="w-4 h-4 text-gray-500" />
+                <Label className="font-semibold">Precios por Lista</Label>
+              </div>
+              <p className="text-xs text-gray-500 -mt-1">Ingresa los precios (S/) para cada lista. Dejar vacío si no aplica.</p>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div>
+                  <Label className="text-xs">Lista A</Label>
+                  <Input
+                    type="number"
+                    min={0}
+                    step="0.01"
+                    placeholder="0.00"
+                    className="mt-1"
+                    value={precioA}
+                    onChange={(e) => setPrecioA(e.target.value)}
+                  />
+                </div>
+                <div>
+                  <Label className="text-xs">Lista B</Label>
+                  <Input
+                    type="number"
+                    min={0}
+                    step="0.01"
+                    placeholder="0.00"
+                    className="mt-1"
+                    value={precioB}
+                    onChange={(e) => setPrecioB(e.target.value)}
+                  />
+                </div>
+                <div>
+                  <Label className="text-xs">Lista C</Label>
+                  <Input
+                    type="number"
+                    min={0}
+                    step="0.01"
+                    placeholder="0.00"
+                    className="mt-1"
+                    value={precioC}
+                    onChange={(e) => setPrecioC(e.target.value)}
+                  />
+                </div>
               </div>
             </div>
 

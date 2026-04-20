@@ -3,13 +3,15 @@
 import { useEffect, useState, useCallback } from 'react'
 import Link from 'next/link'
 import { toast } from 'sonner'
-import { AlertTriangle, Package, TrendingDown, Eye, Loader2, Search } from 'lucide-react'
+import { AlertTriangle, Package, TrendingDown, TrendingUp, Eye, Loader2, Search, History, Sliders } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { useDebounce } from '@/lib/hooks/use-debounce'
 import { formatCurrency, formatDate, formatDatetime } from '@/lib/utils'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Textarea } from '@/components/ui/textarea'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 
@@ -33,6 +35,21 @@ export default function AlmacenPage() {
   const [selected, setSelected] = useState<any>(null)
   const [movimientos, setMovimientos] = useState<any[]>([])
   const [loadingMovs, setLoadingMovs] = useState(false)
+
+  // Ajuste stock
+  const [adjustOpen, setAdjustOpen] = useState(false)
+  const [adjustTarget, setAdjustTarget] = useState<any>(null)
+  const [adjustTipo, setAdjustTipo] = useState<'entrada' | 'salida'>('entrada')
+  const [adjustCantidad, setAdjustCantidad] = useState<string>('')
+  const [adjustNotas, setAdjustNotas] = useState<string>('')
+  const [adjustPermitirNeg, setAdjustPermitirNeg] = useState(false)
+  const [adjustSaving, setAdjustSaving] = useState(false)
+
+  // Movimientos completos
+  const [movsOpen, setMovsOpen] = useState(false)
+  const [movsTarget, setMovsTarget] = useState<any>(null)
+  const [movsData, setMovsData] = useState<any[]>([])
+  const [movsLoading, setMovsLoading] = useState(false)
 
   const loadInventario = useCallback(async () => {
     setLoading(true)
@@ -70,6 +87,85 @@ export default function AlmacenPage() {
     }
     setMovimientos(data ?? [])
     setLoadingMovs(false)
+  }
+
+  const openAdjust = (s: any) => {
+    setAdjustTarget(s)
+    setAdjustTipo('entrada')
+    setAdjustCantidad('')
+    setAdjustNotas('')
+    setAdjustPermitirNeg(false)
+    setAdjustOpen(true)
+  }
+
+  const submitAdjust = async () => {
+    if (!adjustTarget) return
+    const cantidadNum = parseFloat(adjustCantidad)
+    if (!Number.isFinite(cantidadNum) || cantidadNum <= 0) {
+      toast.error('Cantidad inválida', { description: 'Ingresa un número positivo mayor a 0.' })
+      return
+    }
+    const stockActual = Number(adjustTarget.cantidad) ?? 0
+    const signo = adjustTipo === 'entrada' ? 1 : -1
+    const resultante = stockActual + signo * cantidadNum
+    if (resultante < 0 && !adjustPermitirNeg) {
+      toast.error('Stock insuficiente', {
+        description: `La salida dejaría el stock en ${resultante}. Marca "Permitir negativo" para continuar.`,
+      })
+      return
+    }
+    setAdjustSaving(true)
+    try {
+      const { data: userData } = await supabase.auth.getUser()
+      const userId = userData?.user?.id ?? null
+      const cantidadSigned = signo * cantidadNum
+
+      const { error: movError } = await (supabase.from('movimientos_stock') as any).insert({
+        tipo: 'ajuste',
+        producto_id: adjustTarget.producto_id,
+        cantidad: cantidadSigned,
+        notas: adjustNotas || null,
+        created_by: userId,
+      })
+      if (movError) throw movError
+
+      const { error: stockError } = await (supabase.from('stock') as any)
+        .update({ cantidad: resultante, updated_at: new Date().toISOString() })
+        .eq('producto_id', adjustTarget.producto_id)
+      if (stockError) throw stockError
+
+      toast.success('Ajuste registrado', {
+        description: `${adjustTipo === 'entrada' ? 'Entrada' : 'Salida'} de ${cantidadNum}. Stock: ${stockActual} → ${resultante}.`,
+      })
+      setAdjustOpen(false)
+      loadInventario()
+      // Si el detalle está abierto del mismo producto, recargar movimientos
+      if (detailOpen && selected?.producto_id === adjustTarget.producto_id) {
+        openDetail({ ...adjustTarget, cantidad: resultante })
+      }
+    } catch (err: any) {
+      toast.error('No se pudo ajustar', { description: err?.message ?? 'Intenta nuevamente.' })
+    } finally {
+      setAdjustSaving(false)
+    }
+  }
+
+  const openMovs = async (s: any) => {
+    setMovsTarget(s)
+    setMovsOpen(true)
+    setMovsData([])
+    setMovsLoading(true)
+    const { data, error } = await supabase
+      .from('movimientos_stock')
+      .select('id, tipo, cantidad, costo_unitario, notas, referencia_tipo, created_at')
+      .eq('producto_id', s.producto_id)
+      .order('created_at', { ascending: false })
+      .limit(20)
+    if (error) {
+      toast.error('No se pudieron cargar los movimientos', { description: error.message })
+    }
+    setMovsData(data ?? [])
+    setMovsLoading(false)
   }
 
   // Filtrado local por código o nombre
@@ -242,13 +338,21 @@ export default function AlmacenPage() {
                           ? <Badge className="text-xs bg-orange-100 text-orange-700 border-orange-200 shrink-0">Stock Bajo</Badge>
                           : <Badge className="text-xs bg-green-100 text-green-700 border-green-200 shrink-0">OK</Badge>}
                       </div>
-                      <div className="flex items-center justify-between mt-3">
+                      <div className="flex items-center justify-between mt-3 flex-wrap gap-2">
                         <span className="text-[11px] text-gray-400">
                           Costo {formatCurrency(Number(s.costo_promedio) ?? 0)}
                         </span>
-                        <Button variant="outline" size="sm" onClick={() => openDetail(s)} className="h-7 text-xs gap-1">
-                          <Eye className="w-3.5 h-3.5" /> Ver detalle
-                        </Button>
+                        <div className="flex items-center gap-1">
+                          <Button variant="outline" size="sm" onClick={() => openDetail(s)} className="h-7 text-xs gap-1">
+                            <Eye className="w-3.5 h-3.5" /> Ver
+                          </Button>
+                          <Button variant="outline" size="sm" onClick={() => openAdjust(s)} className="h-7 text-xs gap-1">
+                            <Sliders className="w-3.5 h-3.5" /> Ajustar
+                          </Button>
+                          <Button variant="outline" size="sm" onClick={() => openMovs(s)} className="h-7 text-xs gap-1">
+                            <History className="w-3.5 h-3.5" />
+                          </Button>
+                        </div>
                       </div>
                     </div>
                   )
@@ -300,9 +404,17 @@ export default function AlmacenPage() {
                             )}
                           </td>
                           <td className="py-3 px-4">
-                            <Button variant="ghost" size="sm" onClick={() => openDetail(s)} className="h-7 w-7 p-0" title="Ver detalle">
-                              <Eye className="w-3.5 h-3.5 text-gray-500" />
-                            </Button>
+                            <div className="flex items-center gap-1">
+                              <Button variant="ghost" size="sm" onClick={() => openDetail(s)} className="h-7 w-7 p-0" title="Ver detalle">
+                                <Eye className="w-3.5 h-3.5 text-gray-500" />
+                              </Button>
+                              <Button variant="ghost" size="sm" onClick={() => openAdjust(s)} className="h-7 w-7 p-0" title="Ajustar stock">
+                                <Sliders className="w-3.5 h-3.5 text-gray-500" />
+                              </Button>
+                              <Button variant="ghost" size="sm" onClick={() => openMovs(s)} className="h-7 w-7 p-0" title="Ver movimientos">
+                                <History className="w-3.5 h-3.5 text-gray-500" />
+                              </Button>
+                            </div>
                           </td>
                         </tr>
                       )
@@ -432,8 +544,208 @@ export default function AlmacenPage() {
                   </div>
                 </div>
 
-                <div className="flex justify-end pt-3 border-t border-gray-100">
+                <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-2 pt-3 border-t border-gray-100">
                   <Button variant="outline" onClick={() => setDetailOpen(false)}>Cerrar</Button>
+                  <Button variant="outline" onClick={() => openMovs(selected)} className="gap-2">
+                    <History className="w-4 h-4" /> Ver movimientos
+                  </Button>
+                  <Button
+                    onClick={() => { setDetailOpen(false); openAdjust(selected) }}
+                    className="bg-[#FBE600] hover:bg-[#E5D100] text-black font-semibold gap-2"
+                  >
+                    <Sliders className="w-4 h-4" /> Ajustar stock
+                  </Button>
+                </div>
+              </div>
+            )
+          })()}
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialog Ajuste de Stock */}
+      <Dialog open={adjustOpen} onOpenChange={setAdjustOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Ajustar Stock</DialogTitle>
+          </DialogHeader>
+          {adjustTarget && (() => {
+            const producto = adjustTarget.productos as any
+            const stockActual = Number(adjustTarget.cantidad) ?? 0
+            const cantidadNum = parseFloat(adjustCantidad)
+            const valido = Number.isFinite(cantidadNum) && cantidadNum > 0
+            const signo = adjustTipo === 'entrada' ? 1 : -1
+            const resultante = valido ? stockActual + signo * cantidadNum : stockActual
+            const simbolo = producto?.unidades_medida?.simbolo ?? ''
+            const negativo = resultante < 0
+            return (
+              <div className="space-y-4 mt-2">
+                <div className="bg-gray-50 rounded-lg p-3">
+                  <p className="text-xs text-gray-500">Producto</p>
+                  <p className="font-medium text-gray-900 truncate">{producto?.nombre ?? '—'}</p>
+                  <p className="text-xs text-gray-500 font-mono">{producto?.codigo ?? '—'}</p>
+                </div>
+
+                <div>
+                  <Label className="text-xs">Tipo de ajuste</Label>
+                  <div className="grid grid-cols-2 gap-2 mt-1">
+                    <button
+                      type="button"
+                      onClick={() => setAdjustTipo('entrada')}
+                      className={`flex items-center justify-center gap-2 px-3 py-2 rounded-lg border text-sm font-medium transition-colors ${
+                        adjustTipo === 'entrada'
+                          ? 'bg-green-50 border-green-300 text-green-700'
+                          : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'
+                      }`}
+                    >
+                      <TrendingUp className="w-4 h-4" /> Entrada
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setAdjustTipo('salida')}
+                      className={`flex items-center justify-center gap-2 px-3 py-2 rounded-lg border text-sm font-medium transition-colors ${
+                        adjustTipo === 'salida'
+                          ? 'bg-red-50 border-red-300 text-red-700'
+                          : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'
+                      }`}
+                    >
+                      <TrendingDown className="w-4 h-4" /> Salida
+                    </button>
+                  </div>
+                </div>
+
+                <div>
+                  <Label className="text-xs">Cantidad ({simbolo || 'unidades'})</Label>
+                  <Input
+                    type="number"
+                    min={0}
+                    step="0.001"
+                    placeholder="0.000"
+                    className="mt-1"
+                    value={adjustCantidad}
+                    onChange={(e) => setAdjustCantidad(e.target.value)}
+                  />
+                </div>
+
+                <div>
+                  <Label className="text-xs">Notas</Label>
+                  <Textarea
+                    rows={2}
+                    placeholder="Motivo del ajuste (opcional)"
+                    className="mt-1"
+                    value={adjustNotas}
+                    onChange={(e) => setAdjustNotas(e.target.value)}
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-2 bg-gray-50 rounded-lg p-3">
+                  <div>
+                    <p className="text-[10px] text-gray-500 uppercase tracking-wide">Stock actual</p>
+                    <p className="text-sm font-bold text-gray-900">
+                      {stockActual.toLocaleString('es-PE')} <span className="text-xs text-gray-400">{simbolo}</span>
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-[10px] text-gray-500 uppercase tracking-wide">Stock resultante</p>
+                    <p className={`text-sm font-bold ${negativo ? 'text-red-600' : 'text-green-700'}`}>
+                      {resultante.toLocaleString('es-PE')} <span className="text-xs text-gray-400">{simbolo}</span>
+                    </p>
+                  </div>
+                </div>
+
+                {negativo && (
+                  <label className="flex items-start gap-2 text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg p-3 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={adjustPermitirNeg}
+                      onChange={(e) => setAdjustPermitirNeg(e.target.checked)}
+                      className="mt-0.5"
+                    />
+                    <span>
+                      <strong>¿Permitir stock negativo?</strong> La salida dejaría el stock en {resultante}. Marca aquí para confirmar.
+                    </span>
+                  </label>
+                )}
+
+                <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-2 pt-2 border-t border-gray-100">
+                  <Button variant="outline" onClick={() => setAdjustOpen(false)} disabled={adjustSaving}>
+                    Cancelar
+                  </Button>
+                  <Button
+                    onClick={submitAdjust}
+                    disabled={adjustSaving || !valido}
+                    className="bg-[#FBE600] hover:bg-[#E5D100] text-black font-semibold gap-2"
+                  >
+                    {adjustSaving && <Loader2 className="w-4 h-4 animate-spin" />}
+                    Confirmar ajuste
+                  </Button>
+                </div>
+              </div>
+            )
+          })()}
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialog Historial de Movimientos */}
+      <Dialog open={movsOpen} onOpenChange={setMovsOpen}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Últimos 20 movimientos</DialogTitle>
+          </DialogHeader>
+          {movsTarget && (() => {
+            const producto = movsTarget.productos as any
+            const simbolo = producto?.unidades_medida?.simbolo ?? ''
+            return (
+              <div className="space-y-4 mt-2">
+                <div className="bg-gray-50 rounded-lg p-3">
+                  <p className="font-medium text-gray-900 truncate">{producto?.nombre ?? '—'}</p>
+                  <p className="text-xs text-gray-500 font-mono">{producto?.codigo ?? '—'}</p>
+                </div>
+                <div className="border border-gray-100 rounded-lg overflow-hidden">
+                  {movsLoading ? (
+                    <div className="flex items-center justify-center py-8">
+                      <Loader2 className="w-5 h-5 text-green-600 animate-spin" />
+                    </div>
+                  ) : movsData.length === 0 ? (
+                    <div className="text-center py-6 text-xs text-gray-400">Sin movimientos registrados</div>
+                  ) : (
+                    <table className="w-full text-xs">
+                      <thead className="bg-gray-50/50 border-b border-gray-100">
+                        <tr>
+                          {['Fecha', 'Tipo', 'Cantidad', 'Referencia', 'Notas'].map((h) => (
+                            <th key={h} className="text-left py-2 px-3 font-semibold text-gray-500 uppercase tracking-wide">
+                              {h}
+                            </th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-50">
+                        {movsData.map((m) => {
+                          const tipoCfg = TIPO_MOV_CONFIG[m.tipo] ?? { label: m.tipo, className: 'bg-gray-100 text-gray-700 border-gray-200' }
+                          const cantidad = Number(m.cantidad) ?? 0
+                          return (
+                            <tr key={m.id}>
+                              <td className="py-2 px-3 text-gray-500 whitespace-nowrap">
+                                {m.created_at ? formatDatetime(m.created_at) : '—'}
+                              </td>
+                              <td className="py-2 px-3">
+                                <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium border ${tipoCfg.className}`}>
+                                  {tipoCfg.label}
+                                </span>
+                              </td>
+                              <td className={`py-2 px-3 font-mono font-semibold ${cantidad < 0 ? 'text-red-600' : 'text-green-700'}`}>
+                                {cantidad > 0 ? '+' : ''}{cantidad.toLocaleString('es-PE')} {simbolo}
+                              </td>
+                              <td className="py-2 px-3 text-gray-500">{m.referencia_tipo ?? '—'}</td>
+                              <td className="py-2 px-3 text-gray-500 max-w-[200px] truncate">{m.notas ?? '—'}</td>
+                            </tr>
+                          )
+                        })}
+                      </tbody>
+                    </table>
+                  )}
+                </div>
+                <div className="flex justify-end pt-3 border-t border-gray-100">
+                  <Button variant="outline" onClick={() => setMovsOpen(false)}>Cerrar</Button>
                 </div>
               </div>
             )

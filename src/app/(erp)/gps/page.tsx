@@ -100,7 +100,7 @@ export default async function GPSPage() {
                         <p className="text-xs text-gray-400 capitalize">{v.role}</p>
                         {ultima && (
                           <p className="text-xs text-gray-400 mt-0.5">
-                            Última: {new Date(ultima.created_at).toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit' })}
+                            Última: {new Date(ultima.created_at).toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Lima' })}
                           </p>
                         )}
                       </div>
@@ -148,7 +148,7 @@ export default async function GPSPage() {
                           {new Date(c.created_at).toLocaleDateString('es-PE', { day: '2-digit', month: '2-digit' })}
                         </td>
                         <td className="py-2.5 px-4 text-gray-500 text-xs font-mono">
-                          {new Date(c.created_at).toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit' })}
+                          {new Date(c.created_at).toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Lima' })}
                         </td>
                         <td className="py-2.5 px-4 font-medium text-gray-800">{c.profiles?.full_name ?? '—'}</td>
                         <td className="py-2.5 px-4">

@@ -251,13 +251,13 @@ export default async function DashboardPage() {
                   <p className="text-xs text-yellow-600">{data.pedidosPendientesCount} pedidos en estado &quot;enviado&quot;</p>
                 </div>
               </div>
-              <div className="flex items-center gap-3 p-3 bg-blue-50 rounded-lg border border-blue-100">
+              <a href="/caja" className="flex items-center gap-3 p-3 bg-blue-50 rounded-lg border border-blue-100 hover:bg-blue-100 transition-colors">
                 <DollarSign className="w-4 h-4 text-blue-500 flex-shrink-0" />
                 <div>
                   <p className="text-sm font-medium text-blue-800">Caja del día</p>
                   <p className="text-xs text-blue-600">{formatCurrency(data.totalCobrado)} cobrado hoy</p>
                 </div>
-              </div>
+              </a>
               <div className="flex items-center gap-3 p-3 bg-green-50 rounded-lg border border-green-100">
                 <TrendingUp className="w-4 h-4 text-green-500 flex-shrink-0" />
                 <div>
@@ -305,6 +305,7 @@ export default async function DashboardPage() {
                           {new Date(pedido.created_at).toLocaleTimeString('es-PE', {
                             hour: '2-digit',
                             minute: '2-digit',
+                            timeZone: 'America/Lima',
                           })}
                         </td>
                         <td className="py-2.5 px-3">

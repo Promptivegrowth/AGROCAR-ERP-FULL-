@@ -38,7 +38,7 @@ export default function GpsMapPanel({ checkins, clientes }: GpsMapPanelProps) {
     .map((c) => {
       const name = c.profiles?.full_name ?? 'Vendedor'
       const initials = name.split(' ').slice(0, 2).map((n) => n[0]).join('').toUpperCase()
-      const hora = new Date(c.created_at).toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit' })
+      const hora = new Date(c.created_at).toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Lima' })
       return {
         id: `ci-${c.id}`,
         lat: Number(c.latitud),
