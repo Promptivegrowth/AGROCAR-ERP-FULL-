@@ -283,6 +283,15 @@ export default function ClientesPage() {
       return
     }
 
+    // Validar teléfono peruano 9 dígitos si se ingresó algo
+    const tel = telefono.trim()
+    if (tel && !/^9\d{8}$/.test(tel)) {
+      toast.error('Celular inválido', {
+        description: 'Debe tener 9 dígitos empezando por 9 (celular peruano).',
+      })
+      return
+    }
+
     setSaving(true)
     try {
       const payload: any = {
@@ -292,7 +301,7 @@ export default function ClientesPage() {
         dni: tipoDoc === 'dni' ? (docValue.trim() || null) : null,
         tipo_cliente: tipoCliente,
         direccion: direccion.trim() || null,
-        telefono: telefono.trim() || null,
+        telefono: tel || null,
         email: email.trim() || null,
         contacto: contacto.trim() || null,
         zona_id: zonaId || null,
@@ -685,13 +694,18 @@ export default function ClientesPage() {
 
             <div className="grid grid-cols-2 gap-2">
               <div>
-                <Label>Teléfono</Label>
+                <Label>Celular (WhatsApp)</Label>
                 <Input
                   value={telefono}
-                  onChange={(e) => setTelefono(e.target.value)}
-                  placeholder="999 999 999"
-                  className="mt-1"
+                  onChange={(e) => setTelefono(e.target.value.replace(/\D/g, '').slice(0, 9))}
+                  placeholder="9XXXXXXXX"
+                  maxLength={9}
+                  inputMode="numeric"
+                  className="mt-1 font-mono"
                 />
+                {telefono && !/^9\d{8}$/.test(telefono) && (
+                  <p className="text-[11px] text-red-500 mt-1">9 dígitos empezando por 9</p>
+                )}
               </div>
               <div>
                 <Label>Email</Label>

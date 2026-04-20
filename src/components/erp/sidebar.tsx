@@ -79,6 +79,11 @@ const NAV_ITEMS: NavItem[] = [
     ],
   },
   {
+    label: 'Pedidos',
+    href: '/pedidos',
+    icon: ShoppingCart,
+  },
+  {
     label: 'Despacho',
     href: '/despacho',
     icon: Truck,

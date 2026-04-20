@@ -3,10 +3,11 @@
 import { useState, useEffect, useCallback } from 'react'
 import Image from 'next/image'
 import {
-  DollarSign, Search, Camera, Loader2, CheckCircle, AlertCircle, X
+  DollarSign, Search, Camera, Loader2, CheckCircle, AlertCircle, X, Send,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { createClient } from '@/lib/supabase/client'
+import { linkEnviarBoletaPago, esTelefonoPeruanoValido } from '@/lib/whatsapp'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card, CardContent } from '@/components/ui/card'
@@ -53,6 +54,12 @@ export default function CobrosPage() {
   const [montosStr, setMontosStr] = useState<Record<MetodoPago, string>>({
     efectivo: '', yape: '', plin: '', transferencia: '',
   })
+  const [ultimoCobro, setUltimoCobro] = useState<{
+    id: string
+    total: number
+    cliente: string
+    telefono: string | null
+  } | null>(null)
   const [voucherFile, setVoucherFile] = useState<File | null>(null)
   const [voucherPreview, setVoucherPreview] = useState<string | null>(null)
   const [notas, setNotas] = useState('')
@@ -138,26 +145,36 @@ export default function CobrosPage() {
         }
       }
 
-      const { error: cobroError } = await supabase.from('cobros').insert({
-        cliente_id: clienteSeleccionado.id,
-        cobrador_id: userId,
-        tipo: 'cobranza',
-        efectivo: montos.efectivo,
-        yape: montos.yape,
-        plin: montos.plin,
-        transferencia: montos.transferencia,
-        total: totalCobro,
-        voucher_url: voucherUrl,
-        notas: notas || null,
-        fecha: new Date().toISOString().split('T')[0],
-      })
+      const { data: cobroData, error: cobroError } = await supabase
+        .from('cobros')
+        .insert({
+          cliente_id: clienteSeleccionado.id,
+          cobrador_id: userId,
+          tipo: 'cobranza',
+          efectivo: montos.efectivo,
+          yape: montos.yape,
+          plin: montos.plin,
+          transferencia: montos.transferencia,
+          total: totalCobro,
+          voucher_url: voucherUrl,
+          notas: notas || null,
+          fecha: new Date().toISOString().split('T')[0],
+        })
+        .select('id')
+        .single()
 
-      if (cobroError) {
-        setMensajeError('Error al registrar el cobro: ' + cobroError.message)
-        toast.error('No se pudo registrar el cobro', { description: cobroError.message })
+      if (cobroError || !cobroData) {
+        setMensajeError('Error al registrar el cobro: ' + (cobroError?.message ?? ''))
+        toast.error('No se pudo registrar el cobro', { description: cobroError?.message ?? '' })
         return
       }
 
+      setUltimoCobro({
+        id: cobroData.id,
+        total: totalCobro,
+        cliente: clienteSeleccionado.razon_social,
+        telefono: (clienteSeleccionado as any).telefono ?? null,
+      })
       setMensajeExito(`Cobro de ${formatCurrency(totalCobro)} registrado correctamente`)
       toast.success('Cobro registrado', {
         description: `${formatCurrency(totalCobro)} · ${clienteSeleccionado.razon_social}`,
@@ -169,7 +186,6 @@ export default function CobrosPage() {
       setNotas('')
       setVoucherFile(null)
       setVoucherPreview(null)
-      setTab('del-dia')
       cargarCobrosDia()
     } catch {
       setMensajeError('Error inesperado al registrar el cobro')
@@ -233,9 +249,58 @@ export default function CobrosPage() {
         {tab === 'registrar' && (
           <>
             {mensajeExito && (
-              <div className="bg-green-50 border border-green-200 text-green-700 flex items-center gap-2 px-4 py-3 rounded-xl">
-                <CheckCircle className="w-4 h-4 shrink-0" />
-                {mensajeExito}
+              <div className="bg-green-50 border border-green-200 text-green-800 rounded-xl p-4 space-y-3">
+                <div className="flex items-center gap-2">
+                  <CheckCircle className="w-4 h-4 shrink-0 text-green-600" />
+                  <p className="font-medium text-sm">{mensajeExito}</p>
+                </div>
+                {ultimoCobro && (() => {
+                  const telOk = esTelefonoPeruanoValido(ultimoCobro.telefono)
+                  const baseUrl = typeof window !== 'undefined' ? window.location.origin : ''
+                  const waLink = telOk
+                    ? linkEnviarBoletaPago({
+                        baseUrl,
+                        cobroId: ultimoCobro.id,
+                        clienteNombre: ultimoCobro.cliente,
+                        total: ultimoCobro.total,
+                        telefonoCliente: ultimoCobro.telefono!,
+                      })
+                    : null
+                  return (
+                    <div className="flex flex-col sm:flex-row gap-2">
+                      {waLink ? (
+                        <a
+                          href={waLink}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="flex-1 bg-[#25D366] hover:bg-[#1FB659] text-white font-semibold rounded-lg px-4 py-3 text-sm flex items-center justify-center gap-2 transition-colors"
+                          onClick={() => {
+                            setMensajeExito(null)
+                            setUltimoCobro(null)
+                            setTab('del-dia')
+                          }}
+                        >
+                          <Send className="w-4 h-4" /> Enviar boleta por WhatsApp
+                        </a>
+                      ) : (
+                        <p className="flex-1 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                          El cliente no tiene celular de 9 dígitos registrado. No se puede enviar por WhatsApp.
+                        </p>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setMensajeExito(null)
+                          setUltimoCobro(null)
+                          setTab('del-dia')
+                        }}
+                        className="px-4 py-3 text-sm text-gray-600 hover:text-gray-800 border border-gray-200 rounded-lg"
+                      >
+                        Cerrar
+                      </button>
+                    </div>
+                  )
+                })()}
               </div>
             )}
             {mensajeError && (

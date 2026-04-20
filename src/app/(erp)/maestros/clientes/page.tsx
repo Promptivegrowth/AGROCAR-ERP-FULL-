@@ -33,7 +33,11 @@ const clienteSchema = z.object({
   dni: z.string().nullable().optional(),
   tipo_cliente: z.enum(['consumidor_final', 'tienda']),
   direccion: z.string().nullable().optional(),
-  telefono: z.string().nullable().optional(),
+  telefono: z.string()
+    .regex(/^9\d{8}$/, 'Debe ser celular peruano de 9 dígitos empezando por 9')
+    .or(z.literal(''))
+    .nullable()
+    .optional(),
   email: z.string().email('Email inválido').nullable().optional().or(z.literal('')),
   contacto: z.string().nullable().optional(),
   credito_dias: z.coerce.number().min(0).default(0),
@@ -651,8 +655,19 @@ export default function ClientesPage() {
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
-                <Label>Teléfono</Label>
-                <Input {...register('telefono')} placeholder="999 999 999" className="mt-1" />
+                <Label>Celular (WhatsApp)</Label>
+                <Input
+                  {...register('telefono')}
+                  placeholder="9XXXXXXXX"
+                  maxLength={9}
+                  inputMode="numeric"
+                  className="mt-1 font-mono"
+                />
+                {errors.telefono ? (
+                  <p className="text-xs text-red-500 mt-1">{errors.telefono.message as string}</p>
+                ) : (
+                  <p className="text-[11px] text-gray-400 mt-1">9 dígitos · se usa para enviar boletas por WhatsApp</p>
+                )}
               </div>
               <div>
                 <Label>Email</Label>
