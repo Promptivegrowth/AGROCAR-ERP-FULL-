@@ -31,6 +31,7 @@ async function getDashboardData() {
     { count: solicitudesPendientes },
     { data: mantenimientos },
     { data: lotesAlerta },
+    { data: tipoCambio },
   ] = await Promise.all([
     supabase
       .from('pedidos')
@@ -86,6 +87,12 @@ async function getDashboardData() {
       .gt('cantidad_actual', 0)
       .eq('activo', true)
       .not('fecha_vencimiento', 'is', null),
+    supabase
+      .from('tipo_cambio')
+      .select('fecha, compra, venta, fuente')
+      .order('fecha', { ascending: false })
+      .limit(1)
+      .maybeSingle(),
   ])
 
   const totalPedidos = pedidosHoy?.length ?? 0
@@ -154,6 +161,7 @@ async function getDashboardData() {
     alertasProximas,
     lotesVencidos,
     lotesPorVencer,
+    tipoCambio: tipoCambio as { fecha: string; compra: number; venta: number; fuente: string | null } | null,
   }
 }
 
@@ -208,7 +216,7 @@ export default async function DashboardPage() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Dashboard Gerencial</h1>
           <p className="text-sm text-gray-500 mt-0.5">
@@ -217,9 +225,28 @@ export default async function DashboardPage() {
               year: 'numeric',
               month: 'long',
               day: 'numeric',
+              timeZone: 'America/Lima',
             })}
           </p>
         </div>
+        {data.tipoCambio && (
+          <div className="flex items-center gap-3 bg-black text-white rounded-xl px-4 py-2.5 border-l-4 border-[#FBE600]">
+            <DollarSign className="w-5 h-5 text-[#FBE600]" />
+            <div>
+              <p className="text-[10px] uppercase tracking-wide text-gray-400 leading-tight">
+                Tipo de Cambio SUNAT
+              </p>
+              <p className="text-sm font-bold leading-tight">
+                Compra S/ {Number(data.tipoCambio.compra).toFixed(3)} · Venta S/ {Number(data.tipoCambio.venta).toFixed(3)}
+              </p>
+              <p className="text-[10px] text-gray-400 leading-tight">
+                {new Date(data.tipoCambio.fecha + 'T00:00:00').toLocaleDateString('es-PE', {
+                  day: '2-digit', month: 'short', year: 'numeric',
+                })}
+              </p>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Alertas */}
