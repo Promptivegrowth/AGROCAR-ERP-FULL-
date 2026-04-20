@@ -9,6 +9,8 @@ import {
   Users,
   AlertTriangle,
   TrendingUp,
+  Car,
+  Boxes,
 } from 'lucide-react'
 import DashboardCharts from './dashboard-charts'
 
@@ -27,6 +29,8 @@ async function getDashboardData() {
     { data: ultimos10Pedidos },
     { data: ventasSemana },
     { count: solicitudesPendientes },
+    { data: mantenimientos },
+    { data: lotesAlerta },
   ] = await Promise.all([
     supabase
       .from('pedidos')
@@ -73,6 +77,15 @@ async function getDashboardData() {
       .from('solicitudes_cliente' as any)
       .select('id', { count: 'exact', head: true })
       .eq('estado', 'pendiente'),
+    supabase
+      .from('mantenimientos_vehiculo' as any)
+      .select('id, fecha_vencimiento, estado'),
+    supabase
+      .from('lotes')
+      .select('id, fecha_vencimiento, cantidad_actual')
+      .gt('cantidad_actual', 0)
+      .eq('activo', true)
+      .not('fecha_vencimiento', 'is', null),
   ])
 
   const totalPedidos = pedidosHoy?.length ?? 0
@@ -99,6 +112,35 @@ async function getDashboardData() {
     total,
   }))
 
+  // Alertas vehiculares (SOAT, revisión, etc.)
+  const hoyDate = new Date()
+  hoyDate.setHours(0, 0, 0, 0)
+  const en15 = new Date(hoyDate.getTime() + 15 * 24 * 60 * 60 * 1000)
+
+  let alertasVencidas = 0
+  let alertasProximas = 0
+  ;(mantenimientos ?? []).forEach((m: any) => {
+    if (!m.fecha_vencimiento) return
+    if (m.estado === 'cumplido' || m.estado === 'anulada') return
+    const fv = new Date(m.fecha_vencimiento + 'T00:00:00')
+    if (isNaN(fv.getTime())) return
+    if (fv < hoyDate) alertasVencidas++
+    else if (fv <= en15) alertasProximas++
+  })
+
+  // Alertas de lotes (vencidos y próximos a vencer en 30 días)
+  const en30 = new Date(hoyDate.getTime() + 30 * 24 * 60 * 60 * 1000)
+  let lotesVencidos = 0
+  let lotesPorVencer = 0
+  ;(lotesAlerta ?? []).forEach((l: any) => {
+    if (!l.fecha_vencimiento) return
+    if (Number(l.cantidad_actual ?? 0) <= 0) return
+    const fv = new Date(l.fecha_vencimiento + 'T00:00:00')
+    if (isNaN(fv.getTime())) return
+    if (fv < hoyDate) lotesVencidos++
+    else if (fv <= en30) lotesPorVencer++
+  })
+
   return {
     totalPedidos,
     totalFacturado,
@@ -108,6 +150,10 @@ async function getDashboardData() {
     solicitudesPendientesCount: solicitudesPendientes ?? 0,
     ultimos10Pedidos: ultimos10Pedidos ?? [],
     chartData,
+    alertasVencidas,
+    alertasProximas,
+    lotesVencidos,
+    lotesPorVencer,
   }
 }
 
@@ -196,6 +242,54 @@ export default async function DashboardPage() {
             <strong>{data.solicitudesPendientesCount} solicitudes</strong> de nuevos clientes esperando revisión.{' '}
             <a href="/solicitudes-cliente" className="underline font-medium">
               Revisar solicitudes →
+            </a>
+          </p>
+        </div>
+      )}
+
+      {data.alertasVencidas > 0 && (
+        <div className="flex items-center gap-3 bg-red-50 border border-red-200 rounded-xl px-4 py-3">
+          <Car className="w-5 h-5 text-red-500 flex-shrink-0" />
+          <p className="text-sm text-red-800">
+            <strong>{data.alertasVencidas} alertas vehiculares vencidas</strong> (SOAT, revisión técnica, etc.).{' '}
+            <a href="/maestros/vehiculos" className="underline font-medium">
+              Ir a Vehículos →
+            </a>
+          </p>
+        </div>
+      )}
+
+      {data.alertasProximas > 0 && (
+        <div className="flex items-center gap-3 bg-orange-50 border border-orange-200 rounded-xl px-4 py-3">
+          <Car className="w-5 h-5 text-orange-500 flex-shrink-0" />
+          <p className="text-sm text-orange-800">
+            <strong>{data.alertasProximas} alertas vehiculares próximas a vencer</strong> (15 días o menos).{' '}
+            <a href="/maestros/vehiculos" className="underline font-medium">
+              Ir a Vehículos →
+            </a>
+          </p>
+        </div>
+      )}
+
+      {data.lotesVencidos > 0 && (
+        <div className="flex items-center gap-3 bg-red-50 border border-red-200 rounded-xl px-4 py-3">
+          <Boxes className="w-5 h-5 text-red-500 flex-shrink-0" />
+          <p className="text-sm text-red-800">
+            <strong>{data.lotesVencidos} lote{data.lotesVencidos !== 1 ? 's' : ''} vencido{data.lotesVencidos !== 1 ? 's' : ''}</strong> con stock disponible.{' '}
+            <a href="/almacen/lotes" className="underline font-medium">
+              Ir a Lotes →
+            </a>
+          </p>
+        </div>
+      )}
+
+      {data.lotesPorVencer > 0 && (
+        <div className="flex items-center gap-3 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
+          <Boxes className="w-5 h-5 text-amber-500 flex-shrink-0" />
+          <p className="text-sm text-amber-800">
+            <strong>{data.lotesPorVencer} lote{data.lotesPorVencer !== 1 ? 's' : ''} por vencer</strong> en los próximos 30 días.{' '}
+            <a href="/almacen/lotes" className="underline font-medium">
+              Revisar lotes →
             </a>
           </p>
         </div>

@@ -6,12 +6,22 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import {
   Plus, Edit, ToggleLeft, ToggleRight, Loader2, Truck, Eye,
-  Search, ChevronLeft, ChevronRight,
+  Search, ChevronLeft, ChevronRight, Sparkles, Trash2, IdCard,
+  Wrench, AlertCircle, CheckCircle2, Clock,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { createClient } from '@/lib/supabase/client'
 import { useDebounce } from '@/lib/hooks/use-debounce'
-import { formatDate } from '@/lib/utils'
+import { useSunatReniec } from '@/lib/hooks/use-sunat-reniec'
+import { formatDate, formatCurrency } from '@/lib/utils'
+import {
+  CLASE_LICENCIA_OPCIONES,
+  TIPO_MANT_LABELS,
+  TIPO_MANT_OPCIONES,
+  calcularEstadoVencimiento,
+  ESTADO_VENCIMIENTO_CONFIG,
+  ESTADO_MULTA_CONFIG,
+} from '@/lib/vehiculos'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
@@ -20,6 +30,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Textarea } from '@/components/ui/textarea'
 
 // ENUM tipo_vehiculo en la BD: 'zona' | 'auxiliar'
 const vehiculoSchema = z.object({
@@ -56,6 +68,19 @@ export default function VehiculosPage() {
   const [tipo, setTipo] = useState<'zona' | 'auxiliar'>('zona')
   const [activo, setActivo] = useState(true)
 
+  // Detalle: conductores / mantenimientos / multas
+  const [conductoresAsignados, setConductoresAsignados] = useState<any[]>([])
+  const [mantenimientos, setMantenimientos] = useState<any[]>([])
+  const [multas, setMultas] = useState<any[]>([])
+  const [loadingDetalle, setLoadingDetalle] = useState(false)
+
+  // Submodales
+  const [asignarOpen, setAsignarOpen] = useState(false)
+  const [mantOpen, setMantOpen] = useState(false)
+  const [multaOpen, setMultaOpen] = useState(false)
+  const [pagarMultaOpen, setPagarMultaOpen] = useState(false)
+  const [multaAPagar, setMultaAPagar] = useState<any>(null)
+
   const { register, handleSubmit, reset, formState: { errors } } = useForm<VehiculoFormData>({
     resolver: zodResolver(vehiculoSchema) as any,
     defaultValues: { tipo: 'zona', activo: true },
@@ -80,6 +105,31 @@ export default function VehiculosPage() {
 
   useEffect(() => { loadVehiculos() }, [loadVehiculos])
 
+  const loadDetalleVehiculo = async (vehiculoId: string) => {
+    setLoadingDetalle(true)
+    const sb: any = supabase
+    const [{ data: condData }, { data: mantData }, { data: multaData }] = await Promise.all([
+      sb
+        .from('vehiculos_conductores')
+        .select('id, es_principal, conductor:conductores(id, dni, nombre_completo, licencia_numero, licencia_clase, licencia_vencimiento, telefono, activo)')
+        .eq('vehiculo_id', vehiculoId),
+      sb
+        .from('mantenimientos_vehiculo')
+        .select('*')
+        .eq('vehiculo_id', vehiculoId)
+        .order('fecha_vencimiento', { ascending: true, nullsFirst: false }),
+      sb
+        .from('multas_vehiculo')
+        .select('*, conductor:conductores(id, nombre_completo, dni)')
+        .eq('vehiculo_id', vehiculoId)
+        .order('fecha_emision', { ascending: false }),
+    ])
+    setConductoresAsignados(condData ?? [])
+    setMantenimientos(mantData ?? [])
+    setMultas(multaData ?? [])
+    setLoadingDetalle(false)
+  }
+
   const openCreate = () => {
     setEditingVehiculo(null)
     setTipo('zona')
@@ -102,7 +152,11 @@ export default function VehiculosPage() {
     setDialogOpen(true)
   }
 
-  const openDetail = (v: any) => { setSelected(v); setDetailOpen(true) }
+  const openDetail = async (v: any) => {
+    setSelected(v)
+    setDetailOpen(true)
+    await loadDetalleVehiculo(v.id)
+  }
 
   const onSubmit = async (data: VehiculoFormData) => {
     setSaving(true)
@@ -143,6 +197,16 @@ export default function VehiculosPage() {
     } else {
       toast.success(v.activo ? 'Vehículo desactivado' : 'Vehículo activado')
       loadVehiculos()
+    }
+  }
+
+  const desasignarConductor = async (vcId: string) => {
+    const { error } = await ((supabase as any).from('vehiculos_conductores')).delete().eq('id', vcId)
+    if (error) {
+      toast.error('No se pudo desasignar', { description: error.message })
+    } else {
+      toast.success('Conductor desasignado')
+      if (selected) loadDetalleVehiculo(selected.id)
     }
   }
 
@@ -359,9 +423,9 @@ export default function VehiculosPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Dialog Detalle */}
+      {/* Dialog Detalle con Tabs */}
       <Dialog open={detailOpen} onOpenChange={setDetailOpen}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Detalle del Vehículo</DialogTitle>
           </DialogHeader>
@@ -380,43 +444,816 @@ export default function VehiculosPage() {
                   : <Badge variant="secondary" className="text-xs">Inactivo</Badge>}
               </div>
 
-              <div className="grid grid-cols-2 gap-3 text-sm">
-                <div>
-                  <p className="text-xs text-gray-500">Tipo</p>
-                  <p className="text-gray-800 font-medium">
-                    {(TIPO_CONFIG[selected.tipo] ?? TIPO_CONFIG.auxiliar).label}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-xs text-gray-500">Capacidad</p>
-                  <p className="text-gray-800 font-medium">
-                    {selected.capacidad_kg
-                      ? `${Number(selected.capacidad_kg).toLocaleString('es-PE')} kg`
-                      : '—'}
-                  </p>
-                </div>
-                <div className="col-span-2">
-                  <p className="text-xs text-gray-500">Descripción</p>
-                  <p className="text-gray-800">{selected.descripcion ?? '—'}</p>
-                </div>
-                <div className="col-span-2">
-                  <p className="text-xs text-gray-500">Fecha de registro</p>
-                  <p className="text-gray-800">
-                    {selected.created_at ? formatDate(selected.created_at) : '—'}
-                  </p>
-                </div>
-              </div>
+              <Tabs defaultValue="info" className="w-full">
+                <TabsList className="grid grid-cols-4 w-full">
+                  <TabsTrigger value="info">Info</TabsTrigger>
+                  <TabsTrigger value="conductores">Conductores ({conductoresAsignados.length})</TabsTrigger>
+                  <TabsTrigger value="mantenimientos">Mantenimientos ({mantenimientos.length})</TabsTrigger>
+                  <TabsTrigger value="multas">Multas ({multas.length})</TabsTrigger>
+                </TabsList>
 
-              <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-3 pt-3 border-t border-gray-100">
-                <Button variant="outline" onClick={() => setDetailOpen(false)}>Cerrar</Button>
-                <Button onClick={() => { setDetailOpen(false); openEdit(selected) }} className="bg-[#FBE600] hover:bg-[#E5D100] text-black font-semibold gap-2">
-                  <Edit className="w-4 h-4" /> Editar
-                </Button>
-              </div>
+                <TabsContent value="info" className="mt-4">
+                  <div className="grid grid-cols-2 gap-3 text-sm">
+                    <div>
+                      <p className="text-xs text-gray-500">Tipo</p>
+                      <p className="text-gray-800 font-medium">
+                        {(TIPO_CONFIG[selected.tipo] ?? TIPO_CONFIG.auxiliar).label}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-500">Capacidad</p>
+                      <p className="text-gray-800 font-medium">
+                        {selected.capacidad_kg
+                          ? `${Number(selected.capacidad_kg).toLocaleString('es-PE')} kg`
+                          : '—'}
+                      </p>
+                    </div>
+                    <div className="col-span-2">
+                      <p className="text-xs text-gray-500">Descripción</p>
+                      <p className="text-gray-800">{selected.descripcion ?? '—'}</p>
+                    </div>
+                    <div className="col-span-2">
+                      <p className="text-xs text-gray-500">Fecha de registro</p>
+                      <p className="text-gray-800">
+                        {selected.created_at ? formatDate(selected.created_at) : '—'}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-3 pt-4 mt-4 border-t border-gray-100">
+                    <Button variant="outline" onClick={() => setDetailOpen(false)}>Cerrar</Button>
+                    <Button onClick={() => { setDetailOpen(false); openEdit(selected) }} className="bg-[#FBE600] hover:bg-[#E5D100] text-black font-semibold gap-2">
+                      <Edit className="w-4 h-4" /> Editar
+                    </Button>
+                  </div>
+                </TabsContent>
+
+                {/* Tab Conductores */}
+                <TabsContent value="conductores" className="mt-4 space-y-3">
+                  <div className="flex justify-between items-center">
+                    <p className="text-sm text-gray-600">Conductores vinculados al vehículo</p>
+                    <Button size="sm" onClick={() => setAsignarOpen(true)} className="bg-[#FBE600] hover:bg-[#E5D100] text-black font-semibold gap-1">
+                      <Plus className="w-3.5 h-3.5" /> Asignar Conductor
+                    </Button>
+                  </div>
+                  {loadingDetalle ? (
+                    <div className="flex justify-center py-8"><Loader2 className="w-5 h-5 animate-spin text-gray-400" /></div>
+                  ) : conductoresAsignados.length === 0 ? (
+                    <div className="text-center py-8 text-gray-400 text-sm">
+                      <IdCard className="w-8 h-8 mx-auto mb-2 text-gray-300" />
+                      Sin conductores asignados
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      {conductoresAsignados.map((vc: any) => {
+                        const cond = vc.conductor
+                        const est = calcularEstadoVencimiento(cond?.licencia_vencimiento)
+                        const cfg = ESTADO_VENCIMIENTO_CONFIG[est]
+                        return (
+                          <div key={vc.id} className="flex items-start justify-between gap-3 p-3 bg-gray-50 rounded-lg">
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <p className="font-medium text-gray-900 truncate">{cond?.nombre_completo}</p>
+                                {vc.es_principal && (
+                                  <Badge className="text-[10px] bg-blue-100 text-blue-700 border-blue-200">Principal</Badge>
+                                )}
+                              </div>
+                              <p className="text-xs text-gray-500 font-mono">DNI: {cond?.dni}</p>
+                              {cond?.licencia_numero && (
+                                <p className="text-xs text-gray-500">
+                                  Lic: {cond.licencia_numero} · {cond.licencia_clase ?? '—'}
+                                </p>
+                              )}
+                              {cond?.licencia_vencimiento && (
+                                <div className="flex items-center gap-2 mt-1">
+                                  <span className="text-xs text-gray-500">Vence: {formatDate(cond.licencia_vencimiento)}</span>
+                                  <span className={`inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-medium border ${cfg.className}`}>
+                                    {cfg.label}
+                                  </span>
+                                </div>
+                              )}
+                            </div>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => desasignarConductor(vc.id)}
+                              className="shrink-0 h-7 text-xs text-red-600 hover:bg-red-50 border-red-200"
+                            >
+                              <Trash2 className="w-3 h-3 mr-1" /> Desasignar
+                            </Button>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )}
+                </TabsContent>
+
+                {/* Tab Mantenimientos */}
+                <TabsContent value="mantenimientos" className="mt-4 space-y-3">
+                  <div className="flex justify-between items-center">
+                    <p className="text-sm text-gray-600">Alertas y mantenimientos del vehículo</p>
+                    <Button size="sm" onClick={() => setMantOpen(true)} className="bg-[#FBE600] hover:bg-[#E5D100] text-black font-semibold gap-1">
+                      <Plus className="w-3.5 h-3.5" /> Registrar
+                    </Button>
+                  </div>
+                  {loadingDetalle ? (
+                    <div className="flex justify-center py-8"><Loader2 className="w-5 h-5 animate-spin text-gray-400" /></div>
+                  ) : mantenimientos.length === 0 ? (
+                    <div className="text-center py-8 text-gray-400 text-sm">
+                      <Wrench className="w-8 h-8 mx-auto mb-2 text-gray-300" />
+                      Sin mantenimientos registrados
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      {mantenimientos.map((m: any) => {
+                        const est = calcularEstadoVencimiento(m.fecha_vencimiento)
+                        const cfg = ESTADO_VENCIMIENTO_CONFIG[est]
+                        const Icono = est === 'vencido' ? AlertCircle
+                          : est === 'por_vencer' ? Clock
+                          : CheckCircle2
+                        return (
+                          <div key={m.id} className="p-3 bg-gray-50 rounded-lg">
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="min-w-0 flex-1">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <Icono className={`w-4 h-4 ${
+                                    est === 'vencido' ? 'text-red-500'
+                                      : est === 'por_vencer' ? 'text-yellow-500'
+                                      : 'text-green-500'
+                                  }`} />
+                                  <p className="font-medium text-gray-900">{TIPO_MANT_LABELS[m.tipo] ?? m.tipo}</p>
+                                  <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium border ${cfg.className}`}>
+                                    {cfg.label}
+                                  </span>
+                                </div>
+                                {m.descripcion && <p className="text-xs text-gray-600 mt-1">{m.descripcion}</p>}
+                                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-2 text-xs text-gray-500">
+                                  {m.fecha_realizado && <div><span className="font-medium">Realizado:</span> {formatDate(m.fecha_realizado)}</div>}
+                                  {m.fecha_vencimiento && <div><span className="font-medium">Vence:</span> {formatDate(m.fecha_vencimiento)}</div>}
+                                  {m.kilometraje ? <div><span className="font-medium">Km:</span> {Number(m.kilometraje).toLocaleString('es-PE')}</div> : null}
+                                  {Number(m.monto) > 0 ? <div><span className="font-medium">Monto:</span> {formatCurrency(Number(m.monto))}</div> : null}
+                                </div>
+                                {m.proveedor && <p className="text-xs text-gray-500 mt-1"><span className="font-medium">Proveedor:</span> {m.proveedor}</p>}
+                              </div>
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )}
+                </TabsContent>
+
+                {/* Tab Multas */}
+                <TabsContent value="multas" className="mt-4 space-y-3">
+                  <div className="flex justify-between items-center">
+                    <p className="text-sm text-gray-600">Multas de tránsito del vehículo</p>
+                    <Button size="sm" onClick={() => setMultaOpen(true)} className="bg-[#FBE600] hover:bg-[#E5D100] text-black font-semibold gap-1">
+                      <Plus className="w-3.5 h-3.5" /> Registrar
+                    </Button>
+                  </div>
+                  {loadingDetalle ? (
+                    <div className="flex justify-center py-8"><Loader2 className="w-5 h-5 animate-spin text-gray-400" /></div>
+                  ) : multas.length === 0 ? (
+                    <div className="text-center py-8 text-gray-400 text-sm">
+                      <AlertCircle className="w-8 h-8 mx-auto mb-2 text-gray-300" />
+                      Sin multas registradas
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      {multas.map((m: any) => {
+                        const cfg = ESTADO_MULTA_CONFIG[m.estado] ?? ESTADO_MULTA_CONFIG.pendiente
+                        return (
+                          <div key={m.id} className="p-3 bg-gray-50 rounded-lg">
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="min-w-0 flex-1">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <p className="font-medium text-gray-900">{m.tipo}</p>
+                                  {m.codigo_infraccion && <span className="text-xs font-mono text-gray-500">{m.codigo_infraccion}</span>}
+                                  <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium border ${cfg.className}`}>
+                                    {cfg.label}
+                                  </span>
+                                </div>
+                                {m.conductor && (
+                                  <p className="text-xs text-gray-600 mt-1">Conductor: {m.conductor.nombre_completo} · {m.conductor.dni}</p>
+                                )}
+                                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-2 text-xs text-gray-500">
+                                  <div><span className="font-medium">Emitida:</span> {formatDate(m.fecha_emision)}</div>
+                                  {m.fecha_vencimiento && <div><span className="font-medium">Vence:</span> {formatDate(m.fecha_vencimiento)}</div>}
+                                  <div><span className="font-medium">Monto:</span> {formatCurrency(Number(m.monto))}</div>
+                                  {Number(m.descuento) > 0 && <div><span className="font-medium">Descuento:</span> {formatCurrency(Number(m.descuento))}</div>}
+                                </div>
+                                {m.lugar && <p className="text-xs text-gray-500 mt-1"><span className="font-medium">Lugar:</span> {m.lugar}</p>}
+                                {m.observaciones && <p className="text-xs text-gray-500 mt-1">{m.observaciones}</p>}
+                                {m.estado === 'pagada' && Number(m.monto_pagado) > 0 && (
+                                  <p className="text-xs text-green-700 mt-1 font-medium">Pagado: {formatCurrency(Number(m.monto_pagado))}</p>
+                                )}
+                              </div>
+                              {m.estado === 'pendiente' && (
+                                <Button
+                                  variant="outline" size="sm"
+                                  onClick={() => { setMultaAPagar(m); setPagarMultaOpen(true) }}
+                                  className="shrink-0 h-7 text-xs border-green-200 text-green-700 hover:bg-green-50"
+                                >
+                                  Marcar pagada
+                                </Button>
+                              )}
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )}
+                </TabsContent>
+              </Tabs>
             </div>
           )}
         </DialogContent>
       </Dialog>
+
+      {/* Submodal: Asignar Conductor */}
+      {selected && (
+        <AsignarConductorDialog
+          open={asignarOpen}
+          onOpenChange={setAsignarOpen}
+          vehiculoId={selected.id}
+          onDone={() => loadDetalleVehiculo(selected.id)}
+        />
+      )}
+
+      {/* Submodal: Registrar Mantenimiento */}
+      {selected && (
+        <MantenimientoDialog
+          open={mantOpen}
+          onOpenChange={setMantOpen}
+          vehiculoId={selected.id}
+          onDone={() => loadDetalleVehiculo(selected.id)}
+        />
+      )}
+
+      {/* Submodal: Registrar Multa */}
+      {selected && (
+        <MultaDialog
+          open={multaOpen}
+          onOpenChange={setMultaOpen}
+          vehiculoId={selected.id}
+          conductores={conductoresAsignados}
+          onDone={() => loadDetalleVehiculo(selected.id)}
+        />
+      )}
+
+      {/* Submodal: Marcar multa pagada */}
+      <PagarMultaDialog
+        open={pagarMultaOpen}
+        onOpenChange={setPagarMultaOpen}
+        multa={multaAPagar}
+        onDone={() => { if (selected) loadDetalleVehiculo(selected.id) }}
+      />
     </div>
+  )
+}
+
+/* =========================================================================
+   Submodal: Asignar Conductor (con RENIEC + upsert)
+   ========================================================================= */
+
+function AsignarConductorDialog({
+  open, onOpenChange, vehiculoId, onDone,
+}: {
+  open: boolean
+  onOpenChange: (v: boolean) => void
+  vehiculoId: string
+  onDone: () => void
+}) {
+  const supabase = createClient()
+  const { consultarDni, loading: reniecLoading } = useSunatReniec()
+
+  const [dni, setDni] = useState('')
+  const [nombres, setNombres] = useState('')
+  const [apPaterno, setApPaterno] = useState('')
+  const [apMaterno, setApMaterno] = useState('')
+  const [licNum, setLicNum] = useState('')
+  const [licClase, setLicClase] = useState('')
+  const [licVenc, setLicVenc] = useState('')
+  const [telefono, setTelefono] = useState('')
+  const [esPrincipal, setEsPrincipal] = useState(false)
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    if (!open) {
+      setDni(''); setNombres(''); setApPaterno(''); setApMaterno('')
+      setLicNum(''); setLicClase(''); setLicVenc(''); setTelefono('')
+      setEsPrincipal(false); setSaving(false)
+    }
+  }, [open])
+
+  const autocompletar = async () => {
+    const data = await consultarDni(dni.trim())
+    if (!data) return
+    setNombres(data.nombres)
+    if (data.apellidoPaterno) setApPaterno(data.apellidoPaterno)
+    if (data.apellidoMaterno) setApMaterno(data.apellidoMaterno)
+  }
+
+  const submit = async () => {
+    if (!/^\d{8}$/.test(dni)) {
+      toast.error('DNI inválido', { description: 'Debe tener 8 dígitos.' })
+      return
+    }
+    if (!nombres.trim()) {
+      toast.error('Nombres requeridos')
+      return
+    }
+    setSaving(true)
+    try {
+      const nombreCompleto = [apPaterno, apMaterno, nombres].filter(Boolean).join(' ').trim() || nombres
+
+      // Upsert conductor por DNI
+      const { data: condData, error: condErr } = await ((supabase as any).from('conductores'))
+        .upsert({
+          dni,
+          nombres,
+          apellido_paterno: apPaterno || null,
+          apellido_materno: apMaterno || null,
+          nombre_completo: nombreCompleto,
+          telefono: telefono || null,
+          licencia_numero: licNum || null,
+          licencia_clase: licClase || null,
+          licencia_vencimiento: licVenc || null,
+        }, { onConflict: 'dni' })
+        .select('id')
+        .single()
+      if (condErr) throw condErr
+
+      const conductorId = condData.id
+
+      // Si es principal, desmarcar los otros
+      if (esPrincipal) {
+        await ((supabase as any).from('vehiculos_conductores'))
+          .update({ es_principal: false })
+          .eq('vehiculo_id', vehiculoId)
+      }
+
+      // Asignar (upsert por par)
+      const { error: vcErr } = await ((supabase as any).from('vehiculos_conductores'))
+        .upsert({
+          vehiculo_id: vehiculoId,
+          conductor_id: conductorId,
+          es_principal: esPrincipal,
+        }, { onConflict: 'vehiculo_id,conductor_id' })
+      if (vcErr) throw vcErr
+
+      toast.success('Conductor asignado', { description: nombreCompleto })
+      onOpenChange(false)
+      onDone()
+    } catch (err: any) {
+      toast.error('No se pudo asignar', { description: err?.message ?? 'Intenta de nuevo.' })
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>Asignar Conductor</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4 mt-2">
+          <div>
+            <Label>DNI *</Label>
+            <div className="flex gap-2 mt-1">
+              <Input
+                value={dni}
+                onChange={(e) => setDni(e.target.value.replace(/\D/g, '').slice(0, 8))}
+                placeholder="12345678"
+                maxLength={8}
+                inputMode="numeric"
+                className="font-mono flex-1"
+              />
+              <Button
+                type="button" variant="outline" size="sm" onClick={autocompletar}
+                disabled={reniecLoading || dni.length !== 8}
+                className="shrink-0 gap-1 border-[#FBE600] hover:bg-[#FBE600] hover:text-black"
+              >
+                {reniecLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
+                RENIEC
+              </Button>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div>
+              <Label>Ap. Paterno</Label>
+              <Input value={apPaterno} onChange={(e) => setApPaterno(e.target.value)} className="mt-1" />
+            </div>
+            <div>
+              <Label>Ap. Materno</Label>
+              <Input value={apMaterno} onChange={(e) => setApMaterno(e.target.value)} className="mt-1" />
+            </div>
+            <div>
+              <Label>Nombres *</Label>
+              <Input value={nombres} onChange={(e) => setNombres(e.target.value)} className="mt-1" />
+            </div>
+          </div>
+
+          <div>
+            <Label>Teléfono</Label>
+            <Input value={telefono} onChange={(e) => setTelefono(e.target.value)} placeholder="999 999 999" className="mt-1" />
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div>
+              <Label>N° Licencia</Label>
+              <Input value={licNum} onChange={(e) => setLicNum(e.target.value)} className="mt-1 font-mono" />
+            </div>
+            <div>
+              <Label>Clase</Label>
+              <Select value={licClase} onValueChange={setLicClase}>
+                <SelectTrigger className="mt-1">
+                  <SelectValue placeholder="Seleccionar" />
+                </SelectTrigger>
+                <SelectContent>
+                  {CLASE_LICENCIA_OPCIONES.map((op) => (
+                    <SelectItem key={op} value={op}>{op}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>Vencimiento</Label>
+              <Input type="date" value={licVenc} onChange={(e) => setLicVenc(e.target.value)} className="mt-1" />
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <Switch checked={esPrincipal} onCheckedChange={setEsPrincipal} />
+            <Label>Conductor principal</Label>
+          </div>
+
+          <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-3 pt-2 border-t border-gray-100">
+            <Button variant="outline" onClick={() => onOpenChange(false)}>Cancelar</Button>
+            <Button onClick={submit} disabled={saving} className="bg-[#FBE600] hover:bg-[#E5D100] text-black font-semibold gap-2">
+              {saving && <Loader2 className="w-4 h-4 animate-spin" />}
+              Asignar Conductor
+            </Button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+/* =========================================================================
+   Submodal: Registrar Mantenimiento
+   ========================================================================= */
+
+function MantenimientoDialog({
+  open, onOpenChange, vehiculoId, onDone,
+}: {
+  open: boolean
+  onOpenChange: (v: boolean) => void
+  vehiculoId: string
+  onDone: () => void
+}) {
+  const supabase = createClient()
+  const [tipoMant, setTipoMant] = useState<string>('soat')
+  const [fechaRealizado, setFechaRealizado] = useState('')
+  const [fechaVenc, setFechaVenc] = useState('')
+  const [km, setKm] = useState<string>('')
+  const [monto, setMonto] = useState<string>('')
+  const [proveedor, setProveedor] = useState('')
+  const [descripcion, setDescripcion] = useState('')
+  const [observaciones, setObservaciones] = useState('')
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    if (!open) {
+      setTipoMant('soat'); setFechaRealizado(''); setFechaVenc('')
+      setKm(''); setMonto(''); setProveedor('')
+      setDescripcion(''); setObservaciones(''); setSaving(false)
+    }
+  }, [open])
+
+  const submit = async () => {
+    setSaving(true)
+    try {
+      const payload: any = {
+        vehiculo_id: vehiculoId,
+        tipo: tipoMant,
+        descripcion: descripcion || null,
+        fecha_realizado: fechaRealizado || null,
+        fecha_vencimiento: fechaVenc || null,
+        kilometraje: km ? parseInt(km, 10) : null,
+        monto: monto ? parseFloat(monto) : 0,
+        proveedor: proveedor || null,
+        observaciones: observaciones || null,
+        estado: fechaVenc ? 'vigente' : 'pendiente',
+      }
+      const { error } = await ((supabase as any).from('mantenimientos_vehiculo')).insert(payload)
+      if (error) throw error
+      toast.success('Mantenimiento registrado', { description: TIPO_MANT_LABELS[tipoMant] })
+      onOpenChange(false)
+      onDone()
+    } catch (err: any) {
+      toast.error('No se pudo registrar', { description: err?.message ?? 'Intenta de nuevo.' })
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>Registrar Mantenimiento</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4 mt-2">
+          <div>
+            <Label>Tipo *</Label>
+            <Select value={tipoMant} onValueChange={setTipoMant}>
+              <SelectTrigger className="mt-1">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {TIPO_MANT_OPCIONES.map((op) => (
+                  <SelectItem key={op.value} value={op.value}>{op.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <Label>Fecha Realizado</Label>
+              <Input type="date" value={fechaRealizado} onChange={(e) => setFechaRealizado(e.target.value)} className="mt-1" />
+            </div>
+            <div>
+              <Label>Fecha Vencimiento</Label>
+              <Input type="date" value={fechaVenc} onChange={(e) => setFechaVenc(e.target.value)} className="mt-1" />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <Label>Kilometraje</Label>
+              <Input type="number" min={0} value={km} onChange={(e) => setKm(e.target.value)} placeholder="0" className="mt-1" />
+            </div>
+            <div>
+              <Label>Monto (S/)</Label>
+              <Input type="number" min={0} step="0.01" value={monto} onChange={(e) => setMonto(e.target.value)} placeholder="0.00" className="mt-1" />
+            </div>
+          </div>
+
+          <div>
+            <Label>Proveedor</Label>
+            <Input value={proveedor} onChange={(e) => setProveedor(e.target.value)} placeholder="Taller, aseguradora, etc." className="mt-1" />
+          </div>
+
+          <div>
+            <Label>Descripción</Label>
+            <Input value={descripcion} onChange={(e) => setDescripcion(e.target.value)} className="mt-1" />
+          </div>
+
+          <div>
+            <Label>Observaciones</Label>
+            <Textarea rows={2} value={observaciones} onChange={(e) => setObservaciones(e.target.value)} className="mt-1" />
+          </div>
+
+          <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-3 pt-2 border-t border-gray-100">
+            <Button variant="outline" onClick={() => onOpenChange(false)}>Cancelar</Button>
+            <Button onClick={submit} disabled={saving} className="bg-[#FBE600] hover:bg-[#E5D100] text-black font-semibold gap-2">
+              {saving && <Loader2 className="w-4 h-4 animate-spin" />}
+              Registrar
+            </Button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+/* =========================================================================
+   Submodal: Registrar Multa
+   ========================================================================= */
+
+function MultaDialog({
+  open, onOpenChange, vehiculoId, conductores, onDone,
+}: {
+  open: boolean
+  onOpenChange: (v: boolean) => void
+  vehiculoId: string
+  conductores: any[]
+  onDone: () => void
+}) {
+  const supabase = createClient()
+  const [conductorId, setConductorId] = useState<string>('')
+  const [codigo, setCodigo] = useState('')
+  const [tipo, setTipo] = useState('')
+  const [fechaEmision, setFechaEmision] = useState(() => new Date().toISOString().split('T')[0])
+  const [fechaVenc, setFechaVenc] = useState('')
+  const [monto, setMonto] = useState('')
+  const [descuento, setDescuento] = useState('')
+  const [lugar, setLugar] = useState('')
+  const [observaciones, setObservaciones] = useState('')
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    if (!open) {
+      setConductorId(''); setCodigo(''); setTipo('')
+      setFechaEmision(new Date().toISOString().split('T')[0]); setFechaVenc('')
+      setMonto(''); setDescuento(''); setLugar(''); setObservaciones(''); setSaving(false)
+    }
+  }, [open])
+
+  const submit = async () => {
+    if (!tipo.trim()) {
+      toast.error('El tipo de infracción es requerido')
+      return
+    }
+    setSaving(true)
+    try {
+      const payload: any = {
+        vehiculo_id: vehiculoId,
+        conductor_id: conductorId || null,
+        codigo_infraccion: codigo || null,
+        tipo,
+        fecha_emision: fechaEmision,
+        fecha_vencimiento: fechaVenc || null,
+        monto: monto ? parseFloat(monto) : 0,
+        descuento: descuento ? parseFloat(descuento) : 0,
+        lugar: lugar || null,
+        observaciones: observaciones || null,
+        estado: 'pendiente',
+      }
+      const { error } = await ((supabase as any).from('multas_vehiculo')).insert(payload)
+      if (error) throw error
+      toast.success('Multa registrada')
+      onOpenChange(false)
+      onDone()
+    } catch (err: any) {
+      toast.error('No se pudo registrar', { description: err?.message ?? 'Intenta de nuevo.' })
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>Registrar Multa</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4 mt-2">
+          <div>
+            <Label>Conductor</Label>
+            <Select value={conductorId} onValueChange={setConductorId}>
+              <SelectTrigger className="mt-1">
+                <SelectValue placeholder="Sin conductor asignado" />
+              </SelectTrigger>
+              <SelectContent>
+                {conductores.map((vc: any) => (
+                  <SelectItem key={vc.conductor.id} value={vc.conductor.id}>
+                    {vc.conductor.nombre_completo} · {vc.conductor.dni}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <Label>Código Infracción</Label>
+              <Input value={codigo} onChange={(e) => setCodigo(e.target.value)} placeholder="M-01" className="mt-1 font-mono" />
+            </div>
+            <div>
+              <Label>Tipo *</Label>
+              <Input value={tipo} onChange={(e) => setTipo(e.target.value)} placeholder="Exceso de velocidad" className="mt-1" />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <Label>Fecha Emisión *</Label>
+              <Input type="date" value={fechaEmision} onChange={(e) => setFechaEmision(e.target.value)} className="mt-1" />
+            </div>
+            <div>
+              <Label>Fecha Vencimiento</Label>
+              <Input type="date" value={fechaVenc} onChange={(e) => setFechaVenc(e.target.value)} className="mt-1" />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <Label>Monto (S/)</Label>
+              <Input type="number" min={0} step="0.01" value={monto} onChange={(e) => setMonto(e.target.value)} placeholder="0.00" className="mt-1" />
+            </div>
+            <div>
+              <Label>Descuento (S/)</Label>
+              <Input type="number" min={0} step="0.01" value={descuento} onChange={(e) => setDescuento(e.target.value)} placeholder="0.00" className="mt-1" />
+            </div>
+          </div>
+
+          <div>
+            <Label>Lugar</Label>
+            <Input value={lugar} onChange={(e) => setLugar(e.target.value)} className="mt-1" />
+          </div>
+
+          <div>
+            <Label>Observaciones</Label>
+            <Textarea rows={2} value={observaciones} onChange={(e) => setObservaciones(e.target.value)} className="mt-1" />
+          </div>
+
+          <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-3 pt-2 border-t border-gray-100">
+            <Button variant="outline" onClick={() => onOpenChange(false)}>Cancelar</Button>
+            <Button onClick={submit} disabled={saving} className="bg-[#FBE600] hover:bg-[#E5D100] text-black font-semibold gap-2">
+              {saving && <Loader2 className="w-4 h-4 animate-spin" />}
+              Registrar Multa
+            </Button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+/* =========================================================================
+   Submodal: Marcar multa como pagada
+   ========================================================================= */
+
+function PagarMultaDialog({
+  open, onOpenChange, multa, onDone,
+}: {
+  open: boolean
+  onOpenChange: (v: boolean) => void
+  multa: any | null
+  onDone: () => void
+}) {
+  const supabase = createClient()
+  const [montoPagado, setMontoPagado] = useState('')
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    if (open && multa) {
+      const sugerido = Math.max(0, Number(multa.monto) - Number(multa.descuento ?? 0))
+      setMontoPagado(sugerido.toFixed(2))
+    } else if (!open) {
+      setMontoPagado(''); setSaving(false)
+    }
+  }, [open, multa])
+
+  if (!multa) return null
+
+  const submit = async () => {
+    setSaving(true)
+    try {
+      const { error } = await ((supabase as any).from('multas_vehiculo'))
+        .update({
+          estado: 'pagada',
+          monto_pagado: montoPagado ? parseFloat(montoPagado) : 0,
+        })
+        .eq('id', multa.id)
+      if (error) throw error
+      toast.success('Multa marcada como pagada')
+      onOpenChange(false)
+      onDone()
+    } catch (err: any) {
+      toast.error('No se pudo actualizar', { description: err?.message ?? 'Intenta de nuevo.' })
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-sm">
+        <DialogHeader>
+          <DialogTitle>Marcar Multa como Pagada</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4 mt-2">
+          <div className="p-3 bg-gray-50 rounded-lg text-sm">
+            <p className="font-medium text-gray-900">{multa.tipo}</p>
+            <p className="text-xs text-gray-500">Monto: {formatCurrency(Number(multa.monto))}</p>
+            {Number(multa.descuento) > 0 && (
+              <p className="text-xs text-gray-500">Descuento: {formatCurrency(Number(multa.descuento))}</p>
+            )}
+          </div>
+          <div>
+            <Label>Monto Pagado (S/) *</Label>
+            <Input
+              type="number" min={0} step="0.01"
+              value={montoPagado}
+              onChange={(e) => setMontoPagado(e.target.value)}
+              className="mt-1"
+            />
+          </div>
+          <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-3 pt-2 border-t border-gray-100">
+            <Button variant="outline" onClick={() => onOpenChange(false)}>Cancelar</Button>
+            <Button onClick={submit} disabled={saving} className="bg-green-600 hover:bg-green-700 text-white font-semibold gap-2">
+              {saving && <Loader2 className="w-4 h-4 animate-spin" />}
+              Confirmar Pago
+            </Button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
   )
 }

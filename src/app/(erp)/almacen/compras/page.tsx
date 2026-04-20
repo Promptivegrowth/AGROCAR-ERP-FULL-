@@ -5,15 +5,14 @@ import { useForm, useFieldArray } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import {
-  Plus, Trash2, Loader2, ShoppingCart, ChevronLeft, ChevronRight, X
+  Plus, Loader2, ShoppingCart, ChevronLeft, ChevronRight, X, Package2,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { createClient } from '@/lib/supabase/client'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Badge } from '@/components/ui/badge'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent } from '@/components/ui/card'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Label } from '@/components/ui/label'
@@ -22,6 +21,9 @@ const itemSchema = z.object({
   producto_id: z.string().min(1, 'Seleccione producto'),
   cantidad: z.coerce.number().positive('Debe ser mayor a 0'),
   precio_unitario: z.coerce.number().positive('Debe ser mayor a 0'),
+  lote_numero: z.string().optional(),
+  lote_fecha_fabricacion: z.string().optional(),
+  lote_fecha_vencimiento: z.string().optional(),
 })
 
 const compraSchema = z.object({
@@ -39,10 +41,16 @@ const IGV_RATE = 0.18
 const PAGE_SIZE = 15
 
 const ESTADO_CONFIG: Record<string, { label: string; className: string }> = {
-  borrador: { label: 'Borrador', className: 'bg-gray-100 text-gray-600' },
-  enviado: { label: 'Enviado', className: 'bg-blue-100 text-blue-700' },
-  recibido: { label: 'Recibido', className: 'bg-green-100 text-green-700' },
-  cancelado: { label: 'Cancelado', className: 'bg-red-100 text-red-700' },
+  activo: { label: 'Activo', className: 'bg-green-100 text-green-700' },
+  anulado: { label: 'Anulado', className: 'bg-red-100 text-red-700' },
+}
+
+type ProductoCatalogo = {
+  id: string
+  codigo: string
+  nombre: string
+  tiene_lote: boolean
+  tiene_vencimiento: boolean
 }
 
 export default function ComprasPage() {
@@ -53,7 +61,7 @@ export default function ComprasPage() {
   const [page, setPage] = useState(0)
   const [loading, setLoading] = useState(true)
   const [proveedores, setProveedores] = useState<any[]>([])
-  const [productos, setProductos] = useState<any[]>([])
+  const [productos, setProductos] = useState<ProductoCatalogo[]>([])
   const [dialogOpen, setDialogOpen] = useState(false)
   const [saving, setSaving] = useState(false)
 
@@ -63,7 +71,7 @@ export default function ComprasPage() {
       tipo: 'directa',
       metodo_valorizacion: 'promedio',
       fecha: new Date().toISOString().split('T')[0],
-      items: [{ producto_id: '', cantidad: 1, precio_unitario: 0 }],
+      items: [{ producto_id: '', cantidad: 1, precio_unitario: 0, lote_numero: '', lote_fecha_fabricacion: '', lote_fecha_vencimiento: '' }],
     },
   })
 
@@ -81,23 +89,36 @@ export default function ComprasPage() {
     setLoading(true)
     const [{ data: c, count }, { data: p }, { data: pr }] = await Promise.all([
       supabase
-        .from('ordenes_compra')
-        .select(`id, numero, fecha, total, estado, proveedores(razon_social)`, { count: 'exact' })
+        .from('compras')
+        .select(`id, numero_factura_proveedor, fecha, total, estado, proveedores(razon_social)`, { count: 'exact' })
         .order('fecha', { ascending: false })
         .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1),
       supabase.from('proveedores').select('id, razon_social').eq('activo', true).order('razon_social'),
-      supabase.from('productos').select('id, codigo, nombre').eq('activo', true).order('nombre'),
+      supabase.from('productos').select('id, codigo, nombre, tiene_lote, tiene_vencimiento').eq('activo', true).order('nombre'),
     ])
     setCompras(c ?? [])
     setTotal(count ?? 0)
     setProveedores(p ?? [])
-    setProductos(pr ?? [])
+    setProductos((pr ?? []) as ProductoCatalogo[])
     setLoading(false)
   }, [page])
 
   useEffect(() => { loadData() }, [loadData])
 
   const onSubmit = async (data: CompraFormData) => {
+    // Validación previa: lote_numero obligatorio si producto tiene_lote
+    for (let i = 0; i < data.items.length; i++) {
+      const item = data.items[i]
+      const prod = productos.find((p) => p.id === item.producto_id)
+      if (!prod) continue
+      if (prod.tiene_lote && !item.lote_numero?.trim()) {
+        toast.error('Lote requerido', {
+          description: `El producto "${prod.nombre}" requiere número de lote.`,
+        })
+        return
+      }
+    }
+
     setSaving(true)
 
     const subtotalCalc = data.items.reduce(
@@ -105,46 +126,90 @@ export default function ComprasPage() {
     )
     const igvCalc = subtotalCalc * IGV_RATE
 
-    // Insertar en ordenes_compra usando los campos correctos del schema
-    const { data: oc, error } = await supabase.from('ordenes_compra').insert({
-      numero: `OC-${Date.now()}`,
-      proveedor_id: data.proveedor_id,
-      fecha: data.fecha,
-      subtotal: subtotalCalc,
-      igv: igvCalc,
-      total: subtotalCalc + igvCalc,
-      estado: 'recibido' as const,
-      notas: data.numero_factura ? `Factura proveedor: ${data.numero_factura}` : null,
-    }).select().single()
+    try {
+      const { data: userData } = await supabase.auth.getUser()
+      const userId = userData?.user?.id ?? null
 
-    if (error || !oc) {
-      setSaving(false)
-      toast.error('Error al registrar compra', { description: error?.message ?? 'No se pudo crear la orden.' })
-      return
-    }
+      // 1. Insertar cabecera en compras
+      const { data: compra, error } = await (supabase.from('compras') as any).insert({
+        proveedor_id: data.proveedor_id,
+        numero_factura_proveedor: data.numero_factura,
+        fecha: data.fecha,
+        metodo_valorizacion: data.metodo_valorizacion,
+        subtotal: subtotalCalc,
+        igv: igvCalc,
+        total: subtotalCalc + igvCalc,
+        moneda: 'PEN',
+        estado: 'activo',
+        created_by: userId,
+      }).select().single()
 
-    const items = data.items.map((item) => ({
-      orden_compra_id: oc.id,
-      producto_id: item.producto_id,
-      cantidad: item.cantidad,
-      precio_unitario: item.precio_unitario,
-      subtotal: item.cantidad * item.precio_unitario,
-    }))
-    const { error: itemsError } = await supabase.from('ordenes_compra_items').insert(items)
+      if (error || !compra) {
+        throw new Error(error?.message ?? 'No se pudo crear la compra.')
+      }
 
-    setSaving(false)
-    setDialogOpen(false)
-    reset()
+      // 2. Por cada item: si tiene lote/vencimiento, crear lote y obtener lote_id
+      const itemsToInsert: any[] = []
+      for (const item of data.items) {
+        const prod = productos.find((p) => p.id === item.producto_id)
+        let loteId: string | null = null
 
-    if (itemsError) {
-      toast.error('Compra guardada con advertencias', { description: itemsError.message })
-    } else {
+        if (prod && (prod.tiene_lote || prod.tiene_vencimiento) && item.lote_numero?.trim()) {
+          const { data: lote, error: loteError } = await (supabase.from('lotes') as any).insert({
+            producto_id: item.producto_id,
+            numero_lote: item.lote_numero.trim(),
+            fecha_vencimiento: item.lote_fecha_vencimiento || null,
+            cantidad_inicial: item.cantidad,
+            cantidad_actual: item.cantidad,
+            activo: true,
+          }).select('id').single()
+
+          if (loteError) {
+            // Si el lote ya existe (unique constraint), intentar obtenerlo
+            const { data: existing } = await supabase
+              .from('lotes')
+              .select('id, cantidad_actual')
+              .eq('producto_id', item.producto_id)
+              .eq('numero_lote', item.lote_numero.trim())
+              .maybeSingle()
+            if (existing) {
+              loteId = (existing as any).id
+              // actualizar cantidad_actual
+              await (supabase.from('lotes') as any)
+                .update({ cantidad_actual: Number((existing as any).cantidad_actual ?? 0) + item.cantidad })
+                .eq('id', loteId)
+            } else {
+              throw new Error(`No se pudo registrar el lote: ${loteError.message}`)
+            }
+          } else {
+            loteId = lote?.id ?? null
+          }
+        }
+
+        itemsToInsert.push({
+          compra_id: compra.id,
+          producto_id: item.producto_id,
+          lote_id: loteId,
+          cantidad: item.cantidad,
+          precio_unitario: item.precio_unitario,
+          subtotal: item.cantidad * item.precio_unitario,
+        })
+      }
+
+      const { error: itemsError } = await (supabase.from('compras_items') as any).insert(itemsToInsert)
+      if (itemsError) throw new Error(itemsError.message)
+
       toast.success('Compra registrada', {
-        description: `${oc.numero} · Total ${formatCurrency(subtotalCalc + igvCalc)}`,
+        description: `Factura ${data.numero_factura} · Total ${formatCurrency(subtotalCalc + igvCalc)}`,
       })
+      setDialogOpen(false)
+      reset()
+      loadData()
+    } catch (err: any) {
+      toast.error('Error al registrar compra', { description: err?.message ?? 'No se pudo guardar.' })
+    } finally {
+      setSaving(false)
     }
-
-    loadData()
   }
 
   const totalPages = Math.ceil(total / PAGE_SIZE)
@@ -154,7 +219,7 @@ export default function ComprasPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Compras</h1>
-          <p className="text-sm text-gray-500 mt-0.5">Registro de órdenes de compra y facturas de proveedores</p>
+          <p className="text-sm text-gray-500 mt-0.5">Registro de compras y facturas de proveedores</p>
         </div>
         <Button onClick={() => setDialogOpen(true)} className="bg-[#FBE600] hover:bg-[#E5D100] text-black font-semibold gap-2">
           <Plus className="w-4 h-4" /> Nueva Compra
@@ -177,7 +242,7 @@ export default function ComprasPage() {
               <table className="w-full text-sm">
                 <thead className="border-b border-gray-100 bg-gray-50/50">
                   <tr>
-                    {['N° Orden', 'Proveedor', 'Fecha', 'Total', 'Estado'].map((h) => (
+                    {['Factura', 'Proveedor', 'Fecha', 'Total', 'Estado'].map((h) => (
                       <th key={h} className="text-left py-3 px-4 text-xs font-semibold text-gray-500 uppercase tracking-wide">
                         {h}
                       </th>
@@ -186,10 +251,10 @@ export default function ComprasPage() {
                 </thead>
                 <tbody className="divide-y divide-gray-50">
                   {compras.map((c) => {
-                    const estadoCfg = ESTADO_CONFIG[c.estado] ?? ESTADO_CONFIG.borrador
+                    const estadoCfg = ESTADO_CONFIG[c.estado] ?? ESTADO_CONFIG.activo
                     return (
                       <tr key={c.id} className="hover:bg-gray-50/50 transition-colors">
-                        <td className="py-3 px-4 font-mono text-xs text-gray-600">{c.numero ?? '—'}</td>
+                        <td className="py-3 px-4 font-mono text-xs text-gray-600">{c.numero_factura_proveedor ?? '—'}</td>
                         <td className="py-3 px-4 font-medium text-gray-900">{(c.proveedores as any)?.razon_social ?? '—'}</td>
                         <td className="py-3 px-4 text-gray-500 text-xs">
                           {c.fecha ? formatDate(c.fecha) : '—'}
@@ -227,7 +292,7 @@ export default function ComprasPage() {
 
       {/* Dialog Nueva Compra */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Registrar Nueva Compra</DialogTitle>
           </DialogHeader>
@@ -294,74 +359,123 @@ export default function ComprasPage() {
                   type="button"
                   variant="outline"
                   size="sm"
-                  onClick={() => append({ producto_id: '', cantidad: 1, precio_unitario: 0 })}
+                  onClick={() => append({ producto_id: '', cantidad: 1, precio_unitario: 0, lote_numero: '', lote_fecha_fabricacion: '', lote_fecha_vencimiento: '' })}
                   className="h-7 gap-1 text-xs"
                 >
                   <Plus className="w-3 h-3" /> Agregar
                 </Button>
               </div>
               <div className="border border-gray-200 rounded-lg overflow-hidden">
-                <table className="w-full text-sm">
-                  <thead className="bg-gray-50 border-b border-gray-200">
-                    <tr>
-                      <th className="text-left py-2 px-3 text-xs font-semibold text-gray-500">Producto</th>
-                      <th className="text-left py-2 px-3 text-xs font-semibold text-gray-500 w-28">Cantidad</th>
-                      <th className="text-left py-2 px-3 text-xs font-semibold text-gray-500 w-28">P. Unit.</th>
-                      <th className="text-left py-2 px-3 text-xs font-semibold text-gray-500 w-28">Subtotal</th>
-                      <th className="w-10" />
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-100">
-                    {fields.map((field, idx) => {
-                      const cant = Number(watchItems?.[idx]?.cantidad) || 0
-                      const precio = Number(watchItems?.[idx]?.precio_unitario) || 0
-                      return (
-                        <tr key={field.id}>
-                          <td className="py-2 px-3">
+                <div className="divide-y divide-gray-100">
+                  {fields.map((field, idx) => {
+                    const cant = Number(watchItems?.[idx]?.cantidad) || 0
+                    const precio = Number(watchItems?.[idx]?.precio_unitario) || 0
+                    const productoId = watchItems?.[idx]?.producto_id
+                    const prod = productos.find((p) => p.id === productoId)
+                    const requiereLote = prod?.tiene_lote || prod?.tiene_vencimiento
+                    return (
+                      <div key={field.id} className="p-3 bg-white">
+                        <div className="grid grid-cols-12 gap-2 items-start">
+                          <div className="col-span-5">
+                            <Label className="text-[10px] text-gray-500">Producto</Label>
                             <Select onValueChange={(v) => setValue(`items.${idx}.producto_id`, v)}>
-                              <SelectTrigger className="h-8 text-xs">
+                              <SelectTrigger className="h-8 text-xs mt-1">
                                 <SelectValue placeholder="Seleccionar..." />
                               </SelectTrigger>
                               <SelectContent>
                                 {productos.map((p) => (
-                                  <SelectItem key={p.id} value={p.id}>{p.nombre}</SelectItem>
+                                  <SelectItem key={p.id} value={p.id}>
+                                    {p.nombre}
+                                    {(p.tiene_lote || p.tiene_vencimiento) && (
+                                      <span className="ml-1 text-[10px] text-amber-600">· lote</span>
+                                    )}
+                                  </SelectItem>
                                 ))}
                               </SelectContent>
                             </Select>
-                          </td>
-                          <td className="py-2 px-3">
+                          </div>
+                          <div className="col-span-2">
+                            <Label className="text-[10px] text-gray-500">Cantidad</Label>
                             <Input
                               {...register(`items.${idx}.cantidad`)}
                               type="number"
                               min={1}
                               step="0.01"
-                              className="h-8 text-xs"
+                              className="h-8 text-xs mt-1"
                             />
-                          </td>
-                          <td className="py-2 px-3">
+                          </div>
+                          <div className="col-span-2">
+                            <Label className="text-[10px] text-gray-500">P. Unit.</Label>
                             <Input
                               {...register(`items.${idx}.precio_unitario`)}
                               type="number"
                               min={0}
                               step="0.01"
-                              className="h-8 text-xs"
+                              className="h-8 text-xs mt-1"
                             />
-                          </td>
-                          <td className="py-2 px-3 text-xs font-medium text-gray-700">
-                            {formatCurrency(cant * precio)}
-                          </td>
-                          <td className="py-2 px-3">
+                          </div>
+                          <div className="col-span-2">
+                            <Label className="text-[10px] text-gray-500">Subtotal</Label>
+                            <p className="h-8 text-xs mt-1 font-medium text-gray-700 flex items-center">
+                              {formatCurrency(cant * precio)}
+                            </p>
+                          </div>
+                          <div className="col-span-1 pt-5">
                             {fields.length > 1 && (
                               <button type="button" onClick={() => remove(idx)} className="text-red-400 hover:text-red-600">
                                 <X className="w-3.5 h-3.5" />
                               </button>
                             )}
-                          </td>
-                        </tr>
-                      )
-                    })}
-                  </tbody>
-                </table>
+                          </div>
+                        </div>
+
+                        {/* Inputs de lote / vencimiento */}
+                        {requiereLote && (
+                          <div className="mt-2 ml-1 p-2.5 bg-amber-50/50 border border-amber-200 rounded-lg">
+                            <div className="flex items-center gap-1.5 mb-1.5">
+                              <Package2 className="w-3.5 h-3.5 text-amber-600" />
+                              <span className="text-[11px] font-medium text-amber-800">
+                                Control de lote / vencimiento requerido
+                              </span>
+                            </div>
+                            <div className="grid grid-cols-3 gap-2">
+                              <div>
+                                <Label className="text-[10px] text-gray-600">
+                                  N° de Lote {prod?.tiene_lote && <span className="text-red-500">*</span>}
+                                </Label>
+                                <Input
+                                  {...register(`items.${idx}.lote_numero`)}
+                                  placeholder="L-001"
+                                  className="h-8 text-xs mt-1"
+                                />
+                              </div>
+                              {prod?.tiene_vencimiento && (
+                                <>
+                                  <div>
+                                    <Label className="text-[10px] text-gray-600">Fecha fabricación</Label>
+                                    <Input
+                                      {...register(`items.${idx}.lote_fecha_fabricacion`)}
+                                      type="date"
+                                      className="h-8 text-xs mt-1"
+                                    />
+                                  </div>
+                                  <div>
+                                    <Label className="text-[10px] text-gray-600">Fecha vencimiento</Label>
+                                    <Input
+                                      {...register(`items.${idx}.lote_fecha_vencimiento`)}
+                                      type="date"
+                                      className="h-8 text-xs mt-1"
+                                    />
+                                  </div>
+                                </>
+                              )}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
               </div>
               {errors.items && <p className="text-xs text-red-500 mt-1">{errors.items.message}</p>}
             </div>

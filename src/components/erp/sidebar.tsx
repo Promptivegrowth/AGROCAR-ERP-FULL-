@@ -29,6 +29,8 @@ import {
   ClipboardList,
   RotateCcw,
   UserPlus,
+  IdCard,
+  Boxes,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -66,6 +68,7 @@ const NAV_ITEMS: NavItem[] = [
       { label: 'Familias', href: '/maestros/familias', icon: Tags },
       { label: 'Proveedores', href: '/maestros/proveedores', icon: Building2 },
       { label: 'Vehículos', href: '/maestros/vehiculos', icon: Car },
+      { label: 'Conductores', href: '/maestros/conductores', icon: IdCard },
       { label: 'Zonas', href: '/maestros/zonas', icon: Map },
     ],
   },
@@ -74,6 +77,7 @@ const NAV_ITEMS: NavItem[] = [
     icon: Warehouse,
     children: [
       { label: 'Inventario', href: '/almacen', icon: ClipboardList },
+      { label: 'Lotes', href: '/almacen/lotes', icon: Boxes },
       { label: 'Compras', href: '/almacen/compras', icon: ShoppingCart },
       { label: 'Ajustes', href: '/almacen/ajustes', icon: RotateCcw },
     ],

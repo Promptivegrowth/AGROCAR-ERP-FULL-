@@ -92,7 +92,7 @@ export default function PedidosPage() {
           .order('razon_social'),
         supabase
           .from('productos')
-          .select('id, nombre, codigo, activo')
+          .select('id, nombre, codigo, activo, tiene_lote, tiene_vencimiento')
           .eq('activo', true)
           .order('nombre'),
       ])
@@ -106,7 +106,7 @@ export default function PedidosPage() {
       }
 
       if (productosData) {
-        const mapped = productosData.map((p: { id: string; nombre: string; codigo?: string; activo?: boolean }) => ({
+        const mapped = productosData.map((p: any) => ({
           ...p,
           precio: 0,
         }))
@@ -279,9 +279,44 @@ export default function PedidosPage() {
         return
       }
 
+      // Para productos con lote, intentar asignar el lote más próximo a vencer (FEFO)
+      const productosConLote = seleccionados.filter(
+        (s) => (s.producto as any).tiene_lote === true || (s.producto as any).tiene_vencimiento === true
+      )
+      let lotePorProducto: Record<string, string | null> = {}
+      let productosSinLote: string[] = []
+
+      if (productosConLote.length > 0) {
+        const ids = productosConLote.map((s) => s.producto.id)
+        const { data: lotesDisp } = await supabase
+          .from('lotes')
+          .select('id, producto_id, fecha_vencimiento, cantidad_actual')
+          .in('producto_id', ids)
+          .eq('activo', true)
+          .gt('cantidad_actual', 0)
+          .order('fecha_vencimiento', { ascending: true, nullsFirst: false })
+
+        // Tomamos el primer lote disponible por producto (menor fecha_vencimiento)
+        for (const s of productosConLote) {
+          const lote = (lotesDisp ?? []).find((l: any) => l.producto_id === s.producto.id)
+          if (lote) {
+            lotePorProducto[s.producto.id] = (lote as any).id
+          } else {
+            productosSinLote.push(s.producto.nombre)
+          }
+        }
+
+        if (productosSinLote.length > 0) {
+          toast.warning('Productos sin lote disponible', {
+            description: `No se encontró lote con stock para: ${productosSinLote.join(', ')}`,
+          })
+        }
+      }
+
       const items = seleccionados.map((s) => ({
         pedido_id: pedido.id,
         producto_id: s.producto.id,
+        lote_id: lotePorProducto[s.producto.id] ?? null,
         cantidad: s.cantidad,
         precio_unitario: s.producto.precio,
         descuento_porcentaje: descuentoPct,

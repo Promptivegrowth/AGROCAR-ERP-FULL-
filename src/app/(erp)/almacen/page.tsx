@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import Link from 'next/link'
 import { toast } from 'sonner'
-import { AlertTriangle, Package, TrendingDown, TrendingUp, Eye, Loader2, Search, History, Sliders } from 'lucide-react'
+import { AlertTriangle, Package, TrendingDown, TrendingUp, Eye, Loader2, Search, History, Sliders, Boxes } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { useDebounce } from '@/lib/hooks/use-debounce'
 import { formatCurrency, formatDate, formatDatetime } from '@/lib/utils'
@@ -35,6 +35,8 @@ export default function AlmacenPage() {
   const [selected, setSelected] = useState<any>(null)
   const [movimientos, setMovimientos] = useState<any[]>([])
   const [loadingMovs, setLoadingMovs] = useState(false)
+  const [lotesProducto, setLotesProducto] = useState<any[]>([])
+  const [loadingLotes, setLoadingLotes] = useState(false)
 
   // Ajuste stock
   const [adjustOpen, setAdjustOpen] = useState(false)
@@ -57,7 +59,7 @@ export default function AlmacenPage() {
       .from('stock')
       .select(`
         id, producto_id, cantidad, cantidad_reservada, costo_promedio, updated_at,
-        productos(id, codigo, nombre, activo, familia_id, unidad_medida_id,
+        productos(id, codigo, nombre, activo, familia_id, unidad_medida_id, tiene_lote, tiene_vencimiento,
           familias(nombre),
           unidades_medida(simbolo, nombre)
         )
@@ -75,18 +77,44 @@ export default function AlmacenPage() {
     setSelected(s)
     setDetailOpen(true)
     setMovimientos([])
+    setLotesProducto([])
     setLoadingMovs(true)
-    const { data, error } = await supabase
-      .from('movimientos_stock')
-      .select('id, tipo, cantidad, costo_unitario, notas, created_at')
-      .eq('producto_id', s.producto_id)
-      .order('created_at', { ascending: false })
-      .limit(10)
+    const producto = s.productos as any
+    const tieneLote = producto?.tiene_lote === true || producto?.tiene_vencimiento === true
+
+    const promises: any[] = [
+      supabase
+        .from('movimientos_stock')
+        .select('id, tipo, cantidad, costo_unitario, notas, created_at')
+        .eq('producto_id', s.producto_id)
+        .order('created_at', { ascending: false })
+        .limit(10),
+    ]
+    if (tieneLote) {
+      setLoadingLotes(true)
+      promises.push(
+        supabase
+          .from('lotes')
+          .select('id, numero_lote, fecha_vencimiento, cantidad_actual, activo')
+          .eq('producto_id', s.producto_id)
+          .eq('activo', true)
+          .order('fecha_vencimiento', { ascending: true, nullsFirst: false })
+      )
+    }
+
+    const results = await Promise.all(promises)
+    const { data, error } = results[0]
     if (error) {
       toast.error('No se pudieron cargar los movimientos', { description: error.message })
     }
     setMovimientos(data ?? [])
     setLoadingMovs(false)
+
+    if (tieneLote) {
+      const { data: lotesData } = results[1]
+      setLotesProducto(lotesData ?? [])
+      setLoadingLotes(false)
+    }
   }
 
   const openAdjust = (s: any) => {
@@ -495,6 +523,86 @@ export default function AlmacenPage() {
                     <p className="text-lg font-bold text-blue-800 mt-0.5">{formatCurrency(valorTotal)}</p>
                   </div>
                 </div>
+
+                {/* Lotes activos (solo si el producto maneja lote/vencimiento) */}
+                {(producto?.tiene_lote || producto?.tiene_vencimiento) && (
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <p className="text-sm font-semibold text-gray-800 flex items-center gap-1.5">
+                        <Boxes className="w-4 h-4 text-amber-600" />
+                        Lotes activos
+                      </p>
+                      <Link
+                        href="/almacen/lotes"
+                        className="text-xs text-blue-600 hover:underline"
+                      >
+                        Ver todos →
+                      </Link>
+                    </div>
+                    <div className="border border-gray-100 rounded-lg overflow-hidden">
+                      {loadingLotes ? (
+                        <div className="flex items-center justify-center py-6">
+                          <Loader2 className="w-4 h-4 text-green-600 animate-spin" />
+                        </div>
+                      ) : lotesProducto.length === 0 ? (
+                        <div className="text-center py-5 text-xs text-gray-400">
+                          Sin lotes activos registrados
+                        </div>
+                      ) : (
+                        <table className="w-full text-xs">
+                          <thead className="bg-gray-50/50 border-b border-gray-100">
+                            <tr>
+                              {['N° Lote', 'Vencimiento', 'Cant. disp.', 'Estado'].map((h) => (
+                                <th key={h} className="text-left py-2 px-3 font-semibold text-gray-500 uppercase tracking-wide">
+                                  {h}
+                                </th>
+                              ))}
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-gray-50">
+                            {lotesProducto.map((l: any) => {
+                              const hoy = new Date(); hoy.setHours(0, 0, 0, 0)
+                              let estado: 'vencido' | 'por_vencer' | 'al_dia' = 'al_dia'
+                              let dias: number | null = null
+                              if (l.fecha_vencimiento) {
+                                const venc = new Date(l.fecha_vencimiento + 'T00:00:00')
+                                dias = Math.floor((venc.getTime() - hoy.getTime()) / (1000 * 60 * 60 * 24))
+                                if (dias < 0) estado = 'vencido'
+                                else if (dias < 30) estado = 'por_vencer'
+                              }
+                              const estadoCfg = estado === 'vencido'
+                                ? { label: 'Vencido', className: 'bg-red-100 text-red-700 border-red-200', row: 'bg-red-50/40' }
+                                : estado === 'por_vencer'
+                                  ? { label: 'Por vencer', className: 'bg-amber-100 text-amber-700 border-amber-200', row: 'bg-amber-50/30' }
+                                  : { label: 'Al día', className: 'bg-green-100 text-green-700 border-green-200', row: '' }
+                              return (
+                                <tr key={l.id} className={estadoCfg.row}>
+                                  <td className="py-2 px-3 font-mono text-gray-700">{l.numero_lote}</td>
+                                  <td className="py-2 px-3 text-gray-600">
+                                    {l.fecha_vencimiento ? formatDate(l.fecha_vencimiento) : '—'}
+                                    {dias !== null && (
+                                      <span className="ml-1 text-[10px] text-gray-400">
+                                        ({dias < 0 ? `hace ${Math.abs(dias)}d` : `en ${dias}d`})
+                                      </span>
+                                    )}
+                                  </td>
+                                  <td className="py-2 px-3 font-semibold text-gray-800">
+                                    {Number(l.cantidad_actual ?? 0).toLocaleString('es-PE')} {simbolo}
+                                  </td>
+                                  <td className="py-2 px-3">
+                                    <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium border ${estadoCfg.className}`}>
+                                      {estadoCfg.label}
+                                    </span>
+                                  </td>
+                                </tr>
+                              )
+                            })}
+                          </tbody>
+                        </table>
+                      )}
+                    </div>
+                  </div>
+                )}
 
                 {/* Últimos movimientos */}
                 <div>

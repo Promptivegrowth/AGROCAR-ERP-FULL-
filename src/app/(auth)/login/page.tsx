@@ -22,15 +22,15 @@ const roleRedirects: Record<UserRole, string> = {
   repartidor: '/pwa/cobros',
 }
 
-// Credenciales de prueba para facilitar testing de cada rol
+// Credenciales de prueba reales (alineadas con la DB)
 const CREDENCIALES_PRUEBA = [
-  { rol: 'Administrador', email: 'admin@agrocar.pe', password: 'admin123' },
-  { rol: 'Gerente', email: 'gerente@agrocar.pe', password: 'gerente123' },
-  { rol: 'Facturador', email: 'facturador@agrocar.pe', password: 'facturador123' },
-  { rol: 'Almacenero', email: 'almacen@agrocar.pe', password: 'almacen123' },
-  { rol: 'Contador', email: 'contador@agrocar.pe', password: 'contador123' },
-  { rol: 'Vendedor', email: 'vendedor1@agrocar.pe', password: 'vendedor123' },
-  { rol: 'Repartidor', email: 'repartidor1@agrocar.pe', password: 'repartidor123' },
+  { rol: 'Administrador', email: 'admin@agrocar.pe', password: 'Admin2024!' },
+  { rol: 'Gerente', email: 'gerente@agrocar.pe', password: 'Gerente2024!' },
+  { rol: 'Facturador', email: 'facturador@agrocar.pe', password: 'Factura2024!' },
+  { rol: 'Almacenero', email: 'almacen@agrocar.pe', password: 'Almacen2024!' },
+  { rol: 'Contador', email: 'contador@agrocar.pe', password: 'Contad2024!' },
+  { rol: 'Vendedor', email: 'vendedor1@agrocar.pe', password: 'Vend2024!' },
+  { rol: 'Repartidor', email: 'repartidor1@agrocar.pe', password: 'Repart2024!' },
 ]
 
 export default function LoginPage() {
