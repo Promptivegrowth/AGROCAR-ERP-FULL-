@@ -31,6 +31,7 @@ import {
   UserPlus,
   IdCard,
   Boxes,
+  Target,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -115,6 +116,12 @@ const NAV_ITEMS: NavItem[] = [
     href: '/gps',
     icon: MapPin,
     roles: ['gerente', 'administrador'],
+  },
+  {
+    label: 'Vendedores',
+    href: '/vendedores',
+    icon: Target,
+    roles: ['gerente', 'administrador', 'contador'],
   },
   {
     label: 'Reportes',

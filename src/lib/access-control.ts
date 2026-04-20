@@ -57,6 +57,7 @@ const ERP_ACCESS: Record<UserRole, string[] | '*'> = {
     '/contabilidad',
     '/reportes',
     '/facturacion',
+    '/vendedores',
     '/configuracion',
   ],
   vendedor: [],

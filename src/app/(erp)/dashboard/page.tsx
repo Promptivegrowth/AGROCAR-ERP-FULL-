@@ -32,6 +32,7 @@ async function getDashboardData() {
     { data: mantenimientos },
     { data: lotesAlerta },
     { data: tipoCambio },
+    { data: liquidacionesAprobadas },
   ] = await Promise.all([
     supabase
       .from('pedidos')
@@ -93,6 +94,10 @@ async function getDashboardData() {
       .order('fecha', { ascending: false })
       .limit(1)
       .maybeSingle(),
+    supabase
+      .from('liquidaciones_comision' as any)
+      .select('id')
+      .eq('estado', 'aprobada'),
   ])
 
   const totalPedidos = pedidosHoy?.length ?? 0
@@ -148,6 +153,8 @@ async function getDashboardData() {
     else if (fv <= en30) lotesPorVencer++
   })
 
+  const comisionesAprobadasCount = (liquidacionesAprobadas ?? []).length
+
   return {
     totalPedidos,
     totalFacturado,
@@ -161,6 +168,7 @@ async function getDashboardData() {
     alertasProximas,
     lotesVencidos,
     lotesPorVencer,
+    comisionesAprobadasCount,
     tipoCambio: tipoCambio as { fecha: string; compra: number; venta: number; fuente: string | null } | null,
   }
 }
@@ -317,6 +325,18 @@ export default async function DashboardPage() {
             <strong>{data.lotesPorVencer} lote{data.lotesPorVencer !== 1 ? 's' : ''} por vencer</strong> en los próximos 30 días.{' '}
             <a href="/almacen/lotes" className="underline font-medium">
               Revisar lotes →
+            </a>
+          </p>
+        </div>
+      )}
+
+      {data.comisionesAprobadasCount > 0 && (
+        <div className="flex items-center gap-3 bg-yellow-50 border border-yellow-200 rounded-xl px-4 py-3">
+          <AlertTriangle className="w-5 h-5 text-yellow-500 flex-shrink-0" />
+          <p className="text-sm text-yellow-800">
+            <strong>{data.comisionesAprobadasCount} comisión{data.comisionesAprobadasCount !== 1 ? 'es' : ''} aprobada{data.comisionesAprobadasCount !== 1 ? 's' : ''} pendientes de pago</strong>.{' '}
+            <a href="/vendedores" className="underline font-medium">
+              Ir a Vendedores →
             </a>
           </p>
         </div>
