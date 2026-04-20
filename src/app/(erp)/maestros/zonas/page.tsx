@@ -20,6 +20,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Switch } from '@/components/ui/switch'
+import UbigeoSelector, { UBIGEO_EMPTY, type UbigeoValue } from '@/components/ubigeo-selector'
 
 const zonaSchema = z.object({
   nombre: z.string().min(2, 'Mínimo 2 caracteres'),
@@ -43,6 +44,7 @@ export default function ZonasPage() {
   const [editingZona, setEditingZona] = useState<any>(null)
   const [saving, setSaving] = useState(false)
   const [activoVal, setActivoVal] = useState(true)
+  const [ubigeoVal, setUbigeoVal] = useState<UbigeoValue>(UBIGEO_EMPTY)
 
   // Cantidad de clientes por zona
   const [clientesPorZona, setClientesPorZona] = useState<Record<string, number>>({})
@@ -56,7 +58,7 @@ export default function ZonasPage() {
     setLoading(true)
     let query = supabase
       .from('zonas')
-      .select('id, nombre, descripcion, activo, created_at', { count: 'exact' })
+      .select('id, nombre, descripcion, activo, created_at, ubigeo, departamento, provincia, distrito', { count: 'exact' })
       .order('nombre')
 
     if (debouncedSearch) query = query.ilike('nombre', `%${debouncedSearch}%`)
@@ -88,6 +90,7 @@ export default function ZonasPage() {
   const openCreate = () => {
     setEditingZona(null)
     setActivoVal(true)
+    setUbigeoVal(UBIGEO_EMPTY)
     reset({ activo: true, nombre: '', descripcion: '' })
     setDialogOpen(true)
   }
@@ -95,6 +98,15 @@ export default function ZonasPage() {
   const openEdit = (zona: any) => {
     setEditingZona(zona)
     setActivoVal(zona.activo)
+    setUbigeoVal({
+      departamento_codigo: zona.ubigeo ? zona.ubigeo.slice(0, 2) : null,
+      departamento: zona.departamento ?? null,
+      provincia_codigo: zona.ubigeo ? zona.ubigeo.slice(2, 4) : null,
+      provincia: zona.provincia ?? null,
+      distrito_codigo: zona.ubigeo ? zona.ubigeo.slice(4, 6) : null,
+      distrito: zona.distrito ?? null,
+      ubigeo: zona.ubigeo ?? null,
+    })
     reset({
       nombre: zona.nombre,
       descripcion: zona.descripcion ?? '',
@@ -112,6 +124,10 @@ export default function ZonasPage() {
         nombre: data.nombre,
         descripcion: data.descripcion || null,
         activo: activoVal,
+        ubigeo: ubigeoVal.ubigeo,
+        departamento: ubigeoVal.departamento,
+        provincia: ubigeoVal.provincia,
+        distrito: ubigeoVal.distrito,
       }
 
       if (editingZona) {
@@ -199,6 +215,11 @@ export default function ZonasPage() {
                       : <Badge variant="secondary" className="text-xs">Inactiva</Badge>}
                   </div>
                   <p className="font-bold text-gray-900 mt-3">{z.nombre}</p>
+                  {(z.distrito || z.provincia || z.departamento) && (
+                    <p className="text-xs text-gray-500 mt-1">
+                      {[z.distrito, z.provincia, z.departamento].filter(Boolean).join(' - ')}
+                    </p>
+                  )}
                   {z.descripcion && (
                     <p className="text-xs text-gray-500 mt-1 line-clamp-2">{z.descripcion}</p>
                   )}
@@ -236,7 +257,14 @@ export default function ZonasPage() {
                   <tbody className="divide-y divide-gray-50">
                     {zonas.map((z) => (
                       <tr key={z.id} className="hover:bg-gray-50/50 transition-colors">
-                        <td className="py-3 px-4 font-semibold text-gray-800">{z.nombre}</td>
+                        <td className="py-3 px-4">
+                          <div className="font-semibold text-gray-800">{z.nombre}</div>
+                          {(z.distrito || z.provincia || z.departamento) && (
+                            <div className="text-xs text-gray-500">
+                              {[z.distrito, z.provincia, z.departamento].filter(Boolean).join(' - ')}
+                            </div>
+                          )}
+                        </td>
                         <td className="py-3 px-4 text-gray-500 text-xs max-w-[280px] truncate">{z.descripcion ?? '—'}</td>
                         <td className="py-3 px-4 text-gray-600">{clientesPorZona[z.id] ?? 0}</td>
                         <td className="py-3 px-4 text-gray-500 text-xs">{z.created_at ? formatDate(z.created_at) : '—'}</td>
@@ -280,6 +308,13 @@ export default function ZonasPage() {
               <Label>Nombre de la Zona *</Label>
               <Input {...register('nombre')} placeholder="Ej. Zona Norte, Zona Comercial..." className="mt-1" />
               {errors.nombre && <p className="text-xs text-red-500 mt-1">{errors.nombre.message}</p>}
+            </div>
+
+            <div>
+              <Label className="text-xs font-semibold text-gray-700">Ubicación administrativa</Label>
+              <div className="mt-1">
+                <UbigeoSelector value={ubigeoVal} onChange={setUbigeoVal} layout="stacked" showLabels />
+              </div>
             </div>
 
             <div>
@@ -332,6 +367,20 @@ export default function ZonasPage() {
               </div>
 
               <div className="space-y-3 text-sm">
+                {(selected.distrito || selected.provincia || selected.departamento) && (
+                  <div className="flex items-start gap-3">
+                    <MapPin className="w-4 h-4 text-gray-400 mt-0.5 shrink-0" />
+                    <div>
+                      <p className="text-xs text-gray-500">Ubicación</p>
+                      <p className="text-gray-800">
+                        {[selected.distrito, selected.provincia, selected.departamento].filter(Boolean).join(' - ')}
+                      </p>
+                      {selected.ubigeo && (
+                        <p className="text-xs text-gray-400 mt-0.5">Ubigeo {selected.ubigeo}</p>
+                      )}
+                    </div>
+                  </div>
+                )}
                 {selected.descripcion && (
                   <div className="flex items-start gap-3">
                     <MapPin className="w-4 h-4 text-gray-400 mt-0.5 shrink-0" />

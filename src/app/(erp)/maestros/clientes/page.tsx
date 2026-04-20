@@ -25,6 +25,8 @@ import {
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import LeafletMap from '@/components/maps/leaflet-map'
+import UbigeoSelector, { UBIGEO_EMPTY, type UbigeoValue } from '@/components/ubigeo-selector'
+import { matchUbigeoFromNombres } from '@/lib/ubigeo/match'
 
 const clienteSchema = z.object({
   codigo: z.string().min(1, 'Requerido'),
@@ -87,6 +89,7 @@ export default function ClientesPage() {
   const [estado, setEstado] = useState<EstadoCliente>('activo')
   const [picked, setPicked] = useState<[number, number] | null>(null)
   const [locLoading, setLocLoading] = useState(false)
+  const [ubigeoVal, setUbigeoVal] = useState<UbigeoValue>(UBIGEO_EMPTY)
 
   const {
     register,
@@ -115,6 +118,15 @@ export default function ClientesPage() {
         (z.nombre ?? '').toLowerCase().includes(data.distrito!.toLowerCase()),
       )
       if (match) setZonaId(match.id)
+    }
+    // Matching automático de ubigeo desde nombres SUNAT
+    if (data.departamento || data.provincia || data.distrito) {
+      const matched = await matchUbigeoFromNombres({
+        departamento: data.departamento,
+        provincia: data.provincia,
+        distrito: data.distrito,
+      })
+      if (matched) setUbigeoVal(matched)
     }
     // Geocodificar en el mapa
     const geo = await geocodificar({
@@ -158,6 +170,7 @@ export default function ClientesPage() {
         id, codigo, razon_social, ruc, dni, tipo_cliente, estado,
         credito_limite, credito_dias, direccion, telefono, email, contacto,
         lista_precio_id, zona_id, vendedor_id, latitud, longitud, notas, created_at,
+        ubigeo, departamento, provincia, distrito,
         zonas(id, nombre),
         listas_precio(id, nombre),
         profiles!clientes_vendedor_id_fkey(id, full_name)
@@ -189,6 +202,7 @@ export default function ClientesPage() {
     setPicked(null)
     setRucInput('')
     setDniInput('')
+    setUbigeoVal(UBIGEO_EMPTY)
     reset({
       codigo: '',
       razon_social: '',
@@ -244,6 +258,15 @@ export default function ClientesPage() {
         ? [Number(cliente.latitud), Number(cliente.longitud)]
         : null,
     )
+    setUbigeoVal({
+      departamento_codigo: cliente.ubigeo ? cliente.ubigeo.slice(0, 2) : null,
+      departamento: cliente.departamento ?? null,
+      provincia_codigo: cliente.ubigeo ? cliente.ubigeo.slice(2, 4) : null,
+      provincia: cliente.provincia ?? null,
+      distrito_codigo: cliente.ubigeo ? cliente.ubigeo.slice(4, 6) : null,
+      distrito: cliente.distrito ?? null,
+      ubigeo: cliente.ubigeo ?? null,
+    })
     reset({
       codigo: cliente.codigo,
       razon_social: cliente.razon_social,
@@ -287,6 +310,10 @@ export default function ClientesPage() {
         latitud: picked ? picked[0] : null,
         longitud: picked ? picked[1] : null,
         notas: data.notas || null,
+        ubigeo: ubigeoVal.ubigeo,
+        departamento: ubigeoVal.departamento,
+        provincia: ubigeoVal.provincia,
+        distrito: ubigeoVal.distrito,
         updated_at: new Date().toISOString(),
       }
 
@@ -649,6 +676,13 @@ export default function ClientesPage() {
             </div>
 
             <div>
+              <Label className="text-xs font-semibold text-gray-700">Ubicación administrativa</Label>
+              <div className="mt-1">
+                <UbigeoSelector value={ubigeoVal} onChange={setUbigeoVal} layout="columns" showLabels />
+              </div>
+            </div>
+
+            <div>
               <Label>Dirección</Label>
               <Input {...register('direccion')} placeholder="Dirección completa" className="mt-1" />
             </div>
@@ -838,6 +872,32 @@ export default function ClientesPage() {
                     </div>
                   </div>
                 </div>
+
+                {(selected.distrito || selected.provincia || selected.departamento) && (
+                  <div className="border-t border-gray-100 pt-3">
+                    <div className="flex items-center gap-2 mb-2">
+                      <MapPin className="w-4 h-4 text-gray-400" />
+                      <p className="text-xs text-gray-500 font-semibold uppercase tracking-wide">Ubicación administrativa</p>
+                    </div>
+                    <div className="grid grid-cols-3 gap-2 text-sm">
+                      <div className="bg-gray-50 rounded-lg p-2">
+                        <p className="text-[11px] text-gray-500">Departamento</p>
+                        <p className="text-gray-800 text-sm">{selected.departamento ?? '—'}</p>
+                      </div>
+                      <div className="bg-gray-50 rounded-lg p-2">
+                        <p className="text-[11px] text-gray-500">Provincia</p>
+                        <p className="text-gray-800 text-sm">{selected.provincia ?? '—'}</p>
+                      </div>
+                      <div className="bg-gray-50 rounded-lg p-2">
+                        <p className="text-[11px] text-gray-500">Distrito</p>
+                        <p className="text-gray-800 text-sm">{selected.distrito ?? '—'}</p>
+                      </div>
+                    </div>
+                    {selected.ubigeo && (
+                      <p className="text-xs text-gray-400 mt-2">Ubigeo {selected.ubigeo}</p>
+                    )}
+                  </div>
+                )}
 
                 <div className="space-y-3 text-sm border-t border-gray-100 pt-3">
                   {selected.direccion && (

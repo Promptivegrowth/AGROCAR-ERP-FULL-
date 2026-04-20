@@ -20,6 +20,8 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
+import UbigeoSelector, { UBIGEO_EMPTY, type UbigeoValue } from '@/components/ubigeo-selector'
+import { matchUbigeoFromNombres } from '@/lib/ubigeo/match'
 
 const proveedorSchema = z.object({
   razon_social: z.string().min(2, 'Mínimo 2 caracteres'),
@@ -50,6 +52,7 @@ export default function ProveedoresPage() {
   const [editingProveedor, setEditingProveedor] = useState<any>(null)
   const [saving, setSaving] = useState(false)
   const [activo, setActivo] = useState(true)
+  const [ubigeoVal, setUbigeoVal] = useState<UbigeoValue>(UBIGEO_EMPTY)
 
   const { register, handleSubmit, reset, setValue, formState: { errors } } = useForm<ProveedorFormData>({
     resolver: zodResolver(proveedorSchema) as any,
@@ -63,13 +66,21 @@ export default function ProveedoresPage() {
     if (!data) return
     setValue('razon_social', data.razonSocial, { shouldValidate: true })
     if (data.direccion) setValue('direccion', data.direccion, { shouldValidate: true })
+    if (data.departamento || data.provincia || data.distrito) {
+      const matched = await matchUbigeoFromNombres({
+        departamento: data.departamento,
+        provincia: data.provincia,
+        distrito: data.distrito,
+      })
+      if (matched) setUbigeoVal(matched)
+    }
   }
 
   const loadProveedores = useCallback(async () => {
     setLoading(true)
     let query = supabase
       .from('proveedores')
-      .select('id, razon_social, ruc, direccion, telefono, email, contacto, activo, created_at', { count: 'exact' })
+      .select('id, razon_social, ruc, direccion, telefono, email, contacto, activo, created_at, ubigeo, departamento, provincia, distrito', { count: 'exact' })
       .order('razon_social')
       .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1)
 
@@ -88,6 +99,7 @@ export default function ProveedoresPage() {
     setEditingProveedor(null)
     setActivo(true)
     setRucInput('')
+    setUbigeoVal(UBIGEO_EMPTY)
     reset({ activo: true, razon_social: '', ruc: '', direccion: '', telefono: '', email: '', contacto: '' })
     setDialogOpen(true)
   }
@@ -96,6 +108,15 @@ export default function ProveedoresPage() {
     setEditingProveedor(p)
     setActivo(p.activo)
     setRucInput(p.ruc ?? '')
+    setUbigeoVal({
+      departamento_codigo: p.ubigeo ? p.ubigeo.slice(0, 2) : null,
+      departamento: p.departamento ?? null,
+      provincia_codigo: p.ubigeo ? p.ubigeo.slice(2, 4) : null,
+      provincia: p.provincia ?? null,
+      distrito_codigo: p.ubigeo ? p.ubigeo.slice(4, 6) : null,
+      distrito: p.distrito ?? null,
+      ubigeo: p.ubigeo ?? null,
+    })
     reset({
       razon_social: p.razon_social,
       ruc: p.ruc ?? '',
@@ -121,6 +142,10 @@ export default function ProveedoresPage() {
         email: data.email || null,
         contacto: data.contacto || null,
         activo,
+        ubigeo: ubigeoVal.ubigeo,
+        departamento: ubigeoVal.departamento,
+        provincia: ubigeoVal.provincia,
+        distrito: ubigeoVal.distrito,
       }
 
       if (editingProveedor) {
@@ -330,6 +355,13 @@ export default function ProveedoresPage() {
             </div>
 
             <div>
+              <Label className="text-xs font-semibold text-gray-700">Ubicación administrativa</Label>
+              <div className="mt-1">
+                <UbigeoSelector value={ubigeoVal} onChange={setUbigeoVal} layout="columns" showLabels />
+              </div>
+            </div>
+
+            <div>
               <Label>Dirección</Label>
               <Input {...register('direccion')} placeholder="Dirección del proveedor" className="mt-1" />
             </div>
@@ -389,6 +421,20 @@ export default function ProveedoresPage() {
               </div>
 
               <div className="space-y-3 text-sm">
+                {(selected.distrito || selected.provincia || selected.departamento) && (
+                  <div className="flex items-start gap-3">
+                    <MapPin className="w-4 h-4 text-gray-400 mt-0.5 shrink-0" />
+                    <div>
+                      <p className="text-xs text-gray-500">Ubicación</p>
+                      <p className="text-gray-800">
+                        {[selected.distrito, selected.provincia, selected.departamento].filter(Boolean).join(' - ')}
+                      </p>
+                      {selected.ubigeo && (
+                        <p className="text-xs text-gray-400 mt-0.5">Ubigeo {selected.ubigeo}</p>
+                      )}
+                    </div>
+                  </div>
+                )}
                 {selected.direccion && (
                   <div className="flex items-start gap-3">
                     <MapPin className="w-4 h-4 text-gray-400 mt-0.5 shrink-0" />

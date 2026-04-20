@@ -33,6 +33,10 @@ interface SolicitudRow {
   email: string | null
   contacto: string | null
   zona_id: string | null
+  ubigeo: string | null
+  departamento: string | null
+  provincia: string | null
+  distrito: string | null
   latitud: number | null
   longitud: number | null
   notas: string | null
@@ -70,7 +74,8 @@ export default function SolicitudesClientePage() {
     let query: any = (supabase.from('solicitudes_cliente' as any) as any)
       .select(`
         id, vendedor_id, razon_social, ruc, dni, tipo_cliente, direccion, telefono, email, contacto,
-        zona_id, latitud, longitud, notas, estado, razon_rechazo, cliente_id, reviewed_by, reviewed_at, created_at,
+        zona_id, ubigeo, departamento, provincia, distrito,
+        latitud, longitud, notas, estado, razon_rechazo, cliente_id, reviewed_by, reviewed_at, created_at,
         profiles!solicitudes_cliente_vendedor_id_fkey(id, full_name),
         zonas(id, nombre)
       `)
@@ -123,6 +128,10 @@ export default function SolicitudesClientePage() {
         contacto: s.contacto,
         zona_id: s.zona_id,
         vendedor_id: s.vendedor_id,
+        ubigeo: s.ubigeo,
+        departamento: s.departamento,
+        provincia: s.provincia,
+        distrito: s.distrito,
         latitud: s.latitud,
         longitud: s.longitud,
         notas: s.notas,
@@ -462,6 +471,31 @@ export default function SolicitudesClientePage() {
                   </div>
                 )}
               </div>
+
+              {(selected.distrito || selected.provincia || selected.departamento) && (
+                <div className="border-t border-gray-100 pt-3">
+                  <p className="text-xs text-gray-500 font-semibold uppercase tracking-wide mb-2 flex items-center gap-1">
+                    <MapPin className="w-3 h-3" /> Ubicación administrativa
+                  </p>
+                  <div className="grid grid-cols-3 gap-2">
+                    <div className="bg-gray-50 rounded-lg p-2">
+                      <p className="text-[11px] text-gray-500">Departamento</p>
+                      <p className="text-gray-800 text-sm">{selected.departamento ?? '—'}</p>
+                    </div>
+                    <div className="bg-gray-50 rounded-lg p-2">
+                      <p className="text-[11px] text-gray-500">Provincia</p>
+                      <p className="text-gray-800 text-sm">{selected.provincia ?? '—'}</p>
+                    </div>
+                    <div className="bg-gray-50 rounded-lg p-2">
+                      <p className="text-[11px] text-gray-500">Distrito</p>
+                      <p className="text-gray-800 text-sm">{selected.distrito ?? '—'}</p>
+                    </div>
+                  </div>
+                  {selected.ubigeo && (
+                    <p className="text-xs text-gray-400 mt-2">Ubigeo {selected.ubigeo}</p>
+                  )}
+                </div>
+              )}
 
               {selected.notas && (
                 <div className="bg-gray-50 rounded-lg p-3">

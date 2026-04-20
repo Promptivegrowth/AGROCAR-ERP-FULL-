@@ -22,6 +22,8 @@ import {
 import LeafletMap from '@/components/maps/leaflet-map'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import type { Cliente, Pedido, Cobro } from '@/types'
+import UbigeoSelector, { UBIGEO_EMPTY, type UbigeoValue } from '@/components/ubigeo-selector'
+import { matchUbigeoFromNombres } from '@/lib/ubigeo/match'
 
 interface ClienteConDeuda extends Cliente {
   deuda_pendiente: number
@@ -98,6 +100,7 @@ export default function ClientesPage() {
   const [zonaId, setZonaId] = useState<string>('')
   const [notas, setNotas] = useState('')
   const [picked, setPicked] = useState<[number, number] | null>(null)
+  const [ubigeoVal, setUbigeoVal] = useState<UbigeoValue>(UBIGEO_EMPTY)
 
   const supabase = createClient()
   const { consultarRuc, consultarDni, geocodificar, loading: sunatLoading } = useSunatReniec()
@@ -128,6 +131,15 @@ export default function ClientesPage() {
         toast.success('Ubicación estimada en el mapa', {
           description: `Confianza ${geo.confianza}. Ajusta con "Usar mi ubicación" o tocando el mapa.`,
         })
+      }
+      // Matching automático de ubigeo desde nombres SUNAT
+      if (data.departamento || data.provincia || data.distrito) {
+        const matched = await matchUbigeoFromNombres({
+          departamento: data.departamento,
+          provincia: data.provincia,
+          distrito: data.distrito,
+        })
+        if (matched) setUbigeoVal(matched)
       }
     } else {
       const data = await consultarDni(docValue.trim())
@@ -248,6 +260,7 @@ export default function ClientesPage() {
     setZonaId('')
     setNotas('')
     setPicked(null)
+    setUbigeoVal(UBIGEO_EMPTY)
     setOpenSolicitud(true)
   }
 
@@ -308,6 +321,10 @@ export default function ClientesPage() {
         latitud: picked ? picked[0] : null,
         longitud: picked ? picked[1] : null,
         notas: notas.trim() || null,
+        ubigeo: ubigeoVal.ubigeo,
+        departamento: ubigeoVal.departamento,
+        provincia: ubigeoVal.provincia,
+        distrito: ubigeoVal.distrito,
       }
 
       const { error } = await (supabase.from('solicitudes_cliente' as any) as any).insert(payload)
@@ -680,6 +697,13 @@ export default function ClientesPage() {
                   <SelectItem value="consumidor_final">Consumidor final</SelectItem>
                 </SelectContent>
               </Select>
+            </div>
+
+            <div>
+              <Label className="text-xs font-semibold text-gray-700">Ubicación administrativa</Label>
+              <div className="mt-1">
+                <UbigeoSelector value={ubigeoVal} onChange={setUbigeoVal} layout="stacked" showLabels />
+              </div>
             </div>
 
             <div>

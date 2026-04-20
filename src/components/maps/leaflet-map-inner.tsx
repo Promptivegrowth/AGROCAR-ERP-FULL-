@@ -58,6 +58,7 @@ export interface MapMarker {
   description?: string
   initials?: string
   color?: string
+  onClick?: () => void
 }
 
 interface LeafletMapInnerProps {
@@ -149,6 +150,7 @@ export default function LeafletMapInner({
             key={m.id}
             position={[m.lat, m.lng]}
             icon={m.initials ? makeInitialsIcon(m.initials, m.color) : greenIcon}
+            eventHandlers={m.onClick ? { click: m.onClick } : undefined}
           >
             {(m.label || m.description) && (
               <Popup>

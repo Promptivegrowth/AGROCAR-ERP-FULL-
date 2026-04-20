@@ -1,17 +1,18 @@
 'use client'
 
-import { useEffect, useState, useCallback } from 'react'
-import { Plus, Printer, Truck, Loader2, ChevronDown, ChevronRight, Package, FileText } from 'lucide-react'
+import { useEffect, useMemo, useState, useCallback } from 'react'
+import { Plus, Printer, Truck, Loader2, ChevronDown, ChevronRight, FileText, MapPin, AlertTriangle } from 'lucide-react'
 import { toast } from 'sonner'
 import { createClient } from '@/lib/supabase/client'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card } from '@/components/ui/card'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import LeafletMap, { type MapMarker } from '@/components/maps/leaflet-map'
 
 const ESTADO_CONFIG: Record<string, { label: string; className: string }> = {
   preparacion: { label: 'En Preparación', className: 'bg-yellow-100 text-yellow-700 border-yellow-200' },
@@ -45,7 +46,10 @@ export default function DespachoPage() {
           profiles!despachos_conductor_id_fkey(full_name),
           despachos_items(
             id, estado,
-            pedidos(numero, total, clientes(razon_social))
+            pedidos(
+              numero, total,
+              clientes(razon_social, direccion, distrito, latitud, longitud)
+            )
           )
         `)
         .order('fecha_despacho', { ascending: false })
@@ -53,7 +57,10 @@ export default function DespachoPage() {
       supabase.from('vehiculos').select('id, placa, descripcion').eq('activo', true).order('placa'),
       supabase
         .from('pedidos')
-        .select(`id, numero, total, clientes(razon_social)`)
+        .select(`
+          id, numero, total,
+          clientes(razon_social, direccion, distrito, latitud, longitud)
+        `)
         .eq('estado', 'facturado')
         .order('created_at', { ascending: false }),
     ])
@@ -72,6 +79,36 @@ export default function DespachoPage() {
   const togglePedido = (id: string) => {
     setSelectedPedidos((prev) => prev.includes(id) ? prev.filter((p) => p !== id) : [...prev, id])
   }
+
+  // Marcadores del mapa del modal "Nuevo Consolidado"
+  const modalMarkers = useMemo<MapMarker[]>(() => {
+    return pedidosFacturados
+      .filter((p) => p.clientes?.latitud != null && p.clientes?.longitud != null)
+      .map((p) => {
+        const isSel = selectedPedidos.includes(p.id)
+        return {
+          id: p.id,
+          lat: Number(p.clientes.latitud),
+          lng: Number(p.clientes.longitud),
+          label: p.clientes?.razon_social ?? '—',
+          description: `${p.numero} · ${formatCurrency(p.total ?? 0)}`,
+          initials: isSel ? '✓' : '•',
+          color: isSel ? '#16a34a' : '#FBE600',
+          onClick: () => togglePedido(p.id),
+        }
+      })
+  }, [pedidosFacturados, selectedPedidos])
+
+  const pedidosConUbicacion = pedidosFacturados.filter(
+    (p) => p.clientes?.latitud != null && p.clientes?.longitud != null,
+  ).length
+
+  const totalSeleccionado = useMemo(
+    () => pedidosFacturados
+      .filter((p) => selectedPedidos.includes(p.id))
+      .reduce((acc, p) => acc + Number(p.total ?? 0), 0),
+    [pedidosFacturados, selectedPedidos],
+  )
 
   const handleCrear = async () => {
     if (!selectedVehiculo || selectedPedidos.length === 0) return
@@ -178,6 +215,7 @@ export default function DespachoPage() {
                 <th>#</th>
                 <th>Pedido</th>
                 <th>Cliente</th>
+                <th>Dirección</th>
                 <th>Total</th>
                 <th>Entregado</th>
               </tr>
@@ -188,6 +226,7 @@ export default function DespachoPage() {
                   <td>${i + 1}</td>
                   <td>${item.pedidos?.numero ?? '—'}</td>
                   <td>${item.pedidos?.clientes?.razon_social ?? '—'}</td>
+                  <td>${item.pedidos?.clientes?.direccion ?? '—'}</td>
                   <td class="total">S/ ${(item.pedidos?.total ?? 0).toFixed(2)}</td>
                   <td>[ ]</td>
                 </tr>
@@ -229,6 +268,23 @@ export default function DespachoPage() {
             const estadoCfg = ESTADO_CONFIG[cons.estado] ?? ESTADO_CONFIG.preparacion
             const items = cons.despachos_items ?? []
             const total = items.reduce((acc: number, item: any) => acc + (item.pedidos?.total ?? 0), 0)
+
+            // Marcadores numerados del consolidado expandido
+            const consMarkers: MapMarker[] = items
+              .map((it: any, idx: number) => {
+                const c = it.pedidos?.clientes
+                if (!c || c.latitud == null || c.longitud == null) return null
+                return {
+                  id: it.id,
+                  lat: Number(c.latitud),
+                  lng: Number(c.longitud),
+                  label: `${idx + 1}. ${c.razon_social ?? '—'}`,
+                  description: `${it.pedidos?.numero ?? ''} · ${formatCurrency(it.pedidos?.total ?? 0)}`,
+                  initials: String(idx + 1),
+                  color: '#2563eb',
+                } as MapMarker
+              })
+              .filter(Boolean) as MapMarker[]
 
             return (
               <Card key={cons.id} className="border-gray-200 shadow-sm overflow-hidden">
@@ -304,35 +360,81 @@ export default function DespachoPage() {
                     {items.length === 0 ? (
                       <p className="text-sm text-gray-400 text-center py-6">Sin pedidos asignados</p>
                     ) : (
-                      <table className="w-full text-sm">
-                        <thead className="bg-gray-50/50 border-b border-gray-100">
-                          <tr>
-                            {['#', 'Pedido', 'Cliente', 'Total', 'Estado'].map((h) => (
-                              <th key={h} className="text-left py-2.5 px-4 text-xs font-semibold text-gray-500 uppercase tracking-wide">
-                                {h}
-                              </th>
-                            ))}
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-gray-50">
-                          {items.map((item: any, idx: number) => (
-                            <tr key={item.id} className="hover:bg-gray-50/50">
-                              <td className="py-2.5 px-4 text-gray-400 text-xs">{idx + 1}</td>
-                              <td className="py-2.5 px-4 font-mono text-xs text-gray-600">{item.pedidos?.numero ?? '—'}</td>
-                              <td className="py-2.5 px-4 text-gray-800">{item.pedidos?.clientes?.razon_social ?? '—'}</td>
-                              <td className="py-2.5 px-4 font-semibold text-gray-800">{formatCurrency(item.pedidos?.total ?? 0)}</td>
-                              <td className="py-2.5 px-4">
-                                {item.estado === 'entregado'
-                                  ? <Badge className="text-xs bg-green-100 text-green-700">Entregado</Badge>
-                                  : item.estado === 'rechazado'
-                                    ? <Badge className="text-xs bg-red-100 text-red-700">Rechazado</Badge>
-                                    : <Badge variant="outline" className="text-xs">Pendiente</Badge>
-                                }
-                              </td>
+                      <>
+                        {/* Mapa con orden de entrega */}
+                        {consMarkers.length > 0 && (
+                          <div className="p-4 bg-gray-50/40 border-b border-gray-100">
+                            <div className="flex items-center gap-2 mb-2">
+                              <MapPin className="w-4 h-4 text-blue-600" />
+                              <p className="text-xs font-semibold text-gray-700 uppercase tracking-wide">
+                                Ruta de Entrega ({consMarkers.length} ubicaciones)
+                              </p>
+                            </div>
+                            <LeafletMap markers={consMarkers} height="260px" fitBounds />
+                          </div>
+                        )}
+
+                        {/* Tabla pedidos */}
+                        <table className="w-full text-sm">
+                          <thead className="bg-gray-50/50 border-b border-gray-100">
+                            <tr>
+                              {['#', 'Pedido', 'Cliente', 'Distrito', 'Total', 'Estado'].map((h) => (
+                                <th key={h} className="text-left py-2.5 px-4 text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                                  {h}
+                                </th>
+                              ))}
                             </tr>
-                          ))}
-                        </tbody>
-                      </table>
+                          </thead>
+                          <tbody className="divide-y divide-gray-50">
+                            {items.map((item: any, idx: number) => (
+                              <tr key={item.id} className="hover:bg-gray-50/50">
+                                <td className="py-2.5 px-4 text-gray-400 text-xs">{idx + 1}</td>
+                                <td className="py-2.5 px-4 font-mono text-xs text-gray-600">{item.pedidos?.numero ?? '—'}</td>
+                                <td className="py-2.5 px-4 text-gray-800">{item.pedidos?.clientes?.razon_social ?? '—'}</td>
+                                <td className="py-2.5 px-4 text-gray-600 text-xs">{item.pedidos?.clientes?.distrito ?? '—'}</td>
+                                <td className="py-2.5 px-4 font-semibold text-gray-800">{formatCurrency(item.pedidos?.total ?? 0)}</td>
+                                <td className="py-2.5 px-4">
+                                  {item.estado === 'entregado'
+                                    ? <Badge className="text-xs bg-green-100 text-green-700">Entregado</Badge>
+                                    : item.estado === 'rechazado'
+                                      ? <Badge className="text-xs bg-red-100 text-red-700">Rechazado</Badge>
+                                      : <Badge variant="outline" className="text-xs">Pendiente</Badge>
+                                  }
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+
+                        {/* Lista de direcciones */}
+                        <div className="p-4 border-t border-gray-100 bg-gray-50/30">
+                          <p className="text-xs font-semibold text-gray-700 uppercase tracking-wide mb-2">
+                            Direcciones de entrega
+                          </p>
+                          <ol className="space-y-1.5">
+                            {items.map((item: any, idx: number) => {
+                              const c = item.pedidos?.clientes
+                              return (
+                                <li key={item.id} className="flex items-start gap-2 text-xs text-gray-700">
+                                  <span className="flex-shrink-0 w-5 h-5 rounded-full bg-blue-600 text-white flex items-center justify-center font-bold text-[10px]">
+                                    {idx + 1}
+                                  </span>
+                                  <div className="flex-1">
+                                    <span className="font-medium text-gray-800">{c?.razon_social ?? '—'}</span>
+                                    <span className="text-gray-500"> — {c?.direccion ?? 'Sin dirección'}</span>
+                                    {c?.distrito && <span className="text-gray-400"> ({c.distrito})</span>}
+                                    {(c?.latitud == null || c?.longitud == null) && (
+                                      <span className="ml-2 text-amber-600 inline-flex items-center gap-1">
+                                        <AlertTriangle className="w-3 h-3" /> sin ubicación
+                                      </span>
+                                    )}
+                                  </div>
+                                </li>
+                              )
+                            })}
+                          </ol>
+                        </div>
+                      </>
                     )}
                   </div>
                 )}
@@ -344,7 +446,7 @@ export default function DespachoPage() {
 
       {/* Dialog Nuevo Consolidado */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="max-w-xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-w-4xl max-h-[92vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Nuevo Consolidado de Despacho</DialogTitle>
           </DialogHeader>
@@ -374,42 +476,81 @@ export default function DespachoPage() {
               </div>
             </div>
 
-            <div>
-              <Label className="mb-2 block">
-                Pedidos Facturados ({pedidosFacturados.length} disponibles)
-              </Label>
-              {pedidosFacturados.length === 0 ? (
-                <div className="flex items-center justify-center py-8 border border-dashed border-gray-200 rounded-lg text-gray-400">
-                  <p className="text-sm">No hay pedidos facturados disponibles</p>
+            {pedidosFacturados.length === 0 ? (
+              <div className="flex items-center justify-center py-8 border border-dashed border-gray-200 rounded-lg text-gray-400">
+                <p className="text-sm">No hay pedidos facturados disponibles</p>
+              </div>
+            ) : (
+              <>
+                <div className="flex items-center justify-between">
+                  <Label className="block">
+                    Pedidos Facturados ({pedidosFacturados.length} disponibles)
+                  </Label>
+                  <p className="text-xs font-medium text-gray-600">
+                    <span className="text-green-700">{selectedPedidos.length} seleccionados</span>
+                    <span className="text-gray-300 mx-1.5">·</span>
+                    <span>{pedidosConUbicacion} con ubicación</span>
+                    <span className="text-gray-300 mx-1.5">·</span>
+                    <span>Total {formatCurrency(totalSeleccionado)}</span>
+                  </p>
                 </div>
-              ) : (
-                <div className="border border-gray-200 rounded-lg overflow-hidden max-h-60 overflow-y-auto">
-                  {pedidosFacturados.map((p) => (
-                    <label
-                      key={p.id}
-                      className="flex items-center gap-3 px-4 py-2.5 hover:bg-gray-50 cursor-pointer border-b border-gray-50 last:border-0"
-                    >
-                      <input
-                        type="checkbox"
-                        checked={selectedPedidos.includes(p.id)}
-                        onChange={() => togglePedido(p.id)}
-                        className="w-4 h-4 rounded text-green-600"
-                      />
-                      <div className="flex-1">
-                        <p className="text-sm font-medium text-gray-800">{p.clientes?.razon_social ?? '—'}</p>
-                        <p className="text-xs text-gray-500 font-mono">{p.numero}</p>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  {/* Mapa */}
+                  <div className="border border-gray-200 rounded-lg overflow-hidden">
+                    {modalMarkers.length > 0 ? (
+                      <LeafletMap markers={modalMarkers} height="340px" fitBounds />
+                    ) : (
+                      <div className="h-[340px] flex flex-col items-center justify-center bg-gray-50 text-gray-400 text-xs">
+                        <MapPin className="w-6 h-6 mb-2" />
+                        Ningún pedido facturado tiene ubicación.
                       </div>
-                      <span className="text-sm font-semibold text-gray-700">{formatCurrency(p.total ?? 0)}</span>
-                    </label>
-                  ))}
+                    )}
+                  </div>
+
+                  {/* Lista */}
+                  <div className="border border-gray-200 rounded-lg overflow-hidden max-h-[340px] overflow-y-auto">
+                    {pedidosFacturados.map((p) => {
+                      const sinUbic = p.clientes?.latitud == null || p.clientes?.longitud == null
+                      const checked = selectedPedidos.includes(p.id)
+                      return (
+                        <label
+                          key={p.id}
+                          className={`flex items-center gap-3 px-4 py-2.5 cursor-pointer border-b border-gray-50 last:border-0 ${
+                            checked ? 'bg-green-50 hover:bg-green-100' : 'hover:bg-gray-50'
+                          }`}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={() => togglePedido(p.id)}
+                            className="w-4 h-4 rounded text-green-600"
+                          />
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium text-gray-800 truncate">
+                              {p.clientes?.razon_social ?? '—'}
+                            </p>
+                            <p className="text-xs text-gray-500 font-mono flex items-center gap-1.5">
+                              {p.numero}
+                              {sinUbic ? (
+                                <span className="text-amber-600 inline-flex items-center gap-0.5 font-sans">
+                                  <AlertTriangle className="w-3 h-3" /> sin ubicación
+                                </span>
+                              ) : (
+                                <span className="text-gray-400 font-sans truncate">
+                                  · {p.clientes?.distrito ?? p.clientes?.direccion ?? ''}
+                                </span>
+                              )}
+                            </p>
+                          </div>
+                          <span className="text-sm font-semibold text-gray-700">{formatCurrency(p.total ?? 0)}</span>
+                        </label>
+                      )
+                    })}
+                  </div>
                 </div>
-              )}
-              {selectedPedidos.length > 0 && (
-                <p className="text-xs text-green-600 mt-1 font-medium">
-                  {selectedPedidos.length} pedido(s) seleccionado(s)
-                </p>
-              )}
-            </div>
+              </>
+            )}
 
             <div className="flex justify-end gap-3 pt-2 border-t border-gray-100">
               <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancelar</Button>
