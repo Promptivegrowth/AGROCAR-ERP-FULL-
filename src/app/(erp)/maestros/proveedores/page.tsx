@@ -7,10 +7,12 @@ import { z } from 'zod'
 import {
   Plus, Search, Edit, ToggleLeft, ToggleRight, Loader2,
   ChevronLeft, ChevronRight, Building2, Eye, Phone, Mail, MapPin, User as UserIcon,
+  Sparkles,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { createClient } from '@/lib/supabase/client'
 import { useDebounce } from '@/lib/hooks/use-debounce'
+import { useSunatReniec } from '@/lib/hooks/use-sunat-reniec'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
@@ -49,9 +51,19 @@ export default function ProveedoresPage() {
   const [saving, setSaving] = useState(false)
   const [activo, setActivo] = useState(true)
 
-  const { register, handleSubmit, reset, formState: { errors } } = useForm<ProveedorFormData>({
+  const { register, handleSubmit, reset, setValue, watch, formState: { errors } } = useForm<ProveedorFormData>({
     resolver: zodResolver(proveedorSchema) as any,
   })
+
+  const { consultarRuc, loading: sunatLoading } = useSunatReniec()
+  const rucValue = watch('ruc')
+
+  const autocompletarRuc = async () => {
+    const data = await consultarRuc((rucValue ?? '').toString())
+    if (!data) return
+    setValue('razon_social', data.razonSocial, { shouldValidate: true })
+    if (data.direccion) setValue('direccion', data.direccion, { shouldValidate: true })
+  }
 
   const loadProveedores = useCallback(async () => {
     setLoading(true)
@@ -287,7 +299,21 @@ export default function ProveedoresPage() {
 
             <div>
               <Label>RUC</Label>
-              <Input {...register('ruc')} placeholder="20xxxxxxxxx" className="mt-1 font-mono" />
+              <div className="flex gap-2 mt-1">
+                <Input {...register('ruc')} placeholder="20xxxxxxxxx" maxLength={11} className="font-mono flex-1" />
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={autocompletarRuc}
+                  disabled={sunatLoading || !rucValue || rucValue.toString().length !== 11}
+                  className="shrink-0 gap-1 border-[#FBE600] hover:bg-[#FBE600] hover:text-black"
+                  title="Consultar SUNAT"
+                >
+                  {sunatLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
+                  SUNAT
+                </Button>
+              </div>
             </div>
 
             <div>

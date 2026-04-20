@@ -7,11 +7,12 @@ import { z } from 'zod'
 import {
   Plus, Search, Filter, Edit, Eye, ToggleLeft, ToggleRight, Loader2,
   ChevronLeft, ChevronRight, User, MapPin, Phone, Mail, DollarSign,
-  Tag, Hash, Building2, Crosshair, X,
+  Tag, Hash, Building2, Crosshair, X, Sparkles,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { createClient } from '@/lib/supabase/client'
 import { useDebounce } from '@/lib/hooks/use-debounce'
+import { useSunatReniec } from '@/lib/hooks/use-sunat-reniec'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -87,8 +88,30 @@ export default function ClientesPage() {
     register,
     handleSubmit,
     reset,
+    setValue,
+    watch,
     formState: { errors },
   } = useForm<ClienteFormData>({ resolver: zodResolver(clienteSchema) as any })
+
+  const { consultarRuc, consultarDni, loading: sunatLoading } = useSunatReniec()
+  const rucValue = watch('ruc')
+  const dniValue = watch('dni')
+
+  const autocompletarRuc = async () => {
+    const data = await consultarRuc((rucValue ?? '').toString())
+    if (!data) return
+    setValue('razon_social', data.razonSocial, { shouldValidate: true })
+    if (data.direccion) setValue('direccion', data.direccion, { shouldValidate: true })
+    setTipoCliente('tienda')
+  }
+
+  const autocompletarDni = async () => {
+    const data = await consultarDni((dniValue ?? '').toString())
+    if (!data) return
+    setValue('razon_social', data.nombreCompleto, { shouldValidate: true })
+    setValue('contacto', data.nombreCompleto, { shouldValidate: true })
+    setTipoCliente('consumidor_final')
+  }
 
   const loadMeta = useCallback(async () => {
     const [{ data: z }, { data: l }, { data: v }] = await Promise.all([
@@ -480,11 +503,39 @@ export default function ClientesPage() {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <Label>RUC</Label>
-                <Input {...register('ruc')} placeholder="20xxxxxxxxx" className="mt-1 font-mono" />
+                <div className="flex gap-2 mt-1">
+                  <Input {...register('ruc')} placeholder="20xxxxxxxxx" maxLength={11} className="font-mono flex-1" />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={autocompletarRuc}
+                    disabled={sunatLoading || !rucValue || rucValue.toString().length !== 11}
+                    className="shrink-0 gap-1 border-[#FBE600] hover:bg-[#FBE600] hover:text-black"
+                    title="Consultar SUNAT"
+                  >
+                    {sunatLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
+                    SUNAT
+                  </Button>
+                </div>
               </div>
               <div>
                 <Label>DNI</Label>
-                <Input {...register('dni')} placeholder="Opcional" className="mt-1 font-mono" />
+                <div className="flex gap-2 mt-1">
+                  <Input {...register('dni')} placeholder="Opcional" maxLength={8} className="font-mono flex-1" />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={autocompletarDni}
+                    disabled={sunatLoading || !dniValue || dniValue.toString().length !== 8}
+                    className="shrink-0 gap-1 border-[#FBE600] hover:bg-[#FBE600] hover:text-black"
+                    title="Consultar RENIEC"
+                  >
+                    {sunatLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
+                    RENIEC
+                  </Button>
+                </div>
               </div>
             </div>
 

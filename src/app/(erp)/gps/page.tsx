@@ -6,7 +6,7 @@ export const dynamic = 'force-dynamic'
 
 async function getGPSData() {
   const supabase = await createClient()
-  const today = new Date().toISOString().split('T')[0]
+  const sieteDiasAtras = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
 
   const [{ data: checkins }, { data: vendedoresActivos }, { data: clientesConGeo }] = await Promise.all([
     supabase
@@ -16,9 +16,9 @@ async function getGPSData() {
         profiles!gps_checkins_usuario_id_fkey(full_name, role),
         clientes(razon_social)
       `)
-      .gte('created_at', `${today}T00:00:00`)
+      .gte('created_at', sieteDiasAtras)
       .order('created_at', { ascending: false })
-      .limit(100),
+      .limit(200),
     supabase
       .from('profiles')
       .select('id, full_name, role, activo')
@@ -118,7 +118,7 @@ export default async function GPSPage() {
       <Card className="border-gray-200 shadow-sm">
         <CardHeader className="pb-2">
           <CardTitle className="text-base font-semibold text-gray-800">
-            Historial de Check-ins ({checkins.length})
+            Historial de Check-ins — Últimos 7 días ({checkins.length})
           </CardTitle>
         </CardHeader>
         <CardContent className="p-0">
@@ -129,7 +129,7 @@ export default async function GPSPage() {
               <table className="w-full text-sm">
                 <thead className="border-b border-gray-100 bg-gray-50/50">
                   <tr>
-                    {['Hora', 'Vendedor', 'Tipo', 'Cliente', 'Coordenadas'].map((h) => (
+                    {['Fecha', 'Hora', 'Vendedor', 'Tipo', 'Cliente', 'Coordenadas'].map((h) => (
                       <th key={h} className="text-left py-2.5 px-4 text-xs font-semibold text-gray-500 uppercase tracking-wide">
                         {h}
                       </th>
@@ -144,6 +144,9 @@ export default async function GPSPage() {
                       : null
                     return (
                       <tr key={c.id} className="hover:bg-gray-50/50 transition-colors">
+                        <td className="py-2.5 px-4 text-gray-500 text-xs font-mono whitespace-nowrap">
+                          {new Date(c.created_at).toLocaleDateString('es-PE', { day: '2-digit', month: '2-digit' })}
+                        </td>
                         <td className="py-2.5 px-4 text-gray-500 text-xs font-mono">
                           {new Date(c.created_at).toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit' })}
                         </td>

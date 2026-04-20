@@ -4,11 +4,12 @@ import { useState, useEffect, useCallback } from 'react'
 import Image from 'next/image'
 import {
   Users, Search, Phone, MapPin, ChevronRight, Loader2, AlertCircle, X,
-  UserPlus, Send, CheckCircle, XCircle, Clock, Crosshair,
+  UserPlus, Send, CheckCircle, XCircle, Clock, Crosshair, Sparkles,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { createClient } from '@/lib/supabase/client'
 import { useDebounce } from '@/lib/hooks/use-debounce'
+import { useSunatReniec } from '@/lib/hooks/use-sunat-reniec'
 import { Input } from '@/components/ui/input'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -99,6 +100,23 @@ export default function ClientesPage() {
   const [picked, setPicked] = useState<[number, number] | null>(null)
 
   const supabase = createClient()
+  const { consultarRuc, consultarDni, loading: sunatLoading } = useSunatReniec()
+
+  const autocompletarDoc = async () => {
+    if (tipoDoc === 'ruc') {
+      const data = await consultarRuc(docValue.trim())
+      if (!data) return
+      setRazonSocial(data.razonSocial)
+      if (data.direccion) setDireccion(data.direccion)
+      setTipoCliente('tienda')
+    } else {
+      const data = await consultarDni(docValue.trim())
+      if (!data) return
+      setRazonSocial(data.nombreCompleto)
+      setContacto(data.nombreCompleto)
+      setTipoCliente('consumidor_final')
+    }
+  }
 
   const cargarSolicitudes = useCallback(async (uid: string) => {
     const { data } = await (supabase.from('solicitudes_cliente' as any) as any)
@@ -595,12 +613,30 @@ export default function ClientesPage() {
               </div>
               <div>
                 <Label>{tipoDoc === 'ruc' ? 'RUC' : 'DNI'}</Label>
-                <Input
-                  value={docValue}
-                  onChange={(e) => setDocValue(e.target.value)}
-                  placeholder={tipoDoc === 'ruc' ? '20xxxxxxxxx' : '12345678'}
-                  className="mt-1 font-mono"
-                />
+                <div className="flex gap-2 mt-1">
+                  <Input
+                    value={docValue}
+                    onChange={(e) => setDocValue(e.target.value)}
+                    placeholder={tipoDoc === 'ruc' ? '20xxxxxxxxx' : '12345678'}
+                    maxLength={tipoDoc === 'ruc' ? 11 : 8}
+                    inputMode="numeric"
+                    className="font-mono flex-1"
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={autocompletarDoc}
+                    disabled={sunatLoading || !docValue || docValue.length !== (tipoDoc === 'ruc' ? 11 : 8)}
+                    className="shrink-0 gap-1 border-[#FBE600] hover:bg-[#FBE600] hover:text-black"
+                  >
+                    {sunatLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
+                    {tipoDoc === 'ruc' ? 'SUNAT' : 'RENIEC'}
+                  </Button>
+                </div>
+                <p className="text-[11px] text-gray-400 mt-1">
+                  Se auto-completará razón social{tipoDoc === 'ruc' ? ' y dirección' : ''}.
+                </p>
               </div>
             </div>
 
