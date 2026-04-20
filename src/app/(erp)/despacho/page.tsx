@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState, useCallback } from 'react'
-import { Plus, Printer, Truck, Loader2, ChevronDown, ChevronRight, Package } from 'lucide-react'
+import { Plus, Printer, Truck, Loader2, ChevronDown, ChevronRight, Package, FileText } from 'lucide-react'
 import { toast } from 'sonner'
 import { createClient } from '@/lib/supabase/client'
 import { formatCurrency, formatDate } from '@/lib/utils'
@@ -278,10 +278,22 @@ export default function DespachoPage() {
                     <Button
                       size="sm"
                       variant="outline"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        window.open(`/guia-remision/${cons.id}`, '_blank')
+                      }}
+                      className="h-7 text-xs gap-1 border-[#FBE600] hover:bg-[#FBE600] hover:text-black"
+                      title="Ver Guía de Remisión"
+                    >
+                      <FileText className="w-3.5 h-3.5" /> Guía
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
                       onClick={(e) => { e.stopPropagation(); imprimirHojaRuta(cons) }}
                       className="h-7 text-xs gap-1"
                     >
-                      <Printer className="w-3.5 h-3.5" /> Imprimir
+                      <Printer className="w-3.5 h-3.5" /> Hoja
                     </Button>
                     {isOpen ? <ChevronDown className="w-4 h-4 text-gray-400" /> : <ChevronRight className="w-4 h-4 text-gray-400" />}
                   </div>
