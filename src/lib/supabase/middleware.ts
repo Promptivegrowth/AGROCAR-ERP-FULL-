@@ -29,7 +29,7 @@ export async function updateSession(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   // Public paths that don't require auth
-  const publicPaths = ["/login", "/auth/callback", "/boleta", "/api/consulta", "/api/geocode"];
+  const publicPaths = ["/login", "/auth/callback", "/boleta", "/comprobante", "/guia-remision", "/api/consulta", "/api/geocode"];
   if (publicPaths.some((p) => pathname.startsWith(p))) {
     return supabaseResponse;
   }

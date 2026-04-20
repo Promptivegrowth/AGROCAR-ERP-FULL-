@@ -4,7 +4,7 @@ import { useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   Search, Loader2, CreditCard, DollarSign, AlertTriangle, Users, CheckCircle2,
-  Landmark, Eye, Phone, FileText, Banknote, Smartphone, Building2,
+  Landmark, Eye, Phone, FileText, Banknote, Smartphone, Building2, StickyNote,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { createClient } from '@/lib/supabase/client'
@@ -504,17 +504,32 @@ export default function CobranzasClient({
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-gray-50">
-                        {selected.cobros.map((cb: any) => (
-                          <tr key={cb.id} className="hover:bg-gray-50/50">
-                            <td className="py-2 px-3 text-gray-600">{formatDate(cb.fecha)}</td>
-                            <td className="py-2 px-3 font-bold text-green-600">{formatCurrency(cb.total ?? 0)}</td>
-                            <td className="py-2 px-3 text-gray-600">{formatCurrency(cb.efectivo ?? 0)}</td>
-                            <td className="py-2 px-3 text-gray-600">{formatCurrency(cb.yape ?? 0)}</td>
-                            <td className="py-2 px-3 text-gray-600">{formatCurrency(cb.plin ?? 0)}</td>
-                            <td className="py-2 px-3 text-gray-600">{formatCurrency(cb.transferencia ?? 0)}</td>
-                            <td className="py-2 px-3 text-gray-500 truncate max-w-[120px]">{cb.notas ?? '—'}</td>
-                          </tr>
-                        ))}
+                        {selected.cobros.map((cb: any) => {
+                          const tieneNota = cb.notas && String(cb.notas).trim().length > 0
+                          return (
+                            <tr key={cb.id} className="hover:bg-gray-50/50">
+                              <td className="py-2 px-3 text-gray-600">{formatDate(cb.fecha)}</td>
+                              <td className="py-2 px-3 font-bold text-green-600">{formatCurrency(cb.total ?? 0)}</td>
+                              <td className="py-2 px-3 text-gray-600">{formatCurrency(cb.efectivo ?? 0)}</td>
+                              <td className="py-2 px-3 text-gray-600">{formatCurrency(cb.yape ?? 0)}</td>
+                              <td className="py-2 px-3 text-gray-600">{formatCurrency(cb.plin ?? 0)}</td>
+                              <td className="py-2 px-3 text-gray-600">{formatCurrency(cb.transferencia ?? 0)}</td>
+                              <td className="py-2 px-3 max-w-[200px]">
+                                {tieneNota ? (
+                                  <div
+                                    className="flex items-start gap-1 text-amber-800"
+                                    title={cb.notas}
+                                  >
+                                    <StickyNote className="w-3 h-3 text-amber-600 shrink-0 mt-0.5" />
+                                    <span className="truncate">{cb.notas}</span>
+                                  </div>
+                                ) : (
+                                  <span className="text-gray-300">—</span>
+                                )}
+                              </td>
+                            </tr>
+                          )
+                        })}
                       </tbody>
                     </table>
                   </div>

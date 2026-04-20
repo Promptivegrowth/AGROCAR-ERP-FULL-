@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react'
 import Image from 'next/image'
 import {
   DollarSign, Search, Camera, Loader2, CheckCircle, AlertCircle, X, Send,
+  FileText, AlertTriangle, StickyNote,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { createClient } from '@/lib/supabase/client'
@@ -39,6 +40,25 @@ interface MontosPago {
   transferencia: number
 }
 
+interface ComprobantePendiente {
+  id: string
+  serie: string
+  numero: string
+  fecha_emision: string
+  total: number
+  saldo: number
+  dias_transcurridos: number
+  estado_deuda: 'al_dia' | 'por_vencer' | 'vencido'
+}
+
+interface EstadoCuentaCliente {
+  facturado: number
+  cobrado: number
+  saldo: number
+  comprobantes: ComprobantePendiente[]
+  tieneVencidos: boolean
+}
+
 export default function CobrosPage() {
   const [tab, setTab] = useState<Tab>('registrar')
   const [userId, setUserId] = useState<string | null>(null)
@@ -67,9 +87,14 @@ export default function CobrosPage() {
   const [mensajeExito, setMensajeExito] = useState<string | null>(null)
   const [mensajeError, setMensajeError] = useState<string | null>(null)
 
+  // Estado de cuenta del cliente seleccionado
+  const [estadoCuenta, setEstadoCuenta] = useState<EstadoCuentaCliente | null>(null)
+  const [loadingEstadoCuenta, setLoadingEstadoCuenta] = useState(false)
+
   // Cobros del día
   const [cobrosDia, setCobrosDia] = useState<Cobro[]>([])
   const [loadingCobros, setLoadingCobros] = useState(false)
+  const [notaExpandida, setNotaExpandida] = useState<string | null>(null)
 
   const supabase = createClient()
 
@@ -108,6 +133,88 @@ export default function CobrosPage() {
     setClientesFiltrados(filtrados.slice(0, 8))
     setShowDropdown(true)
   }, [clienteSearch, clientes])
+
+  const cargarEstadoCuenta = useCallback(async (cliente: Cliente) => {
+    setLoadingEstadoCuenta(true)
+    setEstadoCuenta(null)
+    try {
+      const [compRes, cobRes] = await Promise.all([
+        supabase
+          .from('comprobantes')
+          .select('id, serie, numero, fecha_emision, total, estado')
+          .eq('cliente_id', cliente.id)
+          .neq('estado', 'anulado')
+          .order('fecha_emision', { ascending: true }),
+        supabase
+          .from('cobros')
+          .select('total')
+          .eq('cliente_id', cliente.id),
+      ])
+
+      const comprobantes = compRes.data ?? []
+      const cobros = cobRes.data ?? []
+
+      const facturado = comprobantes.reduce((acc, c: any) => acc + Number(c.total ?? 0), 0)
+      const cobrado = cobros.reduce((acc, c: any) => acc + Number(c.total ?? 0), 0)
+      const saldo = Math.max(0, facturado - cobrado)
+
+      // Aplicar FIFO informativo para saber cuánto queda por cobrar por comprobante
+      let remanente = cobrado
+      const hoy = new Date()
+      hoy.setHours(0, 0, 0, 0)
+      const creditoDias = cliente.credito_dias ?? 0
+      let tieneVencidos = false
+
+      const compPendientes: ComprobantePendiente[] = []
+      for (const comp of comprobantes as any[]) {
+        const totalComp = Number(comp.total ?? 0)
+        const aplicado = Math.min(remanente, totalComp)
+        remanente -= aplicado
+        const saldoComp = totalComp - aplicado
+        if (saldoComp <= 0.0001) continue
+
+        const fechaEmi = new Date(comp.fecha_emision + 'T00:00:00')
+        const diasT = Math.floor((hoy.getTime() - fechaEmi.getTime()) / (1000 * 60 * 60 * 24))
+        let estadoDeuda: 'al_dia' | 'por_vencer' | 'vencido' = 'al_dia'
+        if (diasT > creditoDias) {
+          estadoDeuda = 'vencido'
+          tieneVencidos = true
+        } else if (diasT >= creditoDias - 3) {
+          estadoDeuda = 'por_vencer'
+        }
+        compPendientes.push({
+          id: comp.id,
+          serie: comp.serie,
+          numero: comp.numero,
+          fecha_emision: comp.fecha_emision,
+          total: totalComp,
+          saldo: saldoComp,
+          dias_transcurridos: diasT,
+          estado_deuda: estadoDeuda,
+        })
+      }
+
+      setEstadoCuenta({
+        facturado,
+        cobrado,
+        saldo,
+        comprobantes: compPendientes,
+        tieneVencidos,
+      })
+    } catch {
+      setEstadoCuenta(null)
+    } finally {
+      setLoadingEstadoCuenta(false)
+    }
+  }, [supabase])
+
+  useEffect(() => {
+    if (clienteSeleccionado) {
+      cargarEstadoCuenta(clienteSeleccionado)
+    } else {
+      setEstadoCuenta(null)
+    }
+  }, [clienteSeleccionado, cargarEstadoCuenta])
 
   function actualizarMonto(metodo: MetodoPago, valor: string) {
     setMontosStr((prev) => ({ ...prev, [metodo]: valor }))
@@ -169,6 +276,27 @@ export default function CobrosPage() {
         return
       }
 
+      // Cálculo FIFO informativo para el toast
+      let toastDescripcion = `${formatCurrency(totalCobro)} · ${clienteSeleccionado.razon_social}`
+      if (estadoCuenta && estadoCuenta.comprobantes.length > 0) {
+        let restante = totalCobro
+        const aplicaciones: string[] = []
+        for (const comp of estadoCuenta.comprobantes) {
+          if (restante <= 0.0001) break
+          const aplicar = Math.min(restante, comp.saldo)
+          restante -= aplicar
+          aplicaciones.push(
+            `S/${aplicar.toFixed(2)} → ${comp.serie}-${comp.numero}`
+          )
+        }
+        if (aplicaciones.length > 0) {
+          toastDescripcion = aplicaciones.slice(0, 3).join(' · ')
+          if (aplicaciones.length > 3) {
+            toastDescripcion += ` (+${aplicaciones.length - 3} más)`
+          }
+        }
+      }
+
       setUltimoCobro({
         id: cobroData.id,
         total: totalCobro,
@@ -177,7 +305,7 @@ export default function CobrosPage() {
       })
       setMensajeExito(`Cobro de ${formatCurrency(totalCobro)} registrado correctamente`)
       toast.success('Cobro registrado', {
-        description: `${formatCurrency(totalCobro)} · ${clienteSeleccionado.razon_social}`,
+        description: toastDescripcion,
       })
       setClienteSeleccionado(null)
       setClienteSearch('')
@@ -352,6 +480,116 @@ export default function CobrosPage() {
               </CardContent>
             </Card>
 
+            {/* Estado de cuenta del cliente */}
+            {clienteSeleccionado && (
+              <Card className="border-0 shadow-sm">
+                <CardContent className="p-4">
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="font-semibold text-gray-800 flex items-center gap-2">
+                      <FileText className="w-4 h-4 text-gray-500" />
+                      Estado de cuenta
+                    </h3>
+                    {loadingEstadoCuenta && (
+                      <Loader2 className="w-4 h-4 animate-spin text-gray-400" />
+                    )}
+                  </div>
+
+                  {estadoCuenta ? (
+                    <>
+                      <div className="grid grid-cols-3 gap-2 text-center mb-3">
+                        <div className="p-2 rounded-lg bg-gray-50">
+                          <p className="text-[10px] text-gray-500 uppercase">Facturado</p>
+                          <p className="text-sm font-semibold text-gray-800">
+                            {formatCurrency(estadoCuenta.facturado)}
+                          </p>
+                        </div>
+                        <div className="p-2 rounded-lg bg-green-50">
+                          <p className="text-[10px] text-green-700 uppercase">Cobrado</p>
+                          <p className="text-sm font-semibold text-green-700">
+                            {formatCurrency(estadoCuenta.cobrado)}
+                          </p>
+                        </div>
+                        <div className={`p-2 rounded-lg ${estadoCuenta.saldo > 0 ? 'bg-red-50' : 'bg-gray-50'}`}>
+                          <p className={`text-[10px] uppercase ${estadoCuenta.saldo > 0 ? 'text-red-700' : 'text-gray-500'}`}>
+                            Saldo
+                          </p>
+                          <p className={`text-sm font-bold ${estadoCuenta.saldo > 0 ? 'text-red-600' : 'text-gray-700'}`}>
+                            {formatCurrency(estadoCuenta.saldo)}
+                          </p>
+                        </div>
+                      </div>
+
+                      {estadoCuenta.tieneVencidos && (
+                        <div className="flex items-center gap-2 bg-red-50 border border-red-200 text-red-700 rounded-lg px-3 py-2 mb-3 text-xs font-medium">
+                          <AlertTriangle className="w-4 h-4 shrink-0" />
+                          Deuda vencida — cliente fuera de plazo de crédito
+                        </div>
+                      )}
+
+                      {estadoCuenta.comprobantes.length === 0 ? (
+                        <p className="text-xs text-gray-400 text-center py-3">
+                          Sin comprobantes pendientes
+                        </p>
+                      ) : (
+                        <div>
+                          <p className="text-[11px] font-medium text-gray-500 uppercase mb-1.5">
+                            Pendientes ({estadoCuenta.comprobantes.length}) — FIFO
+                          </p>
+                          <div className="max-h-[200px] overflow-y-auto divide-y divide-gray-100 border border-gray-100 rounded-lg">
+                            {estadoCuenta.comprobantes.map((comp) => {
+                              const badgeClass =
+                                comp.estado_deuda === 'vencido'
+                                  ? 'bg-red-100 text-red-700 border-red-200'
+                                  : comp.estado_deuda === 'por_vencer'
+                                  ? 'bg-yellow-100 text-yellow-700 border-yellow-200'
+                                  : 'bg-green-100 text-green-700 border-green-200'
+                              const badgeLabel =
+                                comp.estado_deuda === 'vencido'
+                                  ? 'Vencido'
+                                  : comp.estado_deuda === 'por_vencer'
+                                  ? 'Por vencer'
+                                  : 'Al día'
+                              return (
+                                <div key={comp.id} className="p-2.5 flex items-center justify-between gap-2">
+                                  <div className="min-w-0 flex-1">
+                                    <div className="flex items-center gap-1.5">
+                                      <span className="text-xs font-mono font-semibold text-gray-800">
+                                        {comp.serie}-{comp.numero}
+                                      </span>
+                                      <span className={`text-[9px] px-1.5 py-0.5 rounded border font-medium ${badgeClass}`}>
+                                        {badgeLabel}
+                                      </span>
+                                    </div>
+                                    <p className="text-[11px] text-gray-500 mt-0.5">
+                                      {formatDate(comp.fecha_emision)} · {comp.dias_transcurridos}d
+                                    </p>
+                                  </div>
+                                  <div className="text-right shrink-0">
+                                    <p className="text-xs font-bold text-gray-900">
+                                      {formatCurrency(comp.saldo)}
+                                    </p>
+                                    {comp.saldo < comp.total && (
+                                      <p className="text-[10px] text-gray-400">
+                                        de {formatCurrency(comp.total)}
+                                      </p>
+                                    )}
+                                  </div>
+                                </div>
+                              )
+                            })}
+                          </div>
+                        </div>
+                      )}
+                    </>
+                  ) : !loadingEstadoCuenta ? (
+                    <p className="text-xs text-gray-400 text-center py-3">
+                      Sin información de cuenta
+                    </p>
+                  ) : null}
+                </CardContent>
+              </Card>
+            )}
+
             {/* Métodos de pago */}
             <Card className="border-0 shadow-sm">
               <CardContent className="p-4">
@@ -391,11 +629,11 @@ export default function CobrosPage() {
               <CardContent className="p-4">
                 <h3 className="font-semibold text-gray-800 mb-3">3. Foto de Voucher (opcional)</h3>
                 {voucherPreview ? (
-                  <div className="relative">
+                  <div className="relative bg-gray-100 rounded-xl overflow-hidden">
                     <img
                       src={voucherPreview}
                       alt="Voucher"
-                      className="w-full h-40 object-cover rounded-xl"
+                      className="block mx-auto max-h-64 w-auto max-w-full object-contain rounded-xl"
                     />
                     <button
                       onClick={() => { setVoucherFile(null); setVoucherPreview(null) }}
@@ -403,6 +641,9 @@ export default function CobrosPage() {
                     >
                       <X className="w-4 h-4 text-gray-600" />
                     </button>
+                    <p className="text-[11px] text-gray-500 text-center py-1.5 bg-white border-t border-gray-100">
+                      Se guardará junto al cobro para consulta posterior
+                    </p>
                   </div>
                 ) : (
                   <label className="flex flex-col items-center justify-center h-32 border-2 border-dashed border-gray-300 rounded-xl cursor-pointer hover:border-[#FBE600] hover:bg-yellow-50 transition-colors">
@@ -481,11 +722,14 @@ export default function CobrosPage() {
                 const metodosPagados = (Object.keys(metodoLabels) as MetodoPago[]).filter(
                   (m) => (cobro[m] ?? 0) > 0
                 )
+                const tieneNota = Boolean(cobro.notas && cobro.notas.trim().length > 0)
+                const notaLarga = tieneNota && (cobro.notas ?? '').length > 60
+                const expandida = notaExpandida === cobro.id
                 return (
                   <Card key={cobro.id} className="border-0 shadow-sm">
                     <CardContent className="p-4">
                       <div className="flex items-start justify-between">
-                        <div>
+                        <div className="min-w-0 flex-1">
                           <div className="font-semibold text-gray-900 text-sm">
                             #{cobro.id.slice(-8).toUpperCase()}
                           </div>
@@ -505,10 +749,27 @@ export default function CobrosPage() {
                             </div>
                           )}
                         </div>
-                        <div className="font-bold text-green-700 text-lg">
+                        <div className="font-bold text-green-700 text-lg shrink-0 ml-2">
                           {formatCurrency(cobro.total ?? 0)}
                         </div>
                       </div>
+                      {tieneNota && (
+                        <button
+                          type="button"
+                          onClick={() => setNotaExpandida(expandida ? null : cobro.id)}
+                          className="mt-2 w-full text-left flex items-start gap-1.5 bg-amber-50 border border-amber-100 rounded-lg px-2.5 py-1.5"
+                        >
+                          <StickyNote className="w-3.5 h-3.5 text-amber-600 shrink-0 mt-0.5" />
+                          <span className={`text-xs text-amber-800 ${expandida ? '' : 'line-clamp-1'}`}>
+                            {cobro.notas}
+                          </span>
+                          {notaLarga && !expandida && (
+                            <span className="text-[10px] text-amber-600 font-medium shrink-0">
+                              ver más
+                            </span>
+                          )}
+                        </button>
+                      )}
                     </CardContent>
                   </Card>
                 )

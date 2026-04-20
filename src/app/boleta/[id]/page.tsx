@@ -17,7 +17,7 @@ export default async function BoletaPage({ params }: { params: Promise<{ id: str
   const { data: cobro } = await supabase
     .from('cobros')
     .select(`
-      id, total, efectivo, yape, plin, transferencia, fecha, notas, created_at,
+      id, total, efectivo, yape, plin, transferencia, fecha, notas, voucher_url, created_at,
       clientes(id, razon_social, ruc, dni, direccion, telefono),
       profiles!cobros_cobrador_id_fkey(full_name)
     `)
@@ -118,15 +118,37 @@ export default async function BoletaPage({ params }: { params: Promise<{ id: str
           </div>
         </div>
 
+        {/* Voucher (si existe) */}
+        {cobro.voucher_url && (
+          <div className="px-6 py-4 border-t border-gray-100">
+            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
+              Comprobante del pago
+            </p>
+            <div className="bg-gray-50 rounded-lg overflow-hidden border border-gray-200">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={cobro.voucher_url}
+                alt="Voucher"
+                className="block mx-auto max-h-80 w-auto max-w-full object-contain"
+              />
+            </div>
+          </div>
+        )}
+
+        {/* Observaciones */}
+        {cobro.notas && (
+          <div className="px-6 py-3 border-t border-gray-100">
+            <p className="text-[10px] uppercase tracking-wide text-gray-400 mb-1">Observaciones</p>
+            <p className="text-xs text-gray-700 italic">{cobro.notas}</p>
+          </div>
+        )}
+
         {/* Footer */}
         <div className="px-6 py-4 bg-gray-50 text-center text-xs text-gray-500 border-t border-gray-100">
           {cobrador?.full_name && (
             <p className="mb-1">
               Recibido por: <span className="font-medium text-gray-700">{cobrador.full_name}</span>
             </p>
-          )}
-          {cobro.notas && (
-            <p className="italic text-[11px] text-gray-500 mt-2 mb-2">{cobro.notas}</p>
           )}
           <p className="mt-2 text-[10px] text-gray-400">
             Documento interno no tributario · Generado electrónicamente

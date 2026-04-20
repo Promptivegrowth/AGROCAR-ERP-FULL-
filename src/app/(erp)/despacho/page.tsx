@@ -77,7 +77,9 @@ export default function DespachoPage() {
     if (!selectedVehiculo || selectedPedidos.length === 0) return
     setSaving(true)
 
+    const numero = `DSP-${Date.now().toString().slice(-8)}`
     const { data: despacho, error } = await supabase.from('despachos').insert({
+      numero,
       vehiculo_id: selectedVehiculo,
       fecha_despacho: selectedFecha,
       estado: 'preparacion' as any,
@@ -112,10 +114,20 @@ export default function DespachoPage() {
     setSelectedVehiculo('')
 
     if (updError) {
-      toast.error('Consolidado creado con advertencias', { description: updError.message })
+      toast.error('Consolidado creado con advertencias', {
+        description: updError.message,
+        action: {
+          label: 'Ver Guía',
+          onClick: () => window.open(`/guia-remision/${despacho.id}`, '_blank'),
+        },
+      })
     } else {
       toast.success('Consolidado creado', {
         description: `${selectedPedidos.length} pedido(s) asignado(s) al despacho.`,
+        action: {
+          label: 'Ver Guía',
+          onClick: () => window.open(`/guia-remision/${despacho.id}`, '_blank'),
+        },
       })
     }
 

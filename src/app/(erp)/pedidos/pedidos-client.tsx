@@ -49,6 +49,7 @@ export default function PedidosClient({ pedidosIniciales }: { pedidosIniciales: 
   const [items, setItems] = useState<any[]>([])
   const [loadingItems, setLoadingItems] = useState(false)
   const [cancelando, setCancelando] = useState(false)
+  const [comprobanteId, setComprobanteId] = useState<string | null>(null)
 
   const filtrados = useMemo(() => {
     return pedidos.filter((p) => {
@@ -82,11 +83,20 @@ export default function PedidosClient({ pedidosIniciales }: { pedidosIniciales: 
     setSelected(p)
     setDetailOpen(true)
     setLoadingItems(true)
-    const { data } = await supabase
-      .from('pedidos_items')
-      .select('id, cantidad, precio_unitario, descuento_porcentaje, subtotal, productos(codigo, nombre, unidades_medida(simbolo))')
-      .eq('pedido_id', p.id)
+    setComprobanteId(null)
+    const [{ data }, { data: comp }] = await Promise.all([
+      supabase
+        .from('pedidos_items')
+        .select('id, cantidad, precio_unitario, descuento_porcentaje, subtotal, productos(codigo, nombre, unidades_medida(simbolo))')
+        .eq('pedido_id', p.id),
+      supabase
+        .from('comprobantes')
+        .select('id')
+        .eq('pedido_id', p.id)
+        .maybeSingle(),
+    ])
     setItems(data ?? [])
+    setComprobanteId((comp as any)?.id ?? null)
     setLoadingItems(false)
   }
 
@@ -411,6 +421,15 @@ export default function PedidosClient({ pedidosIniciales }: { pedidosIniciales: 
                       className="bg-[#FBE600] hover:bg-[#E5D100] text-black font-semibold gap-2"
                     >
                       <FileText className="w-4 h-4" /> Ir a Facturación
+                    </Button>
+                  )}
+                  {comprobanteId && (
+                    <Button
+                      variant="outline"
+                      onClick={() => window.open(`/comprobante/${comprobanteId}`, '_blank')}
+                      className="gap-2 border-gray-300"
+                    >
+                      <FileText className="w-4 h-4" /> Ver Comprobante
                     </Button>
                   )}
                 </div>

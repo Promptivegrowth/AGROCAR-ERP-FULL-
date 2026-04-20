@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import {
   Wallet, Lock, Unlock, TrendingUp, TrendingDown, DollarSign, Clock, Users,
   Banknote, Smartphone, Building2, FileDown, Loader2, Plus, ChevronDown, ChevronUp,
-  Receipt, MessageCircle, Send,
+  Receipt, MessageCircle, Send, StickyNote,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { createClient } from '@/lib/supabase/client'
@@ -633,6 +633,12 @@ export default function CajaClient({
                             <p className="text-xs text-gray-500 mt-0.5">
                               {formatHora(c.created_at)} · {c.cobrador_nombre}
                             </p>
+                            {c.notas && c.notas.trim().length > 0 && (
+                              <p className="mt-1 text-[11px] text-amber-800 bg-amber-50 border border-amber-100 rounded px-2 py-1 flex items-start gap-1">
+                                <StickyNote className="w-3 h-3 text-amber-600 shrink-0 mt-0.5" />
+                                <span className="break-words">{c.notas}</span>
+                              </p>
+                            )}
                           </div>
                           <p className="font-bold text-green-600 shrink-0">
                             {formatCurrency(c.total)}
@@ -706,7 +712,7 @@ export default function CajaClient({
                         <tr>
                           {[
                             'Hora', 'Cobrador', 'Cliente', 'Efectivo', 'Yape', 'Plin',
-                            'Transfer.', 'Total', 'Acciones',
+                            'Transfer.', 'Total', 'Nota', 'Acciones',
                           ].map((h) => (
                             <th
                               key={h}
@@ -741,6 +747,19 @@ export default function CajaClient({
                             </td>
                             <td className="py-2.5 px-3 font-bold text-green-600">
                               {formatCurrency(c.total)}
+                            </td>
+                            <td className="py-2.5 px-3 max-w-[180px]">
+                              {c.notas && c.notas.trim().length > 0 ? (
+                                <div
+                                  className="flex items-start gap-1 text-xs text-amber-800"
+                                  title={c.notas}
+                                >
+                                  <StickyNote className="w-3.5 h-3.5 text-amber-600 shrink-0 mt-0.5" />
+                                  <span className="truncate">{c.notas}</span>
+                                </div>
+                              ) : (
+                                <span className="text-xs text-gray-300">—</span>
+                              )}
                             </td>
                             <td className="py-2.5 px-3">
                               <div className="flex gap-1.5">
