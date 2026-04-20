@@ -10,48 +10,50 @@ interface DniResult {
   nombreCompleto: string
 }
 
-async function consultarApisNetPe(dni: string): Promise<DniResult | null> {
+async function consultarDecolecta(dni: string, token: string): Promise<DniResult | null> {
   try {
-    const res = await fetch(`https://api.apis.net.pe/v2/reniec/dni?numero=${dni}`, {
-      headers: { Accept: 'application/json' },
-      signal: AbortSignal.timeout(6000),
+    const res = await fetch(`https://api.decolecta.com/v1/reniec/dni?numero=${dni}`, {
+      headers: {
+        Accept: 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      signal: AbortSignal.timeout(8000),
     })
     if (!res.ok) return null
     const d = await res.json()
-    if (!d?.nombres) return null
-    const nombreCompleto = [d.nombres, d.apellidoPaterno, d.apellidoMaterno]
-      .filter(Boolean)
-      .join(' ')
+    const nombres = d.first_name ?? d.nombres
+    if (!nombres) return null
+    const apPat = d.first_last_name ?? d.apellido_paterno ?? d.apellidoPaterno ?? null
+    const apMat = d.second_last_name ?? d.apellido_materno ?? d.apellidoMaterno ?? null
+    const full = d.full_name ?? [apPat, apMat, nombres].filter(Boolean).join(' ')
     return {
-      dni: d.numeroDocumento ?? dni,
-      nombres: d.nombres,
-      apellidoPaterno: d.apellidoPaterno ?? null,
-      apellidoMaterno: d.apellidoMaterno ?? null,
-      nombreCompleto,
+      dni: d.document_number ?? d.dni ?? dni,
+      nombres,
+      apellidoPaterno: apPat,
+      apellidoMaterno: apMat,
+      nombreCompleto: full.trim(),
     }
   } catch {
     return null
   }
 }
 
-async function consultarDecolecta(dni: string): Promise<DniResult | null> {
+async function consultarApisPeru(dni: string, token: string): Promise<DniResult | null> {
   try {
-    const res = await fetch(`https://api.decolecta.com/v1/reniec/dni?numero=${dni}`, {
-      headers: { Accept: 'application/json' },
-      signal: AbortSignal.timeout(6000),
-    })
+    const res = await fetch(
+      `https://dniruc.apisperu.com/api/v1/dni/${dni}?token=${token}`,
+      { headers: { Accept: 'application/json' }, signal: AbortSignal.timeout(8000) },
+    )
     if (!res.ok) return null
     const d = await res.json()
-    const nombres = d.nombres ?? d.first_name
-    if (!nombres) return null
-    const apPat = d.apellido_paterno ?? d.apellidoPaterno ?? null
-    const apMat = d.apellido_materno ?? d.apellidoMaterno ?? null
+    if (!d?.nombres) return null
+    const full = [d.apellidoPaterno, d.apellidoMaterno, d.nombres].filter(Boolean).join(' ')
     return {
       dni: d.dni ?? dni,
-      nombres,
-      apellidoPaterno: apPat,
-      apellidoMaterno: apMat,
-      nombreCompleto: [nombres, apPat, apMat].filter(Boolean).join(' '),
+      nombres: d.nombres,
+      apellidoPaterno: d.apellidoPaterno ?? null,
+      apellidoMaterno: d.apellidoMaterno ?? null,
+      nombreCompleto: full,
     }
   } catch {
     return null
@@ -63,25 +65,31 @@ export async function GET(req: Request) {
   const dni = (searchParams.get('numero') ?? '').trim()
 
   if (!/^\d{8}$/.test(dni)) {
+    return NextResponse.json({ error: 'DNI inválido. Debe tener 8 dígitos.' }, { status: 400 })
+  }
+
+  const sunatToken = process.env.SUNAT_TOKEN
+  const apisperuToken = process.env.APISPERU_TOKEN
+
+  if (!sunatToken && !apisperuToken) {
     return NextResponse.json(
-      { error: 'DNI inválido. Debe tener 8 dígitos.' },
-      { status: 400 },
+      { error: 'SUNAT_TOKEN no configurado en el servidor.' },
+      { status: 503 },
     )
   }
 
-  const result =
-    (await consultarApisNetPe(dni)) ?? (await consultarDecolecta(dni))
+  let result: DniResult | null = null
+  if (sunatToken) result = await consultarDecolecta(dni, sunatToken)
+  if (!result && apisperuToken) result = await consultarApisPeru(dni, apisperuToken)
 
   if (!result) {
     return NextResponse.json(
-      { error: 'No se pudo consultar RENIEC. Intenta nuevamente en unos segundos.' },
+      { error: 'No se pudo consultar RENIEC. Verifica el DNI e intenta más tarde.' },
       { status: 502 },
     )
   }
 
   return NextResponse.json(result, {
-    headers: {
-      'Cache-Control': 'public, max-age=3600, s-maxage=3600',
-    },
+    headers: { 'Cache-Control': 'public, max-age=3600, s-maxage=3600' },
   })
 }
