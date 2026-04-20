@@ -178,21 +178,38 @@ export default function ClientesPage() {
       setZonas(zonasRes.data ?? [])
 
       const ids = clientesData.map((c) => c.id)
-      let deudaPorCliente: Record<string, number> = {}
+      const facturadoPorCliente: Record<string, number> = {}
+      const cobradoPorCliente: Record<string, number> = {}
       if (ids.length > 0) {
-        const { data: cobros } = await supabase
-          .from('cobros')
-          .select('cliente_id, total')
-          .in('cliente_id', ids)
+        const [{ data: comps }, { data: cobros }] = await Promise.all([
+          supabase
+            .from('comprobantes')
+            .select('cliente_id, total')
+            .in('cliente_id', ids)
+            .neq('estado', 'anulado'),
+          supabase
+            .from('cobros')
+            .select('cliente_id, total')
+            .in('cliente_id', ids),
+        ])
+        comps?.forEach((c: any) => {
+          if (!c.cliente_id) return
+          facturadoPorCliente[c.cliente_id] = (facturadoPorCliente[c.cliente_id] ?? 0) + Number(c.total ?? 0)
+        })
         cobros?.forEach((c: any) => {
-          deudaPorCliente[c.cliente_id] = (deudaPorCliente[c.cliente_id] ?? 0) + (c.total ?? 0)
+          if (!c.cliente_id) return
+          cobradoPorCliente[c.cliente_id] = (cobradoPorCliente[c.cliente_id] ?? 0) + Number(c.total ?? 0)
         })
       }
 
-      const clientesConDeuda: ClienteConDeuda[] = clientesData.map((c) => ({
-        ...c,
-        deuda_pendiente: deudaPorCliente[c.id] ?? 0,
-      }))
+      const clientesConDeuda: ClienteConDeuda[] = clientesData.map((c) => {
+        const facturado = facturadoPorCliente[c.id] ?? 0
+        const cobrado = cobradoPorCliente[c.id] ?? 0
+        return {
+          ...c,
+          deuda_pendiente: Math.max(0, facturado - cobrado),
+        }
+      })
 
       setClientes(clientesConDeuda)
       setFiltrados(clientesConDeuda)

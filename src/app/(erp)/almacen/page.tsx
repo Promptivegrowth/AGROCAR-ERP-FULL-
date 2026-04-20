@@ -46,6 +46,9 @@ export default function AlmacenPage() {
   const [adjustNotas, setAdjustNotas] = useState<string>('')
   const [adjustPermitirNeg, setAdjustPermitirNeg] = useState(false)
   const [adjustSaving, setAdjustSaving] = useState(false)
+  const [adjustLotes, setAdjustLotes] = useState<any[]>([])
+  const [adjustLoteId, setAdjustLoteId] = useState<string>('')
+  const [adjustLoteNuevo, setAdjustLoteNuevo] = useState({ numero: '', fecha_venc: '' })
 
   // Movimientos completos
   const [movsOpen, setMovsOpen] = useState(false)
@@ -117,12 +120,26 @@ export default function AlmacenPage() {
     }
   }
 
-  const openAdjust = (s: any) => {
+  const openAdjust = async (s: any) => {
     setAdjustTarget(s)
     setAdjustTipo('entrada')
     setAdjustCantidad('')
     setAdjustNotas('')
     setAdjustPermitirNeg(false)
+    setAdjustLoteId('')
+    setAdjustLoteNuevo({ numero: '', fecha_venc: '' })
+    setAdjustLotes([])
+    // Si el producto tiene_lote, cargar sus lotes activos
+    const tieneLote = !!s?.productos?.tiene_lote
+    if (tieneLote && s?.producto_id) {
+      const { data: lotes } = await supabase
+        .from('lotes')
+        .select('id, numero_lote, fecha_vencimiento, cantidad_actual')
+        .eq('producto_id', s.producto_id)
+        .eq('activo', true)
+        .order('fecha_vencimiento', { ascending: true, nullsFirst: false })
+      setAdjustLotes(lotes ?? [])
+    }
     setAdjustOpen(true)
   }
 
@@ -142,15 +159,67 @@ export default function AlmacenPage() {
       })
       return
     }
+
+    const tieneLote = !!adjustTarget?.productos?.tiene_lote
+    // Para productos con lote, validar selección
+    let loteIdFinal: string | null = null
+    if (tieneLote) {
+      if (adjustTipo === 'salida') {
+        if (!adjustLoteId) {
+          toast.error('Selecciona un lote', { description: 'Este producto requiere indicar de qué lote sale.' })
+          return
+        }
+        loteIdFinal = adjustLoteId
+      } else {
+        // entrada: seleccionar lote existente O crear uno nuevo
+        if (adjustLoteId === '__nuevo__') {
+          if (!adjustLoteNuevo.numero.trim()) {
+            toast.error('Número de lote requerido')
+            return
+          }
+        } else if (!adjustLoteId) {
+          toast.error('Selecciona un lote o crea uno nuevo')
+          return
+        } else {
+          loteIdFinal = adjustLoteId
+        }
+      }
+    }
+
     setAdjustSaving(true)
     try {
       const { data: userData } = await supabase.auth.getUser()
       const userId = userData?.user?.id ?? null
       const cantidadSigned = signo * cantidadNum
 
+      // Crear lote nuevo si aplica (solo en entrada)
+      if (tieneLote && adjustTipo === 'entrada' && adjustLoteId === '__nuevo__') {
+        const { data: loteCreado, error: loteErr } = await (supabase.from('lotes') as any).insert({
+          producto_id: adjustTarget.producto_id,
+          numero_lote: adjustLoteNuevo.numero.trim(),
+          fecha_vencimiento: adjustLoteNuevo.fecha_venc || null,
+          cantidad_inicial: cantidadNum,
+          cantidad_actual: cantidadNum,
+          activo: true,
+        }).select('id').single()
+        if (loteErr) throw loteErr
+        loteIdFinal = loteCreado?.id ?? null
+      } else if (tieneLote && loteIdFinal) {
+        // Actualizar cantidad_actual del lote existente (+/-)
+        const lote = adjustLotes.find((l) => l.id === loteIdFinal)
+        if (lote) {
+          const nuevaCant = Math.max(0, Number(lote.cantidad_actual ?? 0) + cantidadSigned)
+          const { error: loteUpdErr } = await (supabase.from('lotes') as any)
+            .update({ cantidad_actual: nuevaCant, updated_at: new Date().toISOString() })
+            .eq('id', loteIdFinal)
+          if (loteUpdErr) throw loteUpdErr
+        }
+      }
+
       const { error: movError } = await (supabase.from('movimientos_stock') as any).insert({
         tipo: 'ajuste',
         producto_id: adjustTarget.producto_id,
+        lote_id: loteIdFinal,
         cantidad: cantidadSigned,
         notas: adjustNotas || null,
         created_by: userId,
@@ -733,6 +802,63 @@ export default function AlmacenPage() {
                     onChange={(e) => setAdjustCantidad(e.target.value)}
                   />
                 </div>
+
+                {producto?.tiene_lote && (
+                  <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 space-y-2">
+                    <Label className="text-xs font-semibold">
+                      Lote afectado · requerido
+                    </Label>
+                    <select
+                      value={adjustLoteId}
+                      onChange={(e) => setAdjustLoteId(e.target.value)}
+                      className="w-full h-10 px-3 border border-gray-200 rounded-lg text-sm bg-white focus:outline-none focus:border-[#FBE600]"
+                    >
+                      <option value="">Selecciona un lote...</option>
+                      {adjustLotes.map((l) => {
+                        const fv = l.fecha_vencimiento
+                          ? new Date(l.fecha_vencimiento + 'T00:00:00').toLocaleDateString('es-PE', {
+                              day: '2-digit', month: '2-digit', year: 'numeric',
+                            })
+                          : '—'
+                        return (
+                          <option key={l.id} value={l.id}>
+                            {l.numero_lote} · Stock: {l.cantidad_actual} · Vence: {fv}
+                          </option>
+                        )
+                      })}
+                      {adjustTipo === 'entrada' && (
+                        <option value="__nuevo__">+ Crear nuevo lote</option>
+                      )}
+                    </select>
+                    {adjustTipo === 'entrada' && adjustLoteId === '__nuevo__' && (
+                      <div className="grid grid-cols-2 gap-2 pt-2 border-t border-yellow-200">
+                        <div>
+                          <Label className="text-[10px]">Nº lote</Label>
+                          <Input
+                            placeholder="L-2026-01"
+                            className="mt-1 h-9 text-sm"
+                            value={adjustLoteNuevo.numero}
+                            onChange={(e) => setAdjustLoteNuevo((p) => ({ ...p, numero: e.target.value }))}
+                          />
+                        </div>
+                        <div>
+                          <Label className="text-[10px]">Vencimiento</Label>
+                          <Input
+                            type="date"
+                            className="mt-1 h-9 text-sm"
+                            value={adjustLoteNuevo.fecha_venc}
+                            onChange={(e) => setAdjustLoteNuevo((p) => ({ ...p, fecha_venc: e.target.value }))}
+                          />
+                        </div>
+                      </div>
+                    )}
+                    {adjustLotes.length === 0 && adjustTipo === 'salida' && (
+                      <p className="text-[11px] text-red-700">
+                        No hay lotes activos. Registra una entrada primero.
+                      </p>
+                    )}
+                  </div>
+                )}
 
                 <div>
                   <Label className="text-xs">Notas</Label>

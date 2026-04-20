@@ -156,12 +156,18 @@ export default function PedidosPage() {
     setShowClienteDropdown(false)
     setSeleccionados([])
 
-    // Ejecutar en paralelo: cobros, productos activos y (si aplica) items de lista de precio
+    // Ejecutar en paralelo: comprobantes (facturado), cobros (cobrado), productos, items lista
     const [
+      { data: comprobantes },
       { data: cobros },
       { data: allProductos },
       itemsResult,
     ] = await Promise.all([
+      supabase
+        .from('comprobantes')
+        .select('total')
+        .eq('cliente_id', cliente.id)
+        .neq('estado', 'anulado'),
       supabase
         .from('cobros')
         .select('total')
@@ -180,7 +186,9 @@ export default function PedidosPage() {
         : Promise.resolve({ data: null as any }),
     ])
 
-    const deuda = cobros?.reduce((acc, c) => acc + ((c as any).total ?? 0), 0) ?? 0
+    const facturado = comprobantes?.reduce((acc, c) => acc + Number((c as any).total ?? 0), 0) ?? 0
+    const cobrado = cobros?.reduce((acc, c) => acc + Number((c as any).total ?? 0), 0) ?? 0
+    const deuda = Math.max(0, facturado - cobrado)
     setDeudaCliente(deuda)
 
     // Si el cliente tiene lista de precios asignada, mapear precios específicos
