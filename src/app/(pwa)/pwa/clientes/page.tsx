@@ -100,7 +100,7 @@ export default function ClientesPage() {
   const [picked, setPicked] = useState<[number, number] | null>(null)
 
   const supabase = createClient()
-  const { consultarRuc, consultarDni, loading: sunatLoading } = useSunatReniec()
+  const { consultarRuc, consultarDni, geocodificar, loading: sunatLoading } = useSunatReniec()
 
   const autocompletarDoc = async () => {
     if (tipoDoc === 'ruc') {
@@ -109,6 +109,26 @@ export default function ClientesPage() {
       setRazonSocial(data.razonSocial)
       if (data.direccion) setDireccion(data.direccion)
       setTipoCliente('tienda')
+      // Auto-seleccionar zona si hay match con distrito
+      if (data.distrito) {
+        const match = zonas.find((z: any) =>
+          (z.nombre ?? '').toLowerCase().includes(data.distrito!.toLowerCase()),
+        )
+        if (match) setZonaId(match.id)
+      }
+      // Geocodificar en el mapa
+      const geo = await geocodificar({
+        direccion: data.direccion,
+        distrito: data.distrito,
+        provincia: data.provincia,
+        departamento: data.departamento,
+      })
+      if (geo) {
+        setPicked([geo.lat, geo.lng])
+        toast.success('Ubicación estimada en el mapa', {
+          description: `Confianza ${geo.confianza}. Ajusta con "Usar mi ubicación" o tocando el mapa.`,
+        })
+      }
     } else {
       const data = await consultarDni(docValue.trim())
       if (!data) return
@@ -601,7 +621,7 @@ export default function ClientesPage() {
             <div className="grid grid-cols-[90px_1fr] gap-2">
               <div>
                 <Label>Doc.</Label>
-                <Select value={tipoDoc} onValueChange={(v) => setTipoDoc(v as TipoDoc)}>
+                <Select value={tipoDoc} onValueChange={(v) => { setTipoDoc(v as TipoDoc); setDocValue('') }}>
                   <SelectTrigger className="mt-1">
                     <SelectValue />
                   </SelectTrigger>
@@ -616,7 +636,7 @@ export default function ClientesPage() {
                 <div className="flex gap-2 mt-1">
                   <Input
                     value={docValue}
-                    onChange={(e) => setDocValue(e.target.value)}
+                    onChange={(e) => setDocValue(e.target.value.replace(/\D/g, '').slice(0, tipoDoc === 'ruc' ? 11 : 8))}
                     placeholder={tipoDoc === 'ruc' ? '20xxxxxxxxx' : '12345678'}
                     maxLength={tipoDoc === 'ruc' ? 11 : 8}
                     inputMode="numeric"

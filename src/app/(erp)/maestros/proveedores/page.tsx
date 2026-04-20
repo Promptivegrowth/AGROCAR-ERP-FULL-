@@ -51,15 +51,15 @@ export default function ProveedoresPage() {
   const [saving, setSaving] = useState(false)
   const [activo, setActivo] = useState(true)
 
-  const { register, handleSubmit, reset, setValue, watch, formState: { errors } } = useForm<ProveedorFormData>({
+  const { register, handleSubmit, reset, setValue, formState: { errors } } = useForm<ProveedorFormData>({
     resolver: zodResolver(proveedorSchema) as any,
   })
 
+  const [rucInput, setRucInput] = useState('')
   const { consultarRuc, loading: sunatLoading } = useSunatReniec()
-  const rucValue = watch('ruc')
 
   const autocompletarRuc = async () => {
-    const data = await consultarRuc((rucValue ?? '').toString())
+    const data = await consultarRuc(rucInput.trim())
     if (!data) return
     setValue('razon_social', data.razonSocial, { shouldValidate: true })
     if (data.direccion) setValue('direccion', data.direccion, { shouldValidate: true })
@@ -87,6 +87,7 @@ export default function ProveedoresPage() {
   const openCreate = () => {
     setEditingProveedor(null)
     setActivo(true)
+    setRucInput('')
     reset({ activo: true, razon_social: '', ruc: '', direccion: '', telefono: '', email: '', contacto: '' })
     setDialogOpen(true)
   }
@@ -94,6 +95,7 @@ export default function ProveedoresPage() {
   const openEdit = (p: any) => {
     setEditingProveedor(p)
     setActivo(p.activo)
+    setRucInput(p.ruc ?? '')
     reset({
       razon_social: p.razon_social,
       ruc: p.ruc ?? '',
@@ -300,13 +302,24 @@ export default function ProveedoresPage() {
             <div>
               <Label>RUC</Label>
               <div className="flex gap-2 mt-1">
-                <Input {...register('ruc')} placeholder="20xxxxxxxxx" maxLength={11} className="font-mono flex-1" />
+                <Input
+                  value={rucInput}
+                  onChange={(e) => {
+                    const v = e.target.value.replace(/\D/g, '').slice(0, 11)
+                    setRucInput(v)
+                    setValue('ruc', v)
+                  }}
+                  placeholder="20xxxxxxxxx"
+                  maxLength={11}
+                  inputMode="numeric"
+                  className="font-mono flex-1"
+                />
                 <Button
                   type="button"
                   variant="outline"
                   size="sm"
                   onClick={autocompletarRuc}
-                  disabled={sunatLoading || !rucValue || rucValue.toString().length !== 11}
+                  disabled={sunatLoading || rucInput.length !== 11}
                   className="shrink-0 gap-1 border-[#FBE600] hover:bg-[#FBE600] hover:text-black"
                   title="Consultar SUNAT"
                 >

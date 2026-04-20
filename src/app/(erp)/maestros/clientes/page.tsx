@@ -89,24 +89,46 @@ export default function ClientesPage() {
     handleSubmit,
     reset,
     setValue,
-    watch,
     formState: { errors },
   } = useForm<ClienteFormData>({ resolver: zodResolver(clienteSchema) as any })
 
-  const { consultarRuc, consultarDni, loading: sunatLoading } = useSunatReniec()
-  const rucValue = watch('ruc')
-  const dniValue = watch('dni')
+  // Estado local para los inputs RUC/DNI (sincronizado con register) — así los
+  // botones de consulta reaccionan inmediatamente al tipeo sin depender de watch.
+  const [rucInput, setRucInput] = useState('')
+  const [dniInput, setDniInput] = useState('')
+
+  const { consultarRuc, consultarDni, geocodificar, loading: sunatLoading } = useSunatReniec()
 
   const autocompletarRuc = async () => {
-    const data = await consultarRuc((rucValue ?? '').toString())
+    const data = await consultarRuc(rucInput.trim())
     if (!data) return
     setValue('razon_social', data.razonSocial, { shouldValidate: true })
     if (data.direccion) setValue('direccion', data.direccion, { shouldValidate: true })
     setTipoCliente('tienda')
+    // Auto-seleccionar zona si hay match con el distrito
+    if (data.distrito) {
+      const match = zonas.find((z: any) =>
+        (z.nombre ?? '').toLowerCase().includes(data.distrito!.toLowerCase()),
+      )
+      if (match) setZonaId(match.id)
+    }
+    // Geocodificar en el mapa
+    const geo = await geocodificar({
+      direccion: data.direccion,
+      distrito: data.distrito,
+      provincia: data.provincia,
+      departamento: data.departamento,
+    })
+    if (geo) {
+      setPicked([geo.lat, geo.lng])
+      toast.success('Ubicación estimada en el mapa', {
+        description: `Confianza ${geo.confianza}. Ajusta manualmente si es necesario.`,
+      })
+    }
   }
 
   const autocompletarDni = async () => {
-    const data = await consultarDni((dniValue ?? '').toString())
+    const data = await consultarDni(dniInput.trim())
     if (!data) return
     setValue('razon_social', data.nombreCompleto, { shouldValidate: true })
     setValue('contacto', data.nombreCompleto, { shouldValidate: true })
@@ -161,6 +183,8 @@ export default function ClientesPage() {
     setVendedorId('')
     setEstado('activo')
     setPicked(null)
+    setRucInput('')
+    setDniInput('')
     reset({
       codigo: '',
       razon_social: '',
@@ -209,6 +233,8 @@ export default function ClientesPage() {
     setZonaId(cliente.zona_id ?? '')
     setVendedorId(cliente.vendedor_id ?? '')
     setEstado((cliente.estado as EstadoCliente) ?? 'activo')
+    setRucInput(cliente.ruc ?? '')
+    setDniInput(cliente.dni ?? '')
     setPicked(
       cliente.latitud != null && cliente.longitud != null
         ? [Number(cliente.latitud), Number(cliente.longitud)]
@@ -504,13 +530,24 @@ export default function ClientesPage() {
               <div>
                 <Label>RUC</Label>
                 <div className="flex gap-2 mt-1">
-                  <Input {...register('ruc')} placeholder="20xxxxxxxxx" maxLength={11} className="font-mono flex-1" />
+                  <Input
+                    value={rucInput}
+                    onChange={(e) => {
+                      const v = e.target.value.replace(/\D/g, '').slice(0, 11)
+                      setRucInput(v)
+                      setValue('ruc', v)
+                    }}
+                    placeholder="20xxxxxxxxx"
+                    maxLength={11}
+                    inputMode="numeric"
+                    className="font-mono flex-1"
+                  />
                   <Button
                     type="button"
                     variant="outline"
                     size="sm"
                     onClick={autocompletarRuc}
-                    disabled={sunatLoading || !rucValue || rucValue.toString().length !== 11}
+                    disabled={sunatLoading || rucInput.length !== 11}
                     className="shrink-0 gap-1 border-[#FBE600] hover:bg-[#FBE600] hover:text-black"
                     title="Consultar SUNAT"
                   >
@@ -522,13 +559,24 @@ export default function ClientesPage() {
               <div>
                 <Label>DNI</Label>
                 <div className="flex gap-2 mt-1">
-                  <Input {...register('dni')} placeholder="Opcional" maxLength={8} className="font-mono flex-1" />
+                  <Input
+                    value={dniInput}
+                    onChange={(e) => {
+                      const v = e.target.value.replace(/\D/g, '').slice(0, 8)
+                      setDniInput(v)
+                      setValue('dni', v)
+                    }}
+                    placeholder="Opcional"
+                    maxLength={8}
+                    inputMode="numeric"
+                    className="font-mono flex-1"
+                  />
                   <Button
                     type="button"
                     variant="outline"
                     size="sm"
                     onClick={autocompletarDni}
-                    disabled={sunatLoading || !dniValue || dniValue.toString().length !== 8}
+                    disabled={sunatLoading || dniInput.length !== 8}
                     className="shrink-0 gap-1 border-[#FBE600] hover:bg-[#FBE600] hover:text-black"
                     title="Consultar RENIEC"
                   >

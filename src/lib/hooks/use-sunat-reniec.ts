@@ -10,9 +10,16 @@ export interface RucData {
   estado?: string | null
   condicion?: string | null
   direccion?: string | null
+  direccionCompleta?: string | null
+  ubigeo?: string | null
   departamento?: string | null
   provincia?: string | null
   distrito?: string | null
+  viaTipo?: string | null
+  viaNombre?: string | null
+  numero?: string | null
+  esAgenteRetencion?: boolean | null
+  esBuenContribuyente?: boolean | null
 }
 
 export interface DniData {
@@ -21,6 +28,13 @@ export interface DniData {
   apellidoPaterno?: string | null
   apellidoMaterno?: string | null
   nombreCompleto: string
+}
+
+export interface GeocodeData {
+  lat: number
+  lng: number
+  displayName: string
+  confianza: 'alta' | 'media' | 'baja'
 }
 
 export function useSunatReniec() {
@@ -39,7 +53,12 @@ export function useSunatReniec() {
         toast.error('No se pudo consultar SUNAT', { description: data.error ?? 'Intenta de nuevo.' })
         return null
       }
-      toast.success('Datos obtenidos de SUNAT', { description: data.razonSocial })
+      const estadoTag = [data.estado, data.condicion].filter(Boolean).join(' · ')
+      toast.success(data.razonSocial, {
+        description: estadoTag
+          ? `${estadoTag}${data.distrito ? ' · ' + data.distrito : ''}`
+          : 'Datos obtenidos de SUNAT',
+      })
       return data as RucData
     } catch (err: any) {
       toast.error('Error de conexión', { description: err?.message ?? 'Verifica tu internet.' })
@@ -72,5 +91,26 @@ export function useSunatReniec() {
     }
   }
 
-  return { consultarRuc, consultarDni, loading }
+  async function geocodificar(params: {
+    direccion?: string | null
+    distrito?: string | null
+    provincia?: string | null
+    departamento?: string | null
+  }): Promise<GeocodeData | null> {
+    const qs = new URLSearchParams()
+    if (params.direccion) qs.set('direccion', params.direccion)
+    if (params.distrito) qs.set('distrito', params.distrito)
+    if (params.provincia) qs.set('provincia', params.provincia)
+    if (params.departamento) qs.set('departamento', params.departamento)
+    if (!qs.toString()) return null
+    try {
+      const res = await fetch(`/api/geocode?${qs.toString()}`)
+      if (!res.ok) return null
+      return (await res.json()) as GeocodeData
+    } catch {
+      return null
+    }
+  }
+
+  return { consultarRuc, consultarDni, geocodificar, loading }
 }
