@@ -27,9 +27,13 @@ interface GpsMapPanelProps {
 }
 
 const COLOR_POR_TIPO: Record<string, string> = {
+  inicio_jornada: '#10b981',
+  en_ruta: '#3b82f6',
+  regreso: '#6366f1',
+  fin_jornada: '#6b7280',
   entrada: '#16a34a',
-  salida: '#ef4444',
-  visita_sin_compra: '#eab308',
+  salida: '#f59e0b',
+  visita_sin_compra: '#a855f7',
 }
 
 export default function GpsMapPanel({ checkins, clientes }: GpsMapPanelProps) {

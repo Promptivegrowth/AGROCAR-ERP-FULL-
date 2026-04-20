@@ -11,7 +11,11 @@ import { formatDate } from '@/lib/utils'
 import type { Cliente, GpsCheckin } from '@/types'
 import LeafletMap from '@/components/maps/leaflet-map'
 
-type TipoVisita = 'entrada' | 'salida' | 'visita_sin_compra'
+type TipoVisita =
+  | 'inicio_jornada' | 'en_ruta' | 'entrada' | 'salida' | 'visita_sin_compra'
+  | 'regreso' | 'fin_jornada'
+
+type CategoriaCheckin = 'jornada' | 'cliente'
 
 interface CheckinLocal extends GpsCheckin {
   cliente_nombre?: string
@@ -131,7 +135,13 @@ export default function CheckinPage() {
   }
 
   async function registrarCheckin() {
-    if (!clienteSeleccionado || !coordenadas || !userId) return
+    const esCliente = TIPOS_CLIENTE.includes(tipoVisita)
+    if (esCliente && !clienteSeleccionado) {
+      toast.error('Selecciona un cliente', { description: 'Este tipo de check-in requiere cliente.' })
+      return
+    }
+    if (!coordenadas || !userId) return
+
     setEnviando(true)
     setMensajeError(null)
     setMensajeExito(null)
@@ -139,12 +149,12 @@ export default function CheckinPage() {
     try {
       const { error } = await supabase.from('gps_checkins').insert({
         usuario_id: userId,
-        cliente_id: clienteSeleccionado,
+        cliente_id: esCliente ? clienteSeleccionado : null,
         tipo: tipoVisita,
         latitud: coordenadas.lat,
         longitud: coordenadas.lng,
         precision_metros: coordenadas.precision,
-      })
+      } as any)
 
       if (error) {
         setMensajeError('Error al registrar el check-in: ' + error.message)
@@ -152,13 +162,17 @@ export default function CheckinPage() {
         return
       }
 
-      const clienteNombre = clientes.find((c) => c.id === clienteSeleccionado)?.razon_social ?? ''
+      const clienteNombre = esCliente
+        ? (clientes.find((c) => c.id === clienteSeleccionado)?.razon_social ?? '')
+        : 'Sin cliente'
       const tipoLabel = tipoLabels[tipoVisita]
-      setMensajeExito(`${tipoLabel} registrado en ${clienteNombre}`)
-      toast.success(`${tipoLabel} registrado`, { description: clienteNombre })
+      setMensajeExito(`${tipoLabel} registrado${esCliente ? ' en ' + clienteNombre : ''}`)
+      toast.success(`${tipoLabel} registrado`, {
+        description: esCliente ? clienteNombre : 'Check-in de jornada',
+      })
       setClienteSeleccionado('')
       setCoordenadas(null)
-      setTipoVisita('entrada')
+      setTipoVisita('inicio_jornada')
       await cargarCheckinsDia(userId)
     } catch {
       setMensajeError('Error inesperado al registrar el check-in')
@@ -169,22 +183,39 @@ export default function CheckinPage() {
   }
 
   const tipoLabels: Record<TipoVisita, string> = {
-    entrada: 'Check-in',
-    salida: 'Check-out',
+    inicio_jornada: 'Inicio de jornada',
+    en_ruta: 'En ruta',
+    regreso: 'Regreso a base',
+    fin_jornada: 'Fin de jornada',
+    entrada: 'Check-in cliente',
+    salida: 'Check-out cliente',
     visita_sin_compra: 'Visita sin compra',
   }
 
   const tipoColors: Record<TipoVisita, string> = {
+    inicio_jornada: 'bg-emerald-100 text-emerald-700',
+    en_ruta: 'bg-blue-100 text-blue-700',
+    regreso: 'bg-indigo-100 text-indigo-700',
+    fin_jornada: 'bg-gray-100 text-gray-700',
     entrada: 'bg-green-100 text-green-700',
-    salida: 'bg-blue-100 text-blue-700',
-    visita_sin_compra: 'bg-gray-100 text-gray-700',
+    salida: 'bg-amber-100 text-amber-700',
+    visita_sin_compra: 'bg-purple-100 text-purple-700',
   }
 
   const tipoIcono: Record<TipoVisita, string> = {
+    inicio_jornada: '🌅',
+    en_ruta: '🚗',
+    regreso: '🏠',
+    fin_jornada: '🌙',
     entrada: '✅',
     salida: '👋',
     visita_sin_compra: '👁️',
   }
+
+  // Agrupación: jornada (sin cliente) / cliente (con cliente)
+  const TIPOS_JORNADA: TipoVisita[] = ['inicio_jornada', 'en_ruta', 'regreso', 'fin_jornada']
+  const TIPOS_CLIENTE: TipoVisita[] = ['entrada', 'salida', 'visita_sin_compra']
+  const requiereCliente = TIPOS_CLIENTE.includes(tipoVisita)
 
   return (
     <div className="min-h-full">
@@ -214,31 +245,36 @@ export default function CheckinPage() {
           </div>
         )}
 
-        {/* Selector de cliente */}
+        {/* Tipo de check-in */}
         <Card className="border-0 shadow-sm">
           <CardContent className="p-4">
-            <h3 className="font-semibold text-gray-800 mb-3">1. Cliente</h3>
-            <select
-              value={clienteSeleccionado}
-              onChange={(e) => setClienteSeleccionado(e.target.value)}
-              className="w-full h-12 px-3 border border-gray-200 rounded-xl text-sm bg-white focus:outline-none focus:border-[#FBE600]"
-            >
-              <option value="">Selecciona un cliente...</option>
-              {clientes.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.razon_social} {c.codigo ? `(${c.codigo})` : ''}
-                </option>
-              ))}
-            </select>
-          </CardContent>
-        </Card>
+            <h3 className="font-semibold text-gray-800 mb-3">1. Tipo de Check-in</h3>
 
-        {/* Tipo de visita */}
-        <Card className="border-0 shadow-sm">
-          <CardContent className="p-4">
-            <h3 className="font-semibold text-gray-800 mb-3">2. Tipo de Visita</h3>
+            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
+              Jornada (sin cliente)
+            </p>
+            <div className="grid grid-cols-2 gap-2 mb-4">
+              {TIPOS_JORNADA.map((tipo) => (
+                <button
+                  key={tipo}
+                  onClick={() => setTipoVisita(tipo)}
+                  className={`py-3 px-2 rounded-xl border-2 text-center text-sm font-medium transition-all ${
+                    tipoVisita === tipo
+                      ? 'border-[#FBE600] bg-yellow-50 text-black'
+                      : 'border-gray-200 text-gray-600 hover:border-gray-300'
+                  }`}
+                >
+                  <div className="text-xl mb-1">{tipoIcono[tipo]}</div>
+                  <div className="text-xs leading-tight">{tipoLabels[tipo]}</div>
+                </button>
+              ))}
+            </div>
+
+            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
+              Visita a cliente
+            </p>
             <div className="grid grid-cols-3 gap-2">
-              {(Object.keys(tipoLabels) as TipoVisita[]).map((tipo) => (
+              {TIPOS_CLIENTE.map((tipo) => (
                 <button
                   key={tipo}
                   onClick={() => setTipoVisita(tipo)}
@@ -249,17 +285,38 @@ export default function CheckinPage() {
                   }`}
                 >
                   <div className="text-lg mb-1">{tipoIcono[tipo]}</div>
-                  <div className="text-xs leading-tight">{tipoLabels[tipo]}</div>
+                  <div className="text-[11px] leading-tight">{tipoLabels[tipo]}</div>
                 </button>
               ))}
             </div>
           </CardContent>
         </Card>
 
+        {/* Selector de cliente (solo si el tipo requiere) */}
+        {requiereCliente && (
+          <Card className="border-0 shadow-sm">
+            <CardContent className="p-4">
+              <h3 className="font-semibold text-gray-800 mb-3">2. Cliente</h3>
+              <select
+                value={clienteSeleccionado}
+                onChange={(e) => setClienteSeleccionado(e.target.value)}
+                className="w-full h-12 px-3 border border-gray-200 rounded-xl text-sm bg-white focus:outline-none focus:border-[#FBE600]"
+              >
+                <option value="">Selecciona un cliente...</option>
+                {clientes.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.razon_social} {c.codigo ? `(${c.codigo})` : ''}
+                  </option>
+                ))}
+              </select>
+            </CardContent>
+          </Card>
+        )}
+
         {/* GPS */}
         <Card className="border-0 shadow-sm">
           <CardContent className="p-4">
-            <h3 className="font-semibold text-gray-800 mb-3">3. Ubicación GPS</h3>
+            <h3 className="font-semibold text-gray-800 mb-3">{requiereCliente ? '3' : '2'}. Ubicación GPS</h3>
 
             <Button
               onClick={obtenerGPS}
@@ -318,7 +375,7 @@ export default function CheckinPage() {
         {/* Botón registrar */}
         <Button
           onClick={registrarCheckin}
-          disabled={!clienteSeleccionado || !coordenadas || enviando}
+          disabled={(requiereCliente && !clienteSeleccionado) || !coordenadas || enviando}
           className="w-full h-16 bg-[#FBE600] hover:bg-[#E5D100] text-black font-bold text-lg rounded-2xl shadow-md"
         >
           {enviando ? (

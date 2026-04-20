@@ -50,9 +50,13 @@ async function getGPSData() {
 }
 
 const TIPO_CONFIG: Record<string, { label: string; className: string }> = {
-  entrada: { label: 'Entrada', className: 'bg-green-100 text-green-700' },
-  salida: { label: 'Salida', className: 'bg-red-100 text-red-700' },
-  visita_sin_compra: { label: 'Visita s/compra', className: 'bg-yellow-100 text-yellow-700' },
+  inicio_jornada: { label: '🌅 Inicio jornada', className: 'bg-emerald-100 text-emerald-700' },
+  en_ruta: { label: '🚗 En ruta', className: 'bg-blue-100 text-blue-700' },
+  regreso: { label: '🏠 Regreso', className: 'bg-indigo-100 text-indigo-700' },
+  fin_jornada: { label: '🌙 Fin jornada', className: 'bg-gray-200 text-gray-700' },
+  entrada: { label: '✅ Entrada', className: 'bg-green-100 text-green-700' },
+  salida: { label: '👋 Salida', className: 'bg-amber-100 text-amber-700' },
+  visita_sin_compra: { label: '👁️ Visita s/compra', className: 'bg-purple-100 text-purple-700' },
 }
 
 export default async function GPSPage() {
