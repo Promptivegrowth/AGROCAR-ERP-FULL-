@@ -13,6 +13,7 @@ import {
   Boxes,
 } from 'lucide-react'
 import DashboardCharts from './dashboard-charts'
+import DashboardTabs from './dashboard-tabs'
 
 export const dynamic = 'force-dynamic'
 
@@ -257,6 +258,7 @@ export default async function DashboardPage() {
         )}
       </div>
 
+      <DashboardTabs>
       {/* Alertas */}
       {data.pedidosPendientesCount > 0 && (
         <div className="flex items-center gap-3 bg-yellow-50 border border-yellow-200 rounded-xl px-4 py-3">
@@ -466,6 +468,7 @@ export default async function DashboardPage() {
           )}
         </CardContent>
       </Card>
+      </DashboardTabs>
     </div>
   )
 }

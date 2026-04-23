@@ -1,0 +1,24 @@
+-- =============================================================================
+-- Migración 012: Seed de datos demo
+-- -----------------------------------------------------------------------------
+-- Crea:
+--  - 15 productos con peso y precios en listas A, B, C
+--  - 25 clientes en Tacna (mix RUC/DNI) con coordenadas GPS
+--  - 3 vendedores nuevos (auth.users + profiles) password: Agrocar2026!
+--    · María Zúñiga — maria@agrocar.pe — Zona 1
+--    · Carlos Torres — carlos@agrocar.pe — Zona 3
+--    · Lucía Ramírez — lucia@agrocar.pe — Zona 5
+--  - Metas mensuales para 3 vendedores × 3 meses
+--  - 60 pedidos distribuidos en últimos 90 días (estados variados)
+--  - Pedidos_items por pedido
+--  - Comprobantes para pedidos facturados/despachados/entregados
+--  - Cobros y GPS check-ins para métricas
+-- =============================================================================
+
+-- NOTA: Este archivo documenta el seed. La aplicación real se hace por partes
+-- vía Supabase Management API (porque dentro de un solo query los inserts
+-- con SELECT dinámicos son más complejos).
+
+-- Ver aplicación real en queries separados. Consulta:
+--   SELECT count(*) FROM productos, clientes, pedidos, metas_vendedor
+-- para verificar cantidades.
