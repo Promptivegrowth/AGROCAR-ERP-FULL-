@@ -1,571 +1,102 @@
-'use client'
+import { createClient } from '@/lib/supabase/server'
+import DespachoClient from './despacho-client'
+import type { PedidoListo, VehiculoDisponible } from './lib/types'
 
-import { useEffect, useMemo, useState, useCallback } from 'react'
-import { Plus, Printer, Truck, Loader2, ChevronDown, ChevronRight, FileText, MapPin, AlertTriangle } from 'lucide-react'
-import { toast } from 'sonner'
-import { createClient } from '@/lib/supabase/client'
-import { formatCurrency, formatDate } from '@/lib/utils'
-import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
-import { Card } from '@/components/ui/card'
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
-import LeafletMap, { type MapMarker } from '@/components/maps/leaflet-map'
+export const dynamic = 'force-dynamic'
 
-const ESTADO_CONFIG: Record<string, { label: string; className: string }> = {
-  preparacion: { label: 'En Preparación', className: 'bg-yellow-100 text-yellow-700 border-yellow-200' },
-  en_ruta: { label: 'En Ruta', className: 'bg-blue-100 text-blue-700 border-blue-200' },
-  completado: { label: 'Completado', className: 'bg-green-100 text-green-700 border-green-200' },
-  cancelado: { label: 'Cancelado', className: 'bg-red-100 text-red-700 border-red-200' },
+async function getInitialData() {
+  const supabase = await createClient()
+
+  const [{ data: pedidosRaw }, { data: vehiculosRaw }, { data: vcRaw }, { data: confRaw }] = await Promise.all([
+    (supabase as any)
+      .from('pedidos')
+      .select(`
+        id, numero, total, cliente_id, vendedor_id,
+        clientes!inner(id, razon_social, ruc, dni, tipo_comprobante_preferido, direccion, telefono, latitud, longitud, zona_id, distrito, zonas(id, nombre)),
+        profiles!pedidos_vendedor_id_fkey(id, full_name),
+        pedidos_items(id, cantidad, productos(peso_kg))
+      `)
+      .eq('estado', 'facturado')
+      .order('created_at', { ascending: true }),
+    supabase
+      .from('vehiculos')
+      .select('id, placa, descripcion, tipo, capacidad_kg, activo')
+      .eq('activo', true)
+      .order('placa'),
+    (supabase as any)
+      .from('vehiculos_conductores')
+      .select('vehiculo_id, es_principal, conductores(id, nombre_completo)')
+      .eq('es_principal', true),
+    (supabase as any)
+      .from('configuracion')
+      .select('clave, valor')
+      .in('clave', ['almacen_nombre', 'almacen_lat', 'almacen_lng', 'almacen_direccion']),
+  ])
+
+  const vcByVehiculo: Record<string, { id: string; nombre: string }> = {}
+  ;(vcRaw ?? []).forEach((r: any) => {
+    if (r.conductores) {
+      vcByVehiculo[r.vehiculo_id] = { id: r.conductores.id, nombre: r.conductores.nombre_completo }
+    }
+  })
+
+  const pedidos: PedidoListo[] = (pedidosRaw ?? []).map((p: any) => {
+    const items = p.pedidos_items ?? []
+    let peso = 0
+    let sinPeso = false
+    for (const it of items) {
+      const pk = Number(it.productos?.peso_kg ?? 0)
+      if (pk === 0) sinPeso = true
+      peso += pk * Number(it.cantidad ?? 0)
+    }
+    const cli = p.clientes ?? {}
+    return {
+      id: p.id,
+      numero: p.numero,
+      cliente_id: p.cliente_id,
+      cliente_nombre: cli.razon_social ?? '—',
+      cliente_ruc: cli.ruc ?? null,
+      cliente_dni: cli.dni ?? null,
+      cliente_tipo_comprobante: cli.tipo_comprobante_preferido ?? null,
+      cliente_direccion: cli.direccion ?? null,
+      cliente_telefono: cli.telefono ?? null,
+      cliente_lat: cli.latitud != null ? Number(cli.latitud) : null,
+      cliente_lng: cli.longitud != null ? Number(cli.longitud) : null,
+      zona_id: cli.zona_id ?? null,
+      zona_nombre: cli.zonas?.nombre ?? null,
+      distrito: cli.distrito ?? null,
+      vendedor_id: p.vendedor_id,
+      vendedor_nombre: p.profiles?.full_name ?? null,
+      total: Number(p.total ?? 0),
+      peso_kg: Number(peso.toFixed(3)),
+      items_count: items.length,
+      tiene_productos_sin_peso: sinPeso,
+    } as PedidoListo
+  })
+
+  const vehiculos: VehiculoDisponible[] = (vehiculosRaw ?? []).map((v: any) => ({
+    id: v.id,
+    placa: v.placa,
+    descripcion: v.descripcion,
+    tipo: v.tipo,
+    capacidad_kg: Number(v.capacidad_kg ?? 500),
+    conductor_id: vcByVehiculo[v.id]?.id ?? null,
+    conductor_nombre: vcByVehiculo[v.id]?.nombre ?? null,
+  }))
+
+  const conf: Record<string, string> = {}
+  ;(confRaw ?? []).forEach((c: any) => { conf[c.clave] = c.valor })
+  const almacen = {
+    nombre: conf.almacen_nombre ?? 'AGROCAR - Almacén Central',
+    direccion: conf.almacen_direccion ?? '',
+    lat: Number(conf.almacen_lat ?? '-18.01465'),
+    lng: Number(conf.almacen_lng ?? '-70.25362'),
+  }
+
+  return { pedidos, vehiculos, almacen }
 }
 
-export default function DespachoPage() {
-  const supabase = createClient()
-
-  const [consolidados, setConsolidados] = useState<any[]>([])
-  const [loading, setLoading] = useState(true)
-  const [expanded, setExpanded] = useState<string[]>([])
-  const [dialogOpen, setDialogOpen] = useState(false)
-  const [vehiculos, setVehiculos] = useState<any[]>([])
-  const [pedidosFacturados, setPedidosFacturados] = useState<any[]>([])
-  const [selectedVehiculo, setSelectedVehiculo] = useState('')
-  const [selectedFecha, setSelectedFecha] = useState(new Date().toISOString().split('T')[0])
-  const [selectedPedidos, setSelectedPedidos] = useState<string[]>([])
-  const [saving, setSaving] = useState(false)
-
-  const loadData = useCallback(async () => {
-    setLoading(true)
-    const [{ data: cons }, { data: veh }, { data: pedFact }] = await Promise.all([
-      supabase
-        .from('despachos')
-        .select(`
-          id, numero, fecha_despacho, estado, notas,
-          vehiculos(placa, descripcion),
-          profiles!despachos_conductor_id_fkey(full_name),
-          despachos_items(
-            id, estado,
-            pedidos(
-              numero, total,
-              clientes(razon_social, direccion, distrito, latitud, longitud)
-            )
-          )
-        `)
-        .order('fecha_despacho', { ascending: false })
-        .limit(20),
-      supabase.from('vehiculos').select('id, placa, descripcion').eq('activo', true).order('placa'),
-      supabase
-        .from('pedidos')
-        .select(`
-          id, numero, total,
-          clientes(razon_social, direccion, distrito, latitud, longitud)
-        `)
-        .eq('estado', 'facturado')
-        .order('created_at', { ascending: false }),
-    ])
-    setConsolidados(cons ?? [])
-    setVehiculos(veh ?? [])
-    setPedidosFacturados(pedFact ?? [])
-    setLoading(false)
-  }, [])
-
-  useEffect(() => { loadData() }, [loadData])
-
-  const toggleExpand = (id: string) => {
-    setExpanded((prev) => prev.includes(id) ? prev.filter((e) => e !== id) : [...prev, id])
-  }
-
-  const togglePedido = (id: string) => {
-    setSelectedPedidos((prev) => prev.includes(id) ? prev.filter((p) => p !== id) : [...prev, id])
-  }
-
-  // Marcadores del mapa del modal "Nuevo Consolidado"
-  const modalMarkers = useMemo<MapMarker[]>(() => {
-    return pedidosFacturados
-      .filter((p) => p.clientes?.latitud != null && p.clientes?.longitud != null)
-      .map((p) => {
-        const isSel = selectedPedidos.includes(p.id)
-        return {
-          id: p.id,
-          lat: Number(p.clientes.latitud),
-          lng: Number(p.clientes.longitud),
-          label: p.clientes?.razon_social ?? '—',
-          description: `${p.numero} · ${formatCurrency(p.total ?? 0)}`,
-          initials: isSel ? '✓' : '•',
-          color: isSel ? '#16a34a' : '#FBE600',
-          onClick: () => togglePedido(p.id),
-        }
-      })
-  }, [pedidosFacturados, selectedPedidos])
-
-  const pedidosConUbicacion = pedidosFacturados.filter(
-    (p) => p.clientes?.latitud != null && p.clientes?.longitud != null,
-  ).length
-
-  const totalSeleccionado = useMemo(
-    () => pedidosFacturados
-      .filter((p) => selectedPedidos.includes(p.id))
-      .reduce((acc, p) => acc + Number(p.total ?? 0), 0),
-    [pedidosFacturados, selectedPedidos],
-  )
-
-  const handleCrear = async () => {
-    if (!selectedVehiculo || selectedPedidos.length === 0) return
-    setSaving(true)
-
-    const numero = `DSP-${Date.now().toString().slice(-8)}`
-    const { data: despacho, error } = await supabase.from('despachos').insert({
-      numero,
-      vehiculo_id: selectedVehiculo,
-      fecha_despacho: selectedFecha,
-      estado: 'preparacion' as any,
-    } as any).select().single()
-
-    if (error || !despacho) {
-      setSaving(false)
-      toast.error('Error al crear consolidado', { description: error?.message ?? 'No se pudo crear el despacho.' })
-      return
-    }
-
-    const items = selectedPedidos.map((pid) => ({
-      despacho_id: despacho.id,
-      pedido_id: pid,
-      estado: 'pendiente',
-    }))
-    const { error: itemsError } = await supabase.from('despachos_items').insert(items as any)
-    if (itemsError) {
-      setSaving(false)
-      toast.error('Error al asignar pedidos', { description: itemsError.message })
-      return
-    }
-
-    const { error: updError } = await supabase
-      .from('pedidos')
-      .update({ estado: 'despachado', updated_at: new Date().toISOString() })
-      .in('id', selectedPedidos)
-
-    setSaving(false)
-    setDialogOpen(false)
-    setSelectedPedidos([])
-    setSelectedVehiculo('')
-
-    if (updError) {
-      toast.error('Consolidado creado con advertencias', {
-        description: updError.message,
-        action: {
-          label: 'Ver Guía',
-          onClick: () => window.open(`/guia-remision/${despacho.id}`, '_blank'),
-        },
-      })
-    } else {
-      toast.success('Consolidado creado', {
-        description: `${selectedPedidos.length} pedido(s) asignado(s) al despacho.`,
-        action: {
-          label: 'Ver Guía',
-          onClick: () => window.open(`/guia-remision/${despacho.id}`, '_blank'),
-        },
-      })
-    }
-
-    loadData()
-  }
-
-  const cambiarEstado = async (despachoId: string, nuevoEstado: string) => {
-    const { error } = await supabase.from('despachos').update({ estado: nuevoEstado as any }).eq('id', despachoId)
-    if (error) {
-      toast.error('Error al cambiar estado', { description: error.message })
-    } else {
-      toast.success('Estado actualizado', {
-        description: `Despacho marcado como "${ESTADO_CONFIG[nuevoEstado]?.label ?? nuevoEstado}".`,
-      })
-    }
-    loadData()
-  }
-
-  const imprimirHojaRuta = (consolidado: any) => {
-    const win = window.open('', '_blank', 'width=800,height=600')
-    if (!win) return
-    const items = consolidado.despachos_items ?? []
-    win.document.write(`
-      <html>
-        <head>
-          <title>Hoja de Ruta - ${consolidado.numero ?? ''}</title>
-          <style>
-            body { font-family: Arial, sans-serif; padding: 20px; font-size: 12px; }
-            h1 { font-size: 18px; color: #16a34a; margin-bottom: 4px; }
-            .meta { color: #666; margin-bottom: 16px; font-size: 11px; }
-            table { width: 100%; border-collapse: collapse; }
-            th { background: #f3f4f6; text-align: left; padding: 8px; font-size: 10px; text-transform: uppercase; }
-            td { padding: 8px; border-bottom: 1px solid #e5e7eb; }
-            .total { font-weight: bold; }
-            @media print { body { padding: 0; } }
-          </style>
-        </head>
-        <body>
-          <h1>AGROCAR SRL — Hoja de Ruta</h1>
-          <div class="meta">
-            Vehículo: ${consolidado.vehiculos?.placa ?? '—'} — ${consolidado.vehiculos?.descripcion ?? ''}
-            &nbsp;|&nbsp; Fecha: ${formatDate(consolidado.fecha_despacho)}
-            &nbsp;|&nbsp; Estado: ${ESTADO_CONFIG[consolidado.estado]?.label ?? consolidado.estado}
-          </div>
-          <table>
-            <thead>
-              <tr>
-                <th>#</th>
-                <th>Pedido</th>
-                <th>Cliente</th>
-                <th>Dirección</th>
-                <th>Total</th>
-                <th>Entregado</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${items.map((item: any, i: number) => `
-                <tr>
-                  <td>${i + 1}</td>
-                  <td>${item.pedidos?.numero ?? '—'}</td>
-                  <td>${item.pedidos?.clientes?.razon_social ?? '—'}</td>
-                  <td>${item.pedidos?.clientes?.direccion ?? '—'}</td>
-                  <td class="total">S/ ${(item.pedidos?.total ?? 0).toFixed(2)}</td>
-                  <td>[ ]</td>
-                </tr>
-              `).join('')}
-            </tbody>
-          </table>
-          <script>window.print()</script>
-        </body>
-      </html>
-    `)
-    win.document.close()
-  }
-
-  return (
-    <div className="space-y-5">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Despacho</h1>
-          <p className="text-sm text-gray-500 mt-0.5">Consolidados de despacho y hojas de ruta</p>
-        </div>
-        <Button onClick={() => setDialogOpen(true)} className="bg-[#FBE600] hover:bg-[#E5D100] text-black font-semibold gap-2">
-          <Plus className="w-4 h-4" /> Nuevo Consolidado
-        </Button>
-      </div>
-
-      {loading ? (
-        <div className="flex items-center justify-center py-20">
-          <Loader2 className="w-6 h-6 text-green-600 animate-spin" />
-        </div>
-      ) : consolidados.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-20 text-gray-400">
-          <Truck className="w-12 h-12 mb-3 text-gray-300" />
-          <p className="text-sm">No hay consolidados de despacho</p>
-        </div>
-      ) : (
-        <div className="space-y-3">
-          {consolidados.map((cons) => {
-            const isOpen = expanded.includes(cons.id)
-            const estadoCfg = ESTADO_CONFIG[cons.estado] ?? ESTADO_CONFIG.preparacion
-            const items = cons.despachos_items ?? []
-            const total = items.reduce((acc: number, item: any) => acc + (item.pedidos?.total ?? 0), 0)
-
-            // Marcadores numerados del consolidado expandido
-            const consMarkers: MapMarker[] = items
-              .map((it: any, idx: number) => {
-                const c = it.pedidos?.clientes
-                if (!c || c.latitud == null || c.longitud == null) return null
-                return {
-                  id: it.id,
-                  lat: Number(c.latitud),
-                  lng: Number(c.longitud),
-                  label: `${idx + 1}. ${c.razon_social ?? '—'}`,
-                  description: `${it.pedidos?.numero ?? ''} · ${formatCurrency(it.pedidos?.total ?? 0)}`,
-                  initials: String(idx + 1),
-                  color: '#2563eb',
-                } as MapMarker
-              })
-              .filter(Boolean) as MapMarker[]
-
-            return (
-              <Card key={cons.id} className="border-gray-200 shadow-sm overflow-hidden">
-                <div
-                  className="flex items-center justify-between p-4 cursor-pointer hover:bg-gray-50 transition-colors"
-                  onClick={() => toggleExpand(cons.id)}
-                >
-                  <div className="flex items-center gap-4">
-                    <div className="w-10 h-10 bg-blue-50 rounded-xl flex items-center justify-center">
-                      <Truck className="w-5 h-5 text-blue-600" />
-                    </div>
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <p className="font-semibold text-gray-900 text-sm">
-                          {cons.vehiculos?.placa ?? '—'} — {cons.vehiculos?.descripcion ?? ''}
-                        </p>
-                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border ${estadoCfg.className}`}>
-                          {estadoCfg.label}
-                        </span>
-                      </div>
-                      <p className="text-xs text-gray-500 mt-0.5">
-                        {formatDate(cons.fecha_despacho)} · {items.length} pedidos · {formatCurrency(total)}
-                      </p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    {cons.estado === 'preparacion' && (
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={(e) => { e.stopPropagation(); cambiarEstado(cons.id, 'en_ruta') }}
-                        className="h-7 text-xs"
-                      >
-                        Iniciar Ruta
-                      </Button>
-                    )}
-                    {cons.estado === 'en_ruta' && (
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={(e) => { e.stopPropagation(); cambiarEstado(cons.id, 'completado') }}
-                        className="h-7 text-xs border-green-300 text-green-700 hover:bg-green-50"
-                      >
-                        Completar
-                      </Button>
-                    )}
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        window.open(`/guia-remision/${cons.id}`, '_blank')
-                      }}
-                      className="h-7 text-xs gap-1 border-[#FBE600] hover:bg-[#FBE600] hover:text-black"
-                      title="Ver Guía de Remisión"
-                    >
-                      <FileText className="w-3.5 h-3.5" /> Guía
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={(e) => { e.stopPropagation(); imprimirHojaRuta(cons) }}
-                      className="h-7 text-xs gap-1"
-                    >
-                      <Printer className="w-3.5 h-3.5" /> Hoja
-                    </Button>
-                    {isOpen ? <ChevronDown className="w-4 h-4 text-gray-400" /> : <ChevronRight className="w-4 h-4 text-gray-400" />}
-                  </div>
-                </div>
-
-                {isOpen && (
-                  <div className="border-t border-gray-100">
-                    {items.length === 0 ? (
-                      <p className="text-sm text-gray-400 text-center py-6">Sin pedidos asignados</p>
-                    ) : (
-                      <>
-                        {/* Mapa con orden de entrega */}
-                        {consMarkers.length > 0 && (
-                          <div className="p-4 bg-gray-50/40 border-b border-gray-100">
-                            <div className="flex items-center gap-2 mb-2">
-                              <MapPin className="w-4 h-4 text-blue-600" />
-                              <p className="text-xs font-semibold text-gray-700 uppercase tracking-wide">
-                                Ruta de Entrega ({consMarkers.length} ubicaciones)
-                              </p>
-                            </div>
-                            <LeafletMap markers={consMarkers} height="260px" fitBounds />
-                          </div>
-                        )}
-
-                        {/* Tabla pedidos */}
-                        <table className="w-full text-sm">
-                          <thead className="bg-gray-50/50 border-b border-gray-100">
-                            <tr>
-                              {['#', 'Pedido', 'Cliente', 'Distrito', 'Total', 'Estado'].map((h) => (
-                                <th key={h} className="text-left py-2.5 px-4 text-xs font-semibold text-gray-500 uppercase tracking-wide">
-                                  {h}
-                                </th>
-                              ))}
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-gray-50">
-                            {items.map((item: any, idx: number) => (
-                              <tr key={item.id} className="hover:bg-gray-50/50">
-                                <td className="py-2.5 px-4 text-gray-400 text-xs">{idx + 1}</td>
-                                <td className="py-2.5 px-4 font-mono text-xs text-gray-600">{item.pedidos?.numero ?? '—'}</td>
-                                <td className="py-2.5 px-4 text-gray-800">{item.pedidos?.clientes?.razon_social ?? '—'}</td>
-                                <td className="py-2.5 px-4 text-gray-600 text-xs">{item.pedidos?.clientes?.distrito ?? '—'}</td>
-                                <td className="py-2.5 px-4 font-semibold text-gray-800">{formatCurrency(item.pedidos?.total ?? 0)}</td>
-                                <td className="py-2.5 px-4">
-                                  {item.estado === 'entregado'
-                                    ? <Badge className="text-xs bg-green-100 text-green-700">Entregado</Badge>
-                                    : item.estado === 'rechazado'
-                                      ? <Badge className="text-xs bg-red-100 text-red-700">Rechazado</Badge>
-                                      : <Badge variant="outline" className="text-xs">Pendiente</Badge>
-                                  }
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-
-                        {/* Lista de direcciones */}
-                        <div className="p-4 border-t border-gray-100 bg-gray-50/30">
-                          <p className="text-xs font-semibold text-gray-700 uppercase tracking-wide mb-2">
-                            Direcciones de entrega
-                          </p>
-                          <ol className="space-y-1.5">
-                            {items.map((item: any, idx: number) => {
-                              const c = item.pedidos?.clientes
-                              return (
-                                <li key={item.id} className="flex items-start gap-2 text-xs text-gray-700">
-                                  <span className="flex-shrink-0 w-5 h-5 rounded-full bg-blue-600 text-white flex items-center justify-center font-bold text-[10px]">
-                                    {idx + 1}
-                                  </span>
-                                  <div className="flex-1">
-                                    <span className="font-medium text-gray-800">{c?.razon_social ?? '—'}</span>
-                                    <span className="text-gray-500"> — {c?.direccion ?? 'Sin dirección'}</span>
-                                    {c?.distrito && <span className="text-gray-400"> ({c.distrito})</span>}
-                                    {(c?.latitud == null || c?.longitud == null) && (
-                                      <span className="ml-2 text-amber-600 inline-flex items-center gap-1">
-                                        <AlertTriangle className="w-3 h-3" /> sin ubicación
-                                      </span>
-                                    )}
-                                  </div>
-                                </li>
-                              )
-                            })}
-                          </ol>
-                        </div>
-                      </>
-                    )}
-                  </div>
-                )}
-              </Card>
-            )
-          })}
-        </div>
-      )}
-
-      {/* Dialog Nuevo Consolidado */}
-      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="max-w-4xl max-h-[92vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>Nuevo Consolidado de Despacho</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4 mt-2">
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <Label>Vehículo *</Label>
-                <Select value={selectedVehiculo} onValueChange={setSelectedVehiculo}>
-                  <SelectTrigger className="mt-1">
-                    <SelectValue placeholder="Seleccionar vehículo..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {vehiculos.map((v) => (
-                      <SelectItem key={v.id} value={v.id}>{v.placa} — {v.descripcion}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <Label>Fecha</Label>
-                <Input
-                  type="date"
-                  value={selectedFecha}
-                  onChange={(e) => setSelectedFecha(e.target.value)}
-                  className="mt-1"
-                />
-              </div>
-            </div>
-
-            {pedidosFacturados.length === 0 ? (
-              <div className="flex items-center justify-center py-8 border border-dashed border-gray-200 rounded-lg text-gray-400">
-                <p className="text-sm">No hay pedidos facturados disponibles</p>
-              </div>
-            ) : (
-              <>
-                <div className="flex items-center justify-between">
-                  <Label className="block">
-                    Pedidos Facturados ({pedidosFacturados.length} disponibles)
-                  </Label>
-                  <p className="text-xs font-medium text-gray-600">
-                    <span className="text-green-700">{selectedPedidos.length} seleccionados</span>
-                    <span className="text-gray-300 mx-1.5">·</span>
-                    <span>{pedidosConUbicacion} con ubicación</span>
-                    <span className="text-gray-300 mx-1.5">·</span>
-                    <span>Total {formatCurrency(totalSeleccionado)}</span>
-                  </p>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  {/* Mapa */}
-                  <div className="border border-gray-200 rounded-lg overflow-hidden">
-                    {modalMarkers.length > 0 ? (
-                      <LeafletMap markers={modalMarkers} height="340px" fitBounds />
-                    ) : (
-                      <div className="h-[340px] flex flex-col items-center justify-center bg-gray-50 text-gray-400 text-xs">
-                        <MapPin className="w-6 h-6 mb-2" />
-                        Ningún pedido facturado tiene ubicación.
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Lista */}
-                  <div className="border border-gray-200 rounded-lg overflow-hidden max-h-[340px] overflow-y-auto">
-                    {pedidosFacturados.map((p) => {
-                      const sinUbic = p.clientes?.latitud == null || p.clientes?.longitud == null
-                      const checked = selectedPedidos.includes(p.id)
-                      return (
-                        <label
-                          key={p.id}
-                          className={`flex items-center gap-3 px-4 py-2.5 cursor-pointer border-b border-gray-50 last:border-0 ${
-                            checked ? 'bg-green-50 hover:bg-green-100' : 'hover:bg-gray-50'
-                          }`}
-                        >
-                          <input
-                            type="checkbox"
-                            checked={checked}
-                            onChange={() => togglePedido(p.id)}
-                            className="w-4 h-4 rounded text-green-600"
-                          />
-                          <div className="flex-1 min-w-0">
-                            <p className="text-sm font-medium text-gray-800 truncate">
-                              {p.clientes?.razon_social ?? '—'}
-                            </p>
-                            <p className="text-xs text-gray-500 font-mono flex items-center gap-1.5">
-                              {p.numero}
-                              {sinUbic ? (
-                                <span className="text-amber-600 inline-flex items-center gap-0.5 font-sans">
-                                  <AlertTriangle className="w-3 h-3" /> sin ubicación
-                                </span>
-                              ) : (
-                                <span className="text-gray-400 font-sans truncate">
-                                  · {p.clientes?.distrito ?? p.clientes?.direccion ?? ''}
-                                </span>
-                              )}
-                            </p>
-                          </div>
-                          <span className="text-sm font-semibold text-gray-700">{formatCurrency(p.total ?? 0)}</span>
-                        </label>
-                      )
-                    })}
-                  </div>
-                </div>
-              </>
-            )}
-
-            <div className="flex justify-end gap-3 pt-2 border-t border-gray-100">
-              <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancelar</Button>
-              <Button
-                onClick={handleCrear}
-                disabled={saving || !selectedVehiculo || selectedPedidos.length === 0}
-                className="bg-[#FBE600] hover:bg-[#E5D100] text-black font-semibold gap-2"
-              >
-                {saving && <Loader2 className="w-4 h-4 animate-spin" />}
-                Crear Consolidado
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
-    </div>
-  )
+export default async function DespachoPage() {
+  const { pedidos, vehiculos, almacen } = await getInitialData()
+  return <DespachoClient pedidosIniciales={pedidos} vehiculos={vehiculos} almacen={almacen} />
 }

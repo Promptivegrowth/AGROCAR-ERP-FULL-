@@ -29,6 +29,7 @@ const productoSchema = z.object({
   familia_id: z.string().nullable().optional(),
   unidad_medida_id: z.string().nullable().optional(),
   tasa_percepcion: z.coerce.number().min(0).max(100).nullable().optional(),
+  peso_kg: z.coerce.number().min(0, 'Debe ser ≥ 0').default(0),
 })
 
 type ProductoFormData = z.infer<typeof productoSchema>
@@ -84,7 +85,7 @@ export default function ProductosPage() {
       .from('productos')
       .select(`
         id, codigo, nombre, descripcion, familia_id, unidad_medida_id,
-        tiene_lote, tiene_vencimiento, tiene_percepcion, tasa_percepcion, activo, created_at,
+        tiene_lote, tiene_vencimiento, tiene_percepcion, tasa_percepcion, peso_kg, activo, created_at,
         familias(id, nombre),
         unidades_medida(id, nombre, simbolo),
         lista_precio_items(precio, listas_precio(nombre))
@@ -116,7 +117,7 @@ export default function ProductosPage() {
     setPrecioA('')
     setPrecioB('')
     setPrecioC('')
-    reset({ codigo: '', nombre: '', descripcion: '', familia_id: '', unidad_medida_id: '', tasa_percepcion: 0 })
+    reset({ codigo: '', nombre: '', descripcion: '', familia_id: '', unidad_medida_id: '', tasa_percepcion: 0, peso_kg: 0 })
     setDialogOpen(true)
   }
 
@@ -135,6 +136,7 @@ export default function ProductosPage() {
       familia_id: producto.familia_id ?? '',
       unidad_medida_id: producto.unidad_medida_id ?? '',
       tasa_percepcion: producto.tasa_percepcion ?? 0,
+      peso_kg: producto.peso_kg ?? 0,
     })
     // Cargar precios actuales
     setPrecioA('')
@@ -170,6 +172,7 @@ export default function ProductosPage() {
         tiene_vencimiento: tieneVencimiento,
         tiene_percepcion: tienePercepcion,
         tasa_percepcion: tienePercepcion ? (data.tasa_percepcion ?? 0) : 0,
+        peso_kg: data.peso_kg ?? 0,
         activo,
         updated_at: new Date().toISOString(),
       }
@@ -347,7 +350,7 @@ export default function ProductosPage() {
                 <table className="w-full text-sm">
                   <thead className="border-b border-gray-100 bg-gray-50/50">
                     <tr>
-                      {['Código', 'Nombre', 'Familia', 'UM', 'Precio A', 'Precio B', 'Precio C', 'Estado', 'Acciones'].map((h) => (
+                      {['Código', 'Nombre', 'Familia', 'UM', 'Peso (kg)', 'Precio A', 'Precio B', 'Precio C', 'Estado', 'Acciones'].map((h) => (
                         <th key={h} className="text-left py-3 px-4 text-xs font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap">
                           {h}
                         </th>
@@ -361,6 +364,15 @@ export default function ProductosPage() {
                         <td className="py-3 px-4 font-medium text-gray-900 max-w-[220px] truncate">{p.nombre}</td>
                         <td className="py-3 px-4 text-gray-600 text-xs">{p.familias?.nombre ?? '—'}</td>
                         <td className="py-3 px-4 text-gray-600 text-xs">{p.unidades_medida?.simbolo ?? '—'}</td>
+                        <td className="py-3 px-4 text-xs">
+                          {Number(p.peso_kg) > 0 ? (
+                            <span className="font-mono text-gray-700">{Number(p.peso_kg).toFixed(3)}</span>
+                          ) : (
+                            <Badge className="text-[10px] bg-amber-50 text-amber-700 border-amber-200" title="Configura el peso para usarlo en despacho">
+                              ⚠ Sin peso
+                            </Badge>
+                          )}
+                        </td>
                         <td className="py-3 px-4 text-gray-700 text-xs font-medium">{getPrecio(p, 'A')}</td>
                         <td className="py-3 px-4 text-gray-700 text-xs font-medium">{getPrecio(p, 'B')}</td>
                         <td className="py-3 px-4 text-gray-700 text-xs font-medium">{getPrecio(p, 'C')}</td>
@@ -505,6 +517,25 @@ export default function ProductosPage() {
                   />
                 </div>
               </div>
+            </div>
+
+            <div className="pt-2 border-t border-gray-100">
+              <Label>Peso unitario (kg) *</Label>
+              <Input
+                {...register('peso_kg')}
+                type="number"
+                min={0}
+                step="0.001"
+                placeholder="0.000"
+                className="mt-1 font-mono"
+              />
+              {errors.peso_kg ? (
+                <p className="text-xs text-red-500 mt-1">{errors.peso_kg.message as string}</p>
+              ) : (
+                <p className="text-[11px] text-gray-400 mt-1">
+                  Peso de una unidad del producto. Se usa para calcular el peso total del pedido y validar la capacidad del vehículo en despacho.
+                </p>
+              )}
             </div>
 
             <div className="space-y-3 pt-2 border-t border-gray-100">

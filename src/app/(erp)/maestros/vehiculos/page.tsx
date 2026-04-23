@@ -38,7 +38,7 @@ const vehiculoSchema = z.object({
   placa: z.string().min(5, 'Mínimo 5 caracteres').max(10, 'Máximo 10 caracteres'),
   descripcion: z.string().min(2, 'Mínimo 2 caracteres'),
   tipo: z.enum(['zona', 'auxiliar']),
-  capacidad_kg: z.coerce.number().min(0).optional(),
+  capacidad_kg: z.coerce.number().positive('Debe ser mayor a 0'),
   activo: z.boolean().default(true),
 })
 
@@ -134,7 +134,7 @@ export default function VehiculosPage() {
     setEditingVehiculo(null)
     setTipo('zona')
     setActivo(true)
-    reset({ tipo: 'zona', activo: true, placa: '', descripcion: '', capacidad_kg: 0 })
+    reset({ tipo: 'zona', activo: true, placa: '', descripcion: '', capacidad_kg: 500 })
     setDialogOpen(true)
   }
 
@@ -146,7 +146,7 @@ export default function VehiculosPage() {
       placa: v.placa,
       descripcion: v.descripcion ?? '',
       tipo: v.tipo,
-      capacidad_kg: v.capacidad_kg ?? 0,
+      capacidad_kg: v.capacidad_kg ?? 500,
       activo: v.activo,
     })
     setDialogOpen(true)
@@ -165,7 +165,7 @@ export default function VehiculosPage() {
         placa: data.placa.toUpperCase(),
         descripcion: data.descripcion,
         tipo,
-        capacidad_kg: data.capacidad_kg ?? 0,
+        capacidad_kg: data.capacidad_kg,
         activo,
       }
 
@@ -403,8 +403,15 @@ export default function VehiculosPage() {
             </div>
 
             <div>
-              <Label>Capacidad (kg)</Label>
-              <Input {...register('capacidad_kg')} type="number" min={0} step="0.01" placeholder="1000" className="mt-1" />
+              <Label>Capacidad (kg) *</Label>
+              <Input {...register('capacidad_kg')} type="number" min={1} step="0.01" placeholder="500" className="mt-1 font-mono" />
+              {errors.capacidad_kg ? (
+                <p className="text-xs text-red-500 mt-1">{errors.capacidad_kg.message as string}</p>
+              ) : (
+                <p className="text-[11px] text-gray-400 mt-1">
+                  Carga máxima del vehículo. Se usa en despacho para validar que los pedidos quepan.
+                </p>
+              )}
             </div>
 
             <div className="flex items-center gap-2">

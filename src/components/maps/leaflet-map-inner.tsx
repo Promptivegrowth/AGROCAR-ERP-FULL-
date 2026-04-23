@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect } from 'react'
-import { MapContainer, TileLayer, Marker, Popup, useMap, useMapEvents, LayersControl } from 'react-leaflet'
+import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap, useMapEvents, LayersControl } from 'react-leaflet'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 
@@ -61,11 +61,19 @@ export interface MapMarker {
   onClick?: () => void
 }
 
+export interface MapPolyline {
+  id: string
+  positions: [number, number][]
+  color?: string
+  dashed?: boolean
+}
+
 interface LeafletMapInnerProps {
   center?: [number, number]
   zoom?: number
   height?: string
   markers?: MapMarker[]
+  polylines?: MapPolyline[]
   pickable?: boolean
   pickedPosition?: [number, number] | null
   onPick?: (lat: number, lng: number) => void
@@ -102,6 +110,7 @@ export default function LeafletMapInner({
   zoom = 13,
   height = '420px',
   markers = [],
+  polylines = [],
   pickable = false,
   pickedPosition = null,
   onPick,
@@ -145,6 +154,18 @@ export default function LeafletMapInner({
             />
           </LayersControl.BaseLayer>
         </LayersControl>
+        {polylines.map((pl) => (
+          <Polyline
+            key={pl.id}
+            positions={pl.positions}
+            pathOptions={{
+              color: pl.color ?? '#2563eb',
+              weight: 3,
+              opacity: 0.75,
+              dashArray: pl.dashed ? '6 6' : undefined,
+            }}
+          />
+        ))}
         {markers.map((m) => (
           <Marker
             key={m.id}

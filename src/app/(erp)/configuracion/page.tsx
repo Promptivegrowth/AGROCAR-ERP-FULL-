@@ -14,6 +14,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
+import LeafletMap from '@/components/maps/leaflet-map'
+import { Warehouse, Crosshair } from 'lucide-react'
 
 const SERIES_INICIALES = [
   { serie: 'F001', tipo: 'factura', descripcion: 'Facturas electrónicas' },
@@ -44,14 +46,38 @@ export default function ConfiguracionPage() {
   const [editingUser, setEditingUser] = useState<any>(null)
   const [userForm, setUserForm] = useState({ full_name: '', email: '', role: 'vendedor', activo: true })
 
+  // Almacén (punto de partida para optimización de rutas)
+  const [almacen, setAlmacen] = useState({
+    nombre: 'AGROCAR - Almacén Central',
+    direccion: '',
+    lat: -18.01465,
+    lng: -70.25362,
+  })
+  const [savingAlmacen, setSavingAlmacen] = useState(false)
+  const [pickingAlmacen, setPickingAlmacen] = useState<[number, number] | null>(null)
+
   const loadData = useCallback(async () => {
     setLoading(true)
     const sb = supabase as any
-    const [{ data: u }, { data: s }, { data: p }] = await Promise.all([
+    const [{ data: u }, { data: s }, { data: p }, { data: conf }] = await Promise.all([
       supabase.from('profiles').select('id, full_name, email, role, activo').order('full_name'),
       sb.from('series_comprobante').select('*').order('serie'),
       sb.from('parametros_sistema').select('clave, valor'),
+      sb.from('configuracion').select('clave, valor').in('clave', ['almacen_nombre', 'almacen_direccion', 'almacen_lat', 'almacen_lng']),
     ])
+
+    // Cargar almacén desde tabla configuracion
+    const confMap: Record<string, string> = {}
+    ;(conf ?? []).forEach((c: any) => { confMap[c.clave] = c.valor })
+    const lat = parseFloat(confMap.almacen_lat ?? '-18.01465')
+    const lng = parseFloat(confMap.almacen_lng ?? '-70.25362')
+    setAlmacen({
+      nombre: confMap.almacen_nombre ?? 'AGROCAR - Almacén Central',
+      direccion: confMap.almacen_direccion ?? '',
+      lat: isNaN(lat) ? -18.01465 : lat,
+      lng: isNaN(lng) ? -70.25362 : lng,
+    })
+    setPickingAlmacen([isNaN(lat) ? -18.01465 : lat, isNaN(lng) ? -70.25362 : lng])
     setUsuarios(u ?? [])
     setSeries(s && s.length > 0 ? s : SERIES_INICIALES.map((s, i) => ({ ...s, id: i, correlativo_actual: 0 })))
 
@@ -89,6 +115,49 @@ export default function ConfiguracionPage() {
       toast.success('Datos de empresa guardados', { description: 'Los cambios se aplicaron correctamente.' })
       setTimeout(() => setMsg(''), 3000)
     }
+  }
+
+  const saveAlmacen = async () => {
+    setSavingAlmacen(true)
+    const sb = supabase as any
+    const lat = pickingAlmacen ? pickingAlmacen[0] : almacen.lat
+    const lng = pickingAlmacen ? pickingAlmacen[1] : almacen.lng
+    const entries: Array<[string, string]> = [
+      ['almacen_nombre', almacen.nombre],
+      ['almacen_direccion', almacen.direccion],
+      ['almacen_lat', String(lat)],
+      ['almacen_lng', String(lng)],
+    ]
+    let err: string | null = null
+    for (const [clave, valor] of entries) {
+      const { error } = await sb.from('configuracion').upsert(
+        { clave, valor, updated_at: new Date().toISOString() },
+        { onConflict: 'clave' },
+      )
+      if (error && !err) err = error.message
+    }
+    setSavingAlmacen(false)
+    if (err) {
+      toast.error('No se pudo guardar el almacén', { description: err })
+    } else {
+      setAlmacen((prev) => ({ ...prev, lat, lng }))
+      toast.success('Almacén guardado', { description: 'Se usará como punto de partida en la optimización de rutas.' })
+    }
+  }
+
+  const usarMiUbicacionAlmacen = () => {
+    if (!navigator.geolocation) {
+      toast.error('Geolocalización no soportada')
+      return
+    }
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setPickingAlmacen([pos.coords.latitude, pos.coords.longitude])
+        toast.success('Ubicación capturada', { description: 'Recuerda presionar Guardar.' })
+      },
+      (err) => toast.error('Error GPS', { description: err.message }),
+      { enableHighAccuracy: true, timeout: 10000 },
+    )
   }
 
   const saveParametros = async () => {
@@ -174,13 +243,14 @@ export default function ConfiguracionPage() {
 
       <Tabs defaultValue="empresa">
         <TabsList className="bg-gray-100 p-1 rounded-xl">
-          {['empresa', 'usuarios', 'series', 'parametros'].map((tab) => (
+          {['empresa', 'almacen', 'usuarios', 'series', 'parametros'].map((tab) => (
             <TabsTrigger
               key={tab}
               value={tab}
               className="rounded-lg text-sm capitalize data-[state=active]:bg-white data-[state=active]:shadow-sm"
             >
               {tab === 'empresa' ? 'Empresa'
+                : tab === 'almacen' ? 'Almacén'
                 : tab === 'usuarios' ? 'Usuarios'
                 : tab === 'series' ? 'Series'
                 : 'Parámetros'}
@@ -252,6 +322,80 @@ export default function ConfiguracionPage() {
                 <Button onClick={saveEmpresa} disabled={saving} className="bg-[#FBE600] hover:bg-[#E5D100] text-black font-semibold gap-2">
                   {saving && <Loader2 className="w-4 h-4 animate-spin" />}
                   Guardar Datos
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* ALMACÉN */}
+        <TabsContent value="almacen" className="mt-4">
+          <Card className="border-gray-200 shadow-sm">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base font-semibold text-gray-800 flex items-center gap-2">
+                <Warehouse className="w-4 h-4 text-green-600" />
+                Almacén Central
+              </CardTitle>
+              <p className="text-xs text-gray-500 mt-1">
+                Punto de partida para la optimización de rutas de despacho. Se usa en la hoja de ruta
+                para ordenar los pedidos por cercanía desde aquí.
+              </p>
+            </CardHeader>
+            <CardContent className="space-y-4 pt-2">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <Label>Nombre del Almacén</Label>
+                  <Input
+                    value={almacen.nombre}
+                    onChange={(e) => setAlmacen((p) => ({ ...p, nombre: e.target.value }))}
+                    placeholder="AGROCAR - Almacén Central"
+                    className="mt-1"
+                  />
+                </div>
+                <div>
+                  <Label>Dirección</Label>
+                  <Input
+                    value={almacen.direccion}
+                    onChange={(e) => setAlmacen((p) => ({ ...p, direccion: e.target.value }))}
+                    placeholder="Av. ..."
+                    className="mt-1"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <Label>Ubicación en el mapa</Label>
+                  <button
+                    type="button"
+                    onClick={usarMiUbicacionAlmacen}
+                    className="text-xs text-green-700 hover:underline flex items-center gap-1"
+                  >
+                    <Crosshair className="w-3 h-3" /> Usar mi ubicación
+                  </button>
+                </div>
+                <LeafletMap
+                  height="320px"
+                  pickable
+                  pickedPosition={pickingAlmacen}
+                  onPick={(lat, lng) => setPickingAlmacen([lat, lng])}
+                  fitBounds={!!pickingAlmacen}
+                />
+                <p className="text-[11px] text-gray-500 mt-1.5">
+                  {pickingAlmacen
+                    ? <>Coordenadas: <span className="font-mono">{pickingAlmacen[0].toFixed(5)}, {pickingAlmacen[1].toFixed(5)}</span></>
+                    : 'Haz clic en el mapa o usa tu GPS para fijar la ubicación del almacén.'}
+                </p>
+              </div>
+
+              <div className="pt-2">
+                <Button
+                  onClick={saveAlmacen}
+                  disabled={savingAlmacen}
+                  className="bg-[#FBE600] hover:bg-[#E5D100] text-black font-semibold gap-2"
+                >
+                  {savingAlmacen && <Loader2 className="w-4 h-4 animate-spin" />}
+                  Guardar ubicación del almacén
                 </Button>
               </div>
             </CardContent>
