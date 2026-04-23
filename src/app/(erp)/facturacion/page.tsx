@@ -13,6 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { puedeEmitirFactura, serieDeTipoComprobante, tipoComprobanteSugerido } from '@/lib/cliente-utils'
 
 const ESTADO_SUNAT: Record<string, { label: string; className: string }> = {
   emitido: { label: 'Emitido', className: 'bg-blue-100 text-blue-700' },
@@ -45,7 +46,7 @@ export default function FacturacionPage() {
         .from('pedidos')
         .select(`
           id, numero, total, estado, created_at, cliente_id,
-          clientes(razon_social, ruc)
+          clientes(razon_social, ruc, dni, tipo_comprobante_preferido)
         `)
         .eq('estado', 'enviado')
         .order('created_at', { ascending: true }),
@@ -74,9 +75,11 @@ export default function FacturacionPage() {
 
   const handleFacturar = (pedido: any) => {
     setPedidoSeleccionado(pedido)
-    const hasRuc = pedido.clientes?.ruc
-    setTipoComprobante(hasRuc ? 'factura' : 'boleta')
-    setSerie(hasRuc ? 'F001' : 'B001')
+    const cliente = pedido.clientes ?? {}
+    // Usar tipo_comprobante_preferido del cliente, con fallback a regla SUNAT
+    const tipo = cliente.tipo_comprobante_preferido ?? tipoComprobanteSugerido(cliente)
+    setTipoComprobante(tipo)
+    setSerie(serieDeTipoComprobante(tipo))
     setFacturarDialog(true)
   }
 
@@ -188,7 +191,7 @@ export default function FacturacionPage() {
                   <table className="w-full text-sm">
                     <thead className="border-b border-gray-100 bg-gray-50/50">
                       <tr>
-                        {['Código', 'Cliente', 'RUC', 'Fecha', 'Total', 'Acción'].map((h) => (
+                        {['Pedido', 'Cliente', 'RUC / DNI', 'Fecha', 'Total', 'Acción'].map((h) => (
                           <th key={h} className="text-left py-3 px-4 text-xs font-semibold text-gray-500 uppercase tracking-wide">
                             {h}
                           </th>
@@ -200,7 +203,9 @@ export default function FacturacionPage() {
                         <tr key={pedido.id} className="hover:bg-gray-50/50 transition-colors">
                           <td className="py-3 px-4 font-mono text-xs text-gray-600">{pedido.numero}</td>
                           <td className="py-3 px-4 font-medium text-gray-900">{pedido.clientes?.razon_social ?? '—'}</td>
-                          <td className="py-3 px-4 text-gray-500 font-mono text-xs">{pedido.clientes?.ruc ?? '—'}</td>
+                          <td className="py-3 px-4 text-gray-500 font-mono text-xs">
+                            {pedido.clientes?.ruc ?? pedido.clientes?.dni ?? '—'}
+                          </td>
                           <td className="py-3 px-4 text-gray-500 text-xs">{formatDate(pedido.created_at)}</td>
                           <td className="py-3 px-4 font-semibold text-gray-800">{formatCurrency(pedido.total ?? 0)}</td>
                           <td className="py-3 px-4">
@@ -305,11 +310,16 @@ export default function FacturacionPage() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="factura">Factura</SelectItem>
+                    <SelectItem value="factura" disabled={!puedeEmitirFactura(pedidoSeleccionado.clientes ?? {})}>
+                      Factura {!puedeEmitirFactura(pedidoSeleccionado.clientes ?? {}) && '(cliente sin RUC)'}
+                    </SelectItem>
                     <SelectItem value="boleta">Boleta de Venta</SelectItem>
                     <SelectItem value="nota_pedido_interna">Documento Interno</SelectItem>
                   </SelectContent>
                 </Select>
+                <p className="text-[11px] text-gray-400 mt-1">
+                  Preseleccionado según el comprobante preferido del cliente.
+                </p>
               </div>
 
               <div>

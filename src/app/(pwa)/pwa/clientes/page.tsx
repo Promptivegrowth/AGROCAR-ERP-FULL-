@@ -232,7 +232,8 @@ export default function ClientesPage() {
       clientes.filter(
         (c) =>
           c.razon_social.toLowerCase().includes(q) ||
-          (c.codigo ?? '').toLowerCase().includes(q) ||
+          (c.ruc ?? '').toLowerCase().includes(q) ||
+          (c.dni ?? '').toLowerCase().includes(q) ||
           (c.telefono ?? '').includes(q)
       )
     )
@@ -392,9 +393,11 @@ export default function ClientesPage() {
             <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${estadoColors[cliente.estado] ?? 'bg-gray-100 text-gray-700'}`}>
               {estadoLabels[cliente.estado] ?? cliente.estado}
             </span>
-            {cliente.codigo && (
-              <span className="text-gray-300 text-xs">{cliente.codigo}</span>
-            )}
+            {cliente.ruc ? (
+              <span className="text-gray-300 text-xs font-mono">RUC {cliente.ruc}</span>
+            ) : cliente.dni ? (
+              <span className="text-gray-300 text-xs font-mono">DNI {cliente.dni}</span>
+            ) : null}
           </div>
         </div>
 
@@ -508,7 +511,7 @@ export default function ClientesPage() {
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
           <input
             type="text"
-            placeholder="Buscar por nombre, código o teléfono..."
+            placeholder="Buscar por nombre, RUC, DNI o teléfono..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="w-full pl-9 pr-4 py-3 bg-white/10 placeholder-gray-400 text-white rounded-xl text-sm outline-none focus:bg-white/20"
@@ -607,9 +610,11 @@ export default function ClientesPage() {
                             <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${estadoColors[cliente.estado] ?? 'bg-gray-100 text-gray-600'}`}>
                               {estadoLabels[cliente.estado] ?? cliente.estado}
                             </span>
-                            {cliente.codigo && (
-                              <span className="text-xs text-gray-400">{cliente.codigo}</span>
-                            )}
+                            {cliente.ruc ? (
+                              <span className="text-xs text-gray-400 font-mono">RUC {cliente.ruc}</span>
+                            ) : cliente.dni ? (
+                              <span className="text-xs text-gray-400 font-mono">DNI {cliente.dni}</span>
+                            ) : null}
                           </div>
                           {cliente.direccion && (
                             <div className="flex items-center gap-1 mt-1.5 text-xs text-gray-500">

@@ -27,9 +27,9 @@ import { Textarea } from '@/components/ui/textarea'
 import LeafletMap from '@/components/maps/leaflet-map'
 import UbigeoSelector, { UBIGEO_EMPTY, type UbigeoValue } from '@/components/ubigeo-selector'
 import { matchUbigeoFromNombres } from '@/lib/ubigeo/match'
+import { tipoComprobanteSugerido, getIdentificadorLabel } from '@/lib/cliente-utils'
 
 const clienteSchema = z.object({
-  codigo: z.string().min(1, 'Requerido'),
   razon_social: z.string().min(2, 'Mínimo 2 caracteres'),
   ruc: z.string().nullable().optional(),
   dni: z.string().nullable().optional(),
@@ -47,11 +47,16 @@ const clienteSchema = z.object({
   latitud: z.coerce.number().nullable().optional(),
   longitud: z.coerce.number().nullable().optional(),
   notas: z.string().nullable().optional(),
-})
+}).refine((data) => {
+  const ruc = (data.ruc ?? '').trim()
+  const dni = (data.dni ?? '').trim()
+  return ruc.length > 0 || dni.length > 0
+}, { message: 'Debe ingresar RUC o DNI', path: ['ruc'] })
 
 type ClienteFormData = z.infer<typeof clienteSchema>
 type EstadoCliente = 'activo' | 'suspendido' | 'bloqueado'
 type TipoCliente = 'consumidor_final' | 'tienda'
+type TipoComprobantePref = 'factura' | 'boleta'
 
 const ESTADO_CONFIG: Record<EstadoCliente, { label: string; className: string }> = {
   activo: { label: 'Activo', className: 'bg-green-100 text-green-700 border-green-200' },
@@ -83,6 +88,7 @@ export default function ClientesPage() {
 
   // Estados controlados para selects
   const [tipoCliente, setTipoCliente] = useState<TipoCliente>('tienda')
+  const [tipoComprobantePref, setTipoComprobantePref] = useState<TipoComprobantePref>('boleta')
   const [listaPrecioId, setListaPrecioId] = useState<string>('')
   const [zonaId, setZonaId] = useState<string>('')
   const [vendedorId, setVendedorId] = useState<string>('')
@@ -112,6 +118,8 @@ export default function ClientesPage() {
     setValue('razon_social', data.razonSocial, { shouldValidate: true })
     if (data.direccion) setValue('direccion', data.direccion, { shouldValidate: true })
     setTipoCliente('tienda')
+    // Auto-seleccionar factura porque el cliente tiene RUC
+    setTipoComprobantePref('factura')
     // Auto-seleccionar zona si hay match con el distrito
     if (data.distrito) {
       const match = zonas.find((z: any) =>
@@ -149,6 +157,8 @@ export default function ClientesPage() {
     setValue('razon_social', data.nombreCompleto, { shouldValidate: true })
     setValue('contacto', data.nombreCompleto, { shouldValidate: true })
     setTipoCliente('consumidor_final')
+    // Solo DNI → boleta obligatoria
+    setTipoComprobantePref('boleta')
   }
 
   const loadMeta = useCallback(async () => {
@@ -167,7 +177,7 @@ export default function ClientesPage() {
     let query = supabase
       .from('clientes')
       .select(`
-        id, codigo, razon_social, ruc, dni, tipo_cliente, estado,
+        id, razon_social, ruc, dni, tipo_cliente, tipo_comprobante_preferido, estado,
         credito_limite, credito_dias, direccion, telefono, email, contacto,
         lista_precio_id, zona_id, vendedor_id, latitud, longitud, notas, created_at,
         ubigeo, departamento, provincia, distrito,
@@ -195,6 +205,7 @@ export default function ClientesPage() {
   const openCreate = () => {
     setEditingCliente(null)
     setTipoCliente('tienda')
+    setTipoComprobantePref('boleta')
     setListaPrecioId('')
     setZonaId('')
     setVendedorId('')
@@ -204,7 +215,6 @@ export default function ClientesPage() {
     setDniInput('')
     setUbigeoVal(UBIGEO_EMPTY)
     reset({
-      codigo: '',
       razon_social: '',
       ruc: '',
       dni: '',
@@ -247,6 +257,7 @@ export default function ClientesPage() {
   const openEdit = (cliente: any) => {
     setEditingCliente(cliente)
     setTipoCliente((cliente.tipo_cliente as TipoCliente) ?? 'tienda')
+    setTipoComprobantePref((cliente.tipo_comprobante_preferido as TipoComprobantePref) ?? tipoComprobanteSugerido(cliente))
     setListaPrecioId(cliente.lista_precio_id ?? '')
     setZonaId(cliente.zona_id ?? '')
     setVendedorId(cliente.vendedor_id ?? '')
@@ -268,7 +279,6 @@ export default function ClientesPage() {
       ubigeo: cliente.ubigeo ?? null,
     })
     reset({
-      codigo: cliente.codigo,
       razon_social: cliente.razon_social,
       ruc: cliente.ruc ?? '',
       dni: cliente.dni ?? '',
@@ -291,12 +301,20 @@ export default function ClientesPage() {
   const onSubmit = async (data: ClienteFormData) => {
     setSaving(true)
     try {
-      const payload = {
-        codigo: data.codigo,
+      // Enforce SUNAT rule: factura requiere RUC
+      const rucVal = (data.ruc ?? '').trim()
+      const dniVal = (data.dni ?? '').trim()
+      let tcp: TipoComprobantePref = tipoComprobantePref
+      if (!rucVal && tcp === 'factura') {
+        tcp = 'boleta'
+        setTipoComprobantePref('boleta')
+      }
+      const payload: any = {
         razon_social: data.razon_social,
-        ruc: data.ruc || null,
-        dni: data.dni || null,
+        ruc: rucVal || null,
+        dni: dniVal || null,
         tipo_cliente: tipoCliente,
+        tipo_comprobante_preferido: tcp,
         lista_precio_id: listaPrecioId || null,
         zona_id: zonaId || null,
         vendedor_id: vendedorId || null,
@@ -432,7 +450,7 @@ export default function ClientesPage() {
                       <div className="flex items-start justify-between gap-2">
                         <div className="min-w-0 flex-1">
                           <p className="font-medium text-gray-900 truncate">{c.razon_social}</p>
-                          <p className="text-xs text-gray-500 font-mono">{c.codigo} · {c.ruc ?? c.dni ?? 'Sin doc.'}</p>
+                          <p className="text-xs text-gray-500 font-mono">{getIdentificadorLabel(c)}</p>
                           <div className="flex items-center gap-2 mt-1 text-xs text-gray-500">
                             <span>{c.tipo_cliente === 'consumidor_final' ? 'Consumidor' : 'Tienda'}</span>
                             {c.listas_precio?.nombre && <span>· Lista {c.listas_precio.nombre}</span>}
@@ -466,7 +484,7 @@ export default function ClientesPage() {
                 <table className="w-full text-sm">
                   <thead className="border-b border-gray-100 bg-gray-50/50">
                     <tr>
-                      {['Código', 'Razón Social', 'RUC/DNI', 'Tipo', 'Lista', 'Zona', 'Vendedor', 'Estado', 'Acciones'].map((h) => (
+                      {['RUC / DNI', 'Razón Social', 'Comprobante', 'Tipo', 'Lista', 'Zona', 'Vendedor', 'Estado', 'Acciones'].map((h) => (
                         <th key={h} className="text-left py-3 px-4 text-xs font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap">
                           {h}
                         </th>
@@ -478,9 +496,15 @@ export default function ClientesPage() {
                       const estadoCfg = ESTADO_CONFIG[c.estado as EstadoCliente] ?? ESTADO_CONFIG.activo
                       return (
                         <tr key={c.id} className="hover:bg-gray-50/50 transition-colors">
-                          <td className="py-3 px-4 font-mono text-xs text-gray-500">{c.codigo}</td>
+                          <td className="py-3 px-4 font-mono text-xs text-gray-500">
+                            {c.ruc ? <span><span className="text-gray-400">RUC</span> {c.ruc}</span> : c.dni ? <span><span className="text-gray-400">DNI</span> {c.dni}</span> : '—'}
+                          </td>
                           <td className="py-3 px-4 font-medium text-gray-900 max-w-[200px] truncate">{c.razon_social}</td>
-                          <td className="py-3 px-4 text-gray-500 font-mono text-xs">{c.ruc ?? c.dni ?? '—'}</td>
+                          <td className="py-3 px-4 text-xs">
+                            <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border ${c.tipo_comprobante_preferido === 'factura' ? 'bg-blue-50 text-blue-700 border-blue-200' : 'bg-gray-50 text-gray-700 border-gray-200'}`}>
+                              {c.tipo_comprobante_preferido === 'factura' ? 'Factura' : 'Boleta'}
+                            </span>
+                          </td>
                           <td className="py-3 px-4 text-gray-600 text-xs">
                             {c.tipo_cliente === 'consumidor_final' ? 'Consumidor' : 'Tienda'}
                           </td>
@@ -544,17 +568,13 @@ export default function ClientesPage() {
             <DialogTitle>{editingCliente ? 'Editar Cliente' : 'Nuevo Cliente'}</DialogTitle>
           </DialogHeader>
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-4 mt-2">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <Label>Código *</Label>
-                <Input {...register('codigo')} placeholder="CLI001" className="mt-1 font-mono" />
-                {errors.codigo && <p className="text-xs text-red-500 mt-1">{errors.codigo.message}</p>}
-              </div>
-              <div>
-                <Label>Razón Social *</Label>
-                <Input {...register('razon_social')} placeholder="Nombre o razón social" className="mt-1" />
-                {errors.razon_social && <p className="text-xs text-red-500 mt-1">{errors.razon_social.message}</p>}
-              </div>
+            <div>
+              <Label>Razón Social *</Label>
+              <Input {...register('razon_social')} placeholder="Nombre o razón social" className="mt-1" />
+              {errors.razon_social && <p className="text-xs text-red-500 mt-1">{errors.razon_social.message}</p>}
+              <p className="text-[11px] text-gray-400 mt-1">
+                El identificador del cliente será su RUC o DNI. Al menos uno es obligatorio.
+              </p>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -567,8 +587,11 @@ export default function ClientesPage() {
                       const v = e.target.value.replace(/\D/g, '').slice(0, 11)
                       setRucInput(v)
                       setValue('ruc', v)
+                      // Auto-preseleccionar según regla SUNAT
+                      if (v.length >= 11) setTipoComprobantePref('factura')
+                      else if (v.length === 0 && dniInput.length > 0) setTipoComprobantePref('boleta')
                     }}
-                    placeholder="20xxxxxxxxx"
+                    placeholder="10/20xxxxxxxxx"
                     maxLength={11}
                     inputMode="numeric"
                     className="font-mono flex-1"
@@ -596,8 +619,10 @@ export default function ClientesPage() {
                       const v = e.target.value.replace(/\D/g, '').slice(0, 8)
                       setDniInput(v)
                       setValue('dni', v)
+                      // Si no hay RUC y hay DNI → boleta obligatoria
+                      if (v.length === 8 && rucInput.length === 0) setTipoComprobantePref('boleta')
                     }}
-                    placeholder="Opcional"
+                    placeholder="Si no tiene RUC"
                     maxLength={8}
                     inputMode="numeric"
                     className="font-mono flex-1"
@@ -631,6 +656,29 @@ export default function ClientesPage() {
                   </SelectContent>
                 </Select>
               </div>
+              <div>
+                <Label>Comprobante Preferido *</Label>
+                <Select
+                  value={tipoComprobantePref}
+                  onValueChange={(v) => setTipoComprobantePref(v as TipoComprobantePref)}
+                >
+                  <SelectTrigger className="mt-1">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="factura" disabled={rucInput.length !== 11}>
+                      Factura {rucInput.length !== 11 && '(requiere RUC)'}
+                    </SelectItem>
+                    <SelectItem value="boleta">Boleta</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-[11px] text-gray-400 mt-1">
+                  Se usará al emitir comprobantes en PWA y facturación.
+                </p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <Label>Lista de Precio</Label>
                 <Select value={listaPrecioId} onValueChange={setListaPrecioId}>
@@ -817,7 +865,12 @@ export default function ClientesPage() {
                   <div className="min-w-0 flex-1">
                     <p className="font-semibold text-gray-900 truncate">{selected.razon_social}</p>
                     <p className="text-xs text-gray-500 font-mono">
-                      {selected.codigo} · {selected.ruc ?? selected.dni ?? 'Sin documento'}
+                      {getIdentificadorLabel(selected)}
+                      {selected.tipo_comprobante_preferido && (
+                        <span className="ml-2 text-blue-600">
+                          · Emite {selected.tipo_comprobante_preferido === 'factura' ? 'Factura' : 'Boleta'}
+                        </span>
+                      )}
                     </p>
                   </div>
                   <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border shrink-0 ${estadoCfg.className}`}>

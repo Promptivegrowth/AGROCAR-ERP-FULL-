@@ -114,14 +114,14 @@ export default function SolicitudesClientePage() {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) throw new Error('Sesión expirada')
 
-      const codigo = `CLI-${String(Date.now()).slice(-6)}`
+      const tipoComprobantePref = s.ruc ? 'factura' : 'boleta'
 
       const clientePayload: any = {
-        codigo,
         razon_social: s.razon_social,
         ruc: s.ruc,
         dni: s.dni,
         tipo_cliente: s.tipo_cliente,
+        tipo_comprobante_preferido: tipoComprobantePref,
         direccion: s.direccion,
         telefono: s.telefono,
         email: s.email,
@@ -154,8 +154,9 @@ export default function SolicitudesClientePage() {
         .eq('id', s.id)
       if (errSol) throw errSol
 
+      const identificador = s.ruc ? `RUC ${s.ruc}` : s.dni ? `DNI ${s.dni}` : s.razon_social
       toast.success('Solicitud aprobada', {
-        description: `${s.razon_social} registrado como ${codigo}.`,
+        description: `${s.razon_social} registrado (${identificador}).`,
       })
       setDetailOpen(false)
       await Promise.all([loadSolicitudes(), loadCounts()])

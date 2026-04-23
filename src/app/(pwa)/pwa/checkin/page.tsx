@@ -50,7 +50,7 @@ export default function CheckinPage() {
       const [{ data: clientesData }, { data: checkinsData }] = await Promise.all([
         supabase
           .from('clientes')
-          .select('id, razon_social, codigo')
+          .select('id, razon_social, ruc, dni')
           .eq('vendedor_id', user.id)
           .eq('estado', 'activo')
           .order('razon_social'),
@@ -305,7 +305,7 @@ export default function CheckinPage() {
                 <option value="">Selecciona un cliente...</option>
                 {clientes.map((c) => (
                   <option key={c.id} value={c.id}>
-                    {c.razon_social} {c.codigo ? `(${c.codigo})` : ''}
+                    {c.razon_social} {c.ruc ? `(RUC ${c.ruc})` : c.dni ? `(DNI ${c.dni})` : ''}
                   </option>
                 ))}
               </select>

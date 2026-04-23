@@ -128,7 +128,8 @@ export default function CobrosPage() {
     const filtrados = clientes.filter(
       (c) =>
         c.razon_social.toLowerCase().includes(q) ||
-        (c.codigo ?? '').toLowerCase().includes(q)
+        (c.ruc ?? '').toLowerCase().includes(q) ||
+        (c.dni ?? '').toLowerCase().includes(q)
     )
     setClientesFiltrados(filtrados.slice(0, 8))
     setShowDropdown(true)
@@ -445,7 +446,7 @@ export default function CobrosPage() {
                 <div className="relative">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                   <Input
-                    placeholder="Buscar cliente..."
+                    placeholder="Buscar por nombre, RUC o DNI..."
                     value={clienteSearch}
                     onChange={(e) => {
                       setClienteSearch(e.target.value)
@@ -466,7 +467,9 @@ export default function CobrosPage() {
                           className="w-full text-left px-4 py-3 hover:bg-green-50 border-b border-gray-100 last:border-0"
                         >
                           <div className="font-medium text-gray-900 text-sm">{c.razon_social}</div>
-                          <div className="text-xs text-gray-500">{c.codigo}</div>
+                          <div className="text-xs text-gray-500 font-mono">
+                            {c.ruc ? `RUC ${c.ruc}` : c.dni ? `DNI ${c.dni}` : 'Sin doc.'}
+                          </div>
                         </button>
                       ))}
                     </div>

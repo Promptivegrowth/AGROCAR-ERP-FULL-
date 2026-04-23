@@ -127,7 +127,8 @@ export default function PedidosPage() {
     const filtrados = clientes.filter(
       (c) =>
         c.razon_social.toLowerCase().includes(q) ||
-        (c.codigo ?? '').toLowerCase().includes(q)
+        (c.ruc ?? '').toLowerCase().includes(q) ||
+        (c.dni ?? '').toLowerCase().includes(q)
     )
     setClientesFiltrados(filtrados.slice(0, 8))
     setShowClienteDropdown(true)
@@ -441,7 +442,7 @@ export default function PedidosPage() {
                 <div className="relative">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                   <Input
-                    placeholder="Buscar cliente por nombre o código..."
+                    placeholder="Buscar por nombre, RUC o DNI..."
                     value={clienteSearch}
                     onChange={(e) => {
                       setClienteSearch(e.target.value)
@@ -461,7 +462,10 @@ export default function PedidosPage() {
                           className="w-full text-left px-4 py-3 hover:bg-green-50 border-b border-gray-100 last:border-0"
                         >
                           <div className="font-medium text-gray-900 text-sm">{c.razon_social}</div>
-                          <div className="text-xs text-gray-500">{c.codigo} · {c.direccion}</div>
+                          <div className="text-xs text-gray-500">
+                            {c.ruc ? `RUC ${c.ruc}` : c.dni ? `DNI ${c.dni}` : 'Sin doc.'}
+                            {c.direccion ? ` · ${c.direccion}` : ''}
+                          </div>
                         </button>
                       ))}
                     </div>
@@ -471,7 +475,19 @@ export default function PedidosPage() {
                 {clienteSeleccionado && (
                   <div className="mt-3 p-3 bg-green-50 rounded-lg">
                     <div className="font-medium text-green-800">{clienteSeleccionado.razon_social}</div>
-                    <div className="text-xs text-green-700 mt-0.5">{clienteSeleccionado.direccion}</div>
+                    <div className="text-xs text-green-700 mt-0.5 font-mono">
+                      {clienteSeleccionado.ruc
+                        ? `RUC ${clienteSeleccionado.ruc}`
+                        : clienteSeleccionado.dni
+                          ? `DNI ${clienteSeleccionado.dni}`
+                          : 'Sin documento'}
+                    </div>
+                    {clienteSeleccionado.direccion && (
+                      <div className="text-xs text-green-700 mt-0.5">{clienteSeleccionado.direccion}</div>
+                    )}
+                    <div className="mt-2 inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-700 border border-blue-200">
+                      Emite: {(clienteSeleccionado as any).tipo_comprobante_preferido === 'factura' ? 'Factura' : 'Boleta'}
+                    </div>
                     {deudaCliente > 0 && (
                       <div className="mt-2 flex items-center gap-1.5 text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-1.5">
                         <AlertCircle className="w-3.5 h-3.5" />

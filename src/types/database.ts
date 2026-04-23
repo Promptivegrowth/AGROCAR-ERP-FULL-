@@ -211,11 +211,11 @@ export interface Database {
       clientes: {
         Row: {
           id: string                     // uuid
-          codigo: string                 // código interno único
           razon_social: string
           ruc: string | null
           dni: string | null
           tipo_cliente: TipoCliente
+          tipo_comprobante_preferido: TipoComprobante
           lista_precio_id: string | null // uuid, references listas_precio
           zona_id: string | null         // uuid, references zonas
           vendedor_id: string | null     // uuid, references profiles
@@ -234,11 +234,11 @@ export interface Database {
         }
         Insert: {
           id?: string
-          codigo: string
           razon_social: string
           ruc?: string | null
           dni?: string | null
           tipo_cliente?: TipoCliente
+          tipo_comprobante_preferido?: TipoComprobante
           lista_precio_id?: string | null
           zona_id?: string | null
           vendedor_id?: string | null
@@ -257,11 +257,11 @@ export interface Database {
         }
         Update: {
           id?: string
-          codigo?: string
           razon_social?: string
           ruc?: string | null
           dni?: string | null
           tipo_cliente?: TipoCliente
+          tipo_comprobante_preferido?: TipoComprobante
           lista_precio_id?: string | null
           zona_id?: string | null
           vendedor_id?: string | null
@@ -1852,7 +1852,7 @@ export type StockUpdate       = TablesUpdate<'stock'>
 
 export interface PedidoConItems extends Pedido {
   items: (PedidoItem & { producto: Pick<Producto, 'id' | 'codigo' | 'nombre'> })[]
-  cliente: Pick<Cliente, 'id' | 'codigo' | 'razon_social' | 'telefono' | 'direccion'>
+  cliente: Pick<Cliente, 'id' | 'ruc' | 'dni' | 'razon_social' | 'telefono' | 'direccion'>
   vendedor: Pick<Profile, 'id' | 'full_name' | 'telefono'>
 }
 
