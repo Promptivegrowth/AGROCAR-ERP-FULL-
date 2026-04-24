@@ -69,6 +69,7 @@ export default function HistorialClient({ despachosIniciales }: { despachosInici
     setDespachos((prev) => prev.map((d) => d.id === despacho.id
       ? { ...d, estado: 'en_ruta', hora_salida: new Date().toISOString(), minutos_transcurridos: 0 }
       : d))
+    router.refresh()
   }
 
   async function abrirFinalizar(despacho: any) {
@@ -107,6 +108,7 @@ export default function HistorialClient({ despachosIniciales }: { despachosInici
     setDespachos((prev) => prev.map((d) => d.id === finalizarDialog.id
       ? { ...d, ...payload, minutos_transcurridos: duracionMin }
       : d))
+    router.refresh()
   }
 
   const minutosAhora = (despacho: any): number | null => {
