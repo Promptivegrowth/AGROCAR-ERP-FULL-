@@ -30,6 +30,8 @@ const productoSchema = z.object({
   unidad_medida_id: z.string().nullable().optional(),
   tasa_percepcion: z.coerce.number().min(0).max(100).nullable().optional(),
   peso_kg: z.coerce.number().min(0, 'Debe ser ≥ 0').default(0),
+  stock_minimo: z.coerce.number().min(0).nullable().optional(),
+  stock_maximo: z.coerce.number().min(0).nullable().optional(),
 })
 
 type ProductoFormData = z.infer<typeof productoSchema>
@@ -85,7 +87,8 @@ export default function ProductosPage() {
       .from('productos')
       .select(`
         id, codigo, nombre, descripcion, familia_id, unidad_medida_id,
-        tiene_lote, tiene_vencimiento, tiene_percepcion, tasa_percepcion, peso_kg, activo, created_at,
+        tiene_lote, tiene_vencimiento, tiene_percepcion, tasa_percepcion, peso_kg,
+        stock_minimo, stock_maximo, activo, created_at,
         familias(id, nombre),
         unidades_medida(id, nombre, simbolo),
         lista_precio_items(precio, listas_precio(nombre))
@@ -117,7 +120,7 @@ export default function ProductosPage() {
     setPrecioA('')
     setPrecioB('')
     setPrecioC('')
-    reset({ codigo: '', nombre: '', descripcion: '', familia_id: '', unidad_medida_id: '', tasa_percepcion: 0, peso_kg: 0 })
+    reset({ codigo: '', nombre: '', descripcion: '', familia_id: '', unidad_medida_id: '', tasa_percepcion: 0, peso_kg: 0, stock_minimo: null, stock_maximo: null })
     setDialogOpen(true)
   }
 
@@ -137,6 +140,8 @@ export default function ProductosPage() {
       unidad_medida_id: producto.unidad_medida_id ?? '',
       tasa_percepcion: producto.tasa_percepcion ?? 0,
       peso_kg: producto.peso_kg ?? 0,
+      stock_minimo: producto.stock_minimo ?? null,
+      stock_maximo: producto.stock_maximo ?? null,
     })
     // Cargar precios actuales
     setPrecioA('')
@@ -173,6 +178,8 @@ export default function ProductosPage() {
         tiene_percepcion: tienePercepcion,
         tasa_percepcion: tienePercepcion ? (data.tasa_percepcion ?? 0) : 0,
         peso_kg: data.peso_kg ?? 0,
+        stock_minimo: data.stock_minimo ?? null,
+        stock_maximo: data.stock_maximo ?? null,
         activo,
         updated_at: new Date().toISOString(),
       }
@@ -519,23 +526,53 @@ export default function ProductosPage() {
               </div>
             </div>
 
-            <div className="pt-2 border-t border-gray-100">
-              <Label>Peso unitario (kg) *</Label>
-              <Input
-                {...register('peso_kg')}
-                type="number"
-                min={0}
-                step="0.001"
-                placeholder="0.000"
-                className="mt-1 font-mono"
-              />
-              {errors.peso_kg ? (
-                <p className="text-xs text-red-500 mt-1">{errors.peso_kg.message as string}</p>
-              ) : (
-                <p className="text-[11px] text-gray-400 mt-1">
-                  Peso de una unidad del producto. Se usa para calcular el peso total del pedido y validar la capacidad del vehículo en despacho.
-                </p>
-              )}
+            <div className="pt-2 border-t border-gray-100 space-y-3">
+              <div>
+                <Label>Peso unitario (kg) *</Label>
+                <Input
+                  {...register('peso_kg')}
+                  type="number"
+                  min={0}
+                  step="0.001"
+                  placeholder="0.000"
+                  className="mt-1 font-mono"
+                />
+                {errors.peso_kg ? (
+                  <p className="text-xs text-red-500 mt-1">{errors.peso_kg.message as string}</p>
+                ) : (
+                  <p className="text-[11px] text-gray-400 mt-1">
+                    Peso de una unidad del producto. Se usa para calcular el peso total del pedido y validar la capacidad del vehículo en despacho.
+                  </p>
+                )}
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <Label className="text-xs">Stock mínimo (opcional)</Label>
+                  <Input
+                    {...register('stock_minimo')}
+                    type="number"
+                    min={0}
+                    step="0.001"
+                    placeholder="Ej: 10"
+                    className="mt-1 font-mono h-9"
+                  />
+                </div>
+                <div>
+                  <Label className="text-xs">Stock máximo (opcional)</Label>
+                  <Input
+                    {...register('stock_maximo')}
+                    type="number"
+                    min={0}
+                    step="0.001"
+                    placeholder="Ej: 100"
+                    className="mt-1 font-mono h-9"
+                  />
+                </div>
+              </div>
+              <p className="text-[11px] text-gray-400">
+                Si defines mín/máx, el sistema generará alertas en inventario cuando el stock esté fuera de rango y sugerirá cantidad de reorden.
+              </p>
             </div>
 
             <div className="space-y-3 pt-2 border-t border-gray-100">

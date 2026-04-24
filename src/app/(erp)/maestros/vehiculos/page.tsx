@@ -733,6 +733,12 @@ function AsignarConductorDialog({
   const supabase = createClient()
   const { consultarDni, loading: reniecLoading } = useSunatReniec()
 
+  const [modo, setModo] = useState<'existente' | 'nuevo'>('existente')
+  const [conductoresDisponibles, setConductoresDisponibles] = useState<any[]>([])
+  const [loadingConductores, setLoadingConductores] = useState(false)
+  const [conductorIdSel, setConductorIdSel] = useState<string>('')
+
+  // Form nuevo conductor
   const [dni, setDni] = useState('')
   const [nombres, setNombres] = useState('')
   const [apPaterno, setApPaterno] = useState('')
@@ -746,11 +752,25 @@ function AsignarConductorDialog({
 
   useEffect(() => {
     if (!open) {
+      setModo('existente')
+      setConductorIdSel('')
       setDni(''); setNombres(''); setApPaterno(''); setApMaterno('')
       setLicNum(''); setLicClase(''); setLicVenc(''); setTelefono('')
       setEsPrincipal(false); setSaving(false)
+      return
     }
-  }, [open])
+    // Cargar conductores existentes excluyendo los ya asignados al vehículo
+    ;(async () => {
+      setLoadingConductores(true)
+      const [{ data: todos }, { data: asignados }] = await Promise.all([
+        (supabase as any).from('conductores').select('id, dni, nombre_completo, licencia_clase, telefono').eq('activo', true).order('nombre_completo'),
+        (supabase as any).from('vehiculos_conductores').select('conductor_id').eq('vehiculo_id', vehiculoId),
+      ])
+      const asignadosIds = new Set((asignados ?? []).map((a: any) => a.conductor_id))
+      setConductoresDisponibles((todos ?? []).filter((c: any) => !asignadosIds.has(c.id)))
+      setLoadingConductores(false)
+    })()
+  }, [open, vehiculoId])
 
   const autocompletar = async () => {
     const data = await consultarDni(dni.trim())
@@ -760,24 +780,39 @@ function AsignarConductorDialog({
     if (data.apellidoMaterno) setApMaterno(data.apellidoMaterno)
   }
 
-  const submit = async () => {
-    if (!/^\d{8}$/.test(dni)) {
-      toast.error('DNI inválido', { description: 'Debe tener 8 dígitos.' })
-      return
-    }
-    if (!nombres.trim()) {
-      toast.error('Nombres requeridos')
+  const asignarExistente = async () => {
+    if (!conductorIdSel) {
+      toast.error('Selecciona un conductor')
       return
     }
     setSaving(true)
     try {
-      const nombreCompleto = [apPaterno, apMaterno, nombres].filter(Boolean).join(' ').trim() || nombres
+      if (esPrincipal) {
+        await ((supabase as any).from('vehiculos_conductores'))
+          .update({ es_principal: false }).eq('vehiculo_id', vehiculoId)
+      }
+      const { error } = await ((supabase as any).from('vehiculos_conductores'))
+        .upsert({ vehiculo_id: vehiculoId, conductor_id: conductorIdSel, es_principal: esPrincipal },
+          { onConflict: 'vehiculo_id,conductor_id' })
+      if (error) throw error
+      const cond = conductoresDisponibles.find((c) => c.id === conductorIdSel)
+      toast.success('Conductor asignado', { description: cond?.nombre_completo ?? '' })
+      onOpenChange(false)
+      onDone()
+    } catch (err: any) {
+      toast.error('No se pudo asignar', { description: err?.message ?? '' })
+    } finally { setSaving(false) }
+  }
 
-      // Upsert conductor por DNI
+  const crearYAsignar = async () => {
+    if (!/^\d{8}$/.test(dni)) { toast.error('DNI inválido', { description: 'Debe tener 8 dígitos.' }); return }
+    if (!nombres.trim()) { toast.error('Nombres requeridos'); return }
+    setSaving(true)
+    try {
+      const nombreCompleto = [apPaterno, apMaterno, nombres].filter(Boolean).join(' ').trim() || nombres
       const { data: condData, error: condErr } = await ((supabase as any).from('conductores'))
         .upsert({
-          dni,
-          nombres,
+          dni, nombres,
           apellido_paterno: apPaterno || null,
           apellido_materno: apMaterno || null,
           nombre_completo: nombreCompleto,
@@ -786,36 +821,24 @@ function AsignarConductorDialog({
           licencia_clase: licClase || null,
           licencia_vencimiento: licVenc || null,
         }, { onConflict: 'dni' })
-        .select('id')
-        .single()
+        .select('id').single()
       if (condErr) throw condErr
 
-      const conductorId = condData.id
-
-      // Si es principal, desmarcar los otros
       if (esPrincipal) {
         await ((supabase as any).from('vehiculos_conductores'))
-          .update({ es_principal: false })
-          .eq('vehiculo_id', vehiculoId)
+          .update({ es_principal: false }).eq('vehiculo_id', vehiculoId)
       }
-
-      // Asignar (upsert por par)
       const { error: vcErr } = await ((supabase as any).from('vehiculos_conductores'))
-        .upsert({
-          vehiculo_id: vehiculoId,
-          conductor_id: conductorId,
-          es_principal: esPrincipal,
-        }, { onConflict: 'vehiculo_id,conductor_id' })
+        .upsert({ vehiculo_id: vehiculoId, conductor_id: condData.id, es_principal: esPrincipal },
+          { onConflict: 'vehiculo_id,conductor_id' })
       if (vcErr) throw vcErr
 
-      toast.success('Conductor asignado', { description: nombreCompleto })
+      toast.success('Conductor creado y asignado', { description: nombreCompleto })
       onOpenChange(false)
       onDone()
     } catch (err: any) {
-      toast.error('No se pudo asignar', { description: err?.message ?? 'Intenta de nuevo.' })
-    } finally {
-      setSaving(false)
-    }
+      toast.error('No se pudo asignar', { description: err?.message ?? '' })
+    } finally { setSaving(false) }
   }
 
   return (
@@ -824,86 +847,114 @@ function AsignarConductorDialog({
         <DialogHeader>
           <DialogTitle>Asignar Conductor</DialogTitle>
         </DialogHeader>
-        <div className="space-y-4 mt-2">
-          <div>
-            <Label>DNI *</Label>
-            <div className="flex gap-2 mt-1">
-              <Input
-                value={dni}
-                onChange={(e) => setDni(e.target.value.replace(/\D/g, '').slice(0, 8))}
-                placeholder="12345678"
-                maxLength={8}
-                inputMode="numeric"
-                className="font-mono flex-1"
-              />
+
+        <Tabs value={modo} onValueChange={(v) => setModo(v as 'existente' | 'nuevo')} className="mt-2">
+          <TabsList className="grid grid-cols-2 w-full">
+            <TabsTrigger value="existente">Elegir existente</TabsTrigger>
+            <TabsTrigger value="nuevo">Crear nuevo</TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="existente" className="space-y-4 mt-4">
+            <div>
+              <Label>Conductor *</Label>
+              {loadingConductores ? (
+                <div className="mt-1 flex items-center gap-2 text-gray-500 text-sm">
+                  <Loader2 className="w-4 h-4 animate-spin" /> Cargando conductores...
+                </div>
+              ) : conductoresDisponibles.length === 0 ? (
+                <div className="mt-1 p-3 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-800">
+                  No hay conductores disponibles. Crea uno en{' '}
+                  <a href="/maestros/conductores" className="underline font-medium">Maestros → Conductores</a>
+                  {' '}o usa la pestaña &quot;Crear nuevo&quot;.
+                </div>
+              ) : (
+                <Select value={conductorIdSel} onValueChange={setConductorIdSel}>
+                  <SelectTrigger className="mt-1">
+                    <SelectValue placeholder="Seleccionar conductor..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {conductoresDisponibles.map((c: any) => (
+                      <SelectItem key={c.id} value={c.id}>
+                        {c.nombre_completo} · DNI {c.dni}{c.licencia_clase ? ` · Lic ${c.licencia_clase}` : ''}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+            </div>
+
+            <div className="flex items-center gap-2">
+              <Switch checked={esPrincipal} onCheckedChange={setEsPrincipal} />
+              <Label>Conductor principal de este vehículo</Label>
+            </div>
+
+            <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-3 pt-2 border-t border-gray-100">
+              <Button variant="outline" onClick={() => onOpenChange(false)}>Cancelar</Button>
               <Button
-                type="button" variant="outline" size="sm" onClick={autocompletar}
-                disabled={reniecLoading || dni.length !== 8}
-                className="shrink-0 gap-1 border-[#FBE600] hover:bg-[#FBE600] hover:text-black"
+                onClick={asignarExistente}
+                disabled={saving || !conductorIdSel}
+                className="bg-[#FBE600] hover:bg-[#E5D100] text-black font-semibold gap-2"
               >
-                {reniecLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
-                RENIEC
+                {saving && <Loader2 className="w-4 h-4 animate-spin" />}
+                Asignar
               </Button>
             </div>
-          </div>
+          </TabsContent>
 
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <TabsContent value="nuevo" className="space-y-4 mt-4">
             <div>
-              <Label>Ap. Paterno</Label>
-              <Input value={apPaterno} onChange={(e) => setApPaterno(e.target.value)} className="mt-1" />
+              <Label>DNI *</Label>
+              <div className="flex gap-2 mt-1">
+                <Input
+                  value={dni}
+                  onChange={(e) => setDni(e.target.value.replace(/\D/g, '').slice(0, 8))}
+                  placeholder="12345678"
+                  maxLength={8}
+                  inputMode="numeric"
+                  className="font-mono flex-1"
+                />
+                <Button
+                  type="button" variant="outline" size="sm" onClick={autocompletar}
+                  disabled={reniecLoading || dni.length !== 8}
+                  className="shrink-0 gap-1 border-[#FBE600] hover:bg-[#FBE600] hover:text-black"
+                >
+                  {reniecLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
+                  RENIEC
+                </Button>
+              </div>
             </div>
-            <div>
-              <Label>Ap. Materno</Label>
-              <Input value={apMaterno} onChange={(e) => setApMaterno(e.target.value)} className="mt-1" />
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div><Label>Ap. Paterno</Label><Input value={apPaterno} onChange={(e) => setApPaterno(e.target.value)} className="mt-1" /></div>
+              <div><Label>Ap. Materno</Label><Input value={apMaterno} onChange={(e) => setApMaterno(e.target.value)} className="mt-1" /></div>
+              <div><Label>Nombres *</Label><Input value={nombres} onChange={(e) => setNombres(e.target.value)} className="mt-1" /></div>
             </div>
-            <div>
-              <Label>Nombres *</Label>
-              <Input value={nombres} onChange={(e) => setNombres(e.target.value)} className="mt-1" />
+            <div><Label>Teléfono</Label><Input value={telefono} onChange={(e) => setTelefono(e.target.value)} placeholder="999 999 999" className="mt-1" /></div>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div><Label>N° Licencia</Label><Input value={licNum} onChange={(e) => setLicNum(e.target.value)} className="mt-1 font-mono" /></div>
+              <div>
+                <Label>Clase</Label>
+                <Select value={licClase} onValueChange={setLicClase}>
+                  <SelectTrigger className="mt-1"><SelectValue placeholder="Seleccionar" /></SelectTrigger>
+                  <SelectContent>
+                    {CLASE_LICENCIA_OPCIONES.map((op) => <SelectItem key={op} value={op}>{op}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div><Label>Vencimiento</Label><Input type="date" value={licVenc} onChange={(e) => setLicVenc(e.target.value)} className="mt-1" /></div>
             </div>
-          </div>
-
-          <div>
-            <Label>Teléfono</Label>
-            <Input value={telefono} onChange={(e) => setTelefono(e.target.value)} placeholder="999 999 999" className="mt-1" />
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <div>
-              <Label>N° Licencia</Label>
-              <Input value={licNum} onChange={(e) => setLicNum(e.target.value)} className="mt-1 font-mono" />
+            <div className="flex items-center gap-2">
+              <Switch checked={esPrincipal} onCheckedChange={setEsPrincipal} />
+              <Label>Conductor principal</Label>
             </div>
-            <div>
-              <Label>Clase</Label>
-              <Select value={licClase} onValueChange={setLicClase}>
-                <SelectTrigger className="mt-1">
-                  <SelectValue placeholder="Seleccionar" />
-                </SelectTrigger>
-                <SelectContent>
-                  {CLASE_LICENCIA_OPCIONES.map((op) => (
-                    <SelectItem key={op} value={op}>{op}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+            <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-3 pt-2 border-t border-gray-100">
+              <Button variant="outline" onClick={() => onOpenChange(false)}>Cancelar</Button>
+              <Button onClick={crearYAsignar} disabled={saving} className="bg-[#FBE600] hover:bg-[#E5D100] text-black font-semibold gap-2">
+                {saving && <Loader2 className="w-4 h-4 animate-spin" />}
+                Crear y asignar
+              </Button>
             </div>
-            <div>
-              <Label>Vencimiento</Label>
-              <Input type="date" value={licVenc} onChange={(e) => setLicVenc(e.target.value)} className="mt-1" />
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <Switch checked={esPrincipal} onCheckedChange={setEsPrincipal} />
-            <Label>Conductor principal</Label>
-          </div>
-
-          <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-3 pt-2 border-t border-gray-100">
-            <Button variant="outline" onClick={() => onOpenChange(false)}>Cancelar</Button>
-            <Button onClick={submit} disabled={saving} className="bg-[#FBE600] hover:bg-[#E5D100] text-black font-semibold gap-2">
-              {saving && <Loader2 className="w-4 h-4 animate-spin" />}
-              Asignar Conductor
-            </Button>
-          </div>
-        </div>
+          </TabsContent>
+        </Tabs>
       </DialogContent>
     </Dialog>
   )

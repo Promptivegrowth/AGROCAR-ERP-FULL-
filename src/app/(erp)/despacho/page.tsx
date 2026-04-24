@@ -1,13 +1,15 @@
+import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
 import DespachoClient from './despacho-client'
 import type { PedidoListo, VehiculoDisponible } from './lib/types'
+import { Activity, Package } from 'lucide-react'
 
 export const dynamic = 'force-dynamic'
 
 async function getInitialData() {
   const supabase = await createClient()
 
-  const [{ data: pedidosRaw }, { data: vehiculosRaw }, { data: vcRaw }, { data: confRaw }] = await Promise.all([
+  const [{ data: pedidosRaw }, { data: vehiculosRaw }, { data: vcRaw }, { data: confRaw }, { data: flotaRaw }] = await Promise.all([
     (supabase as any)
       .from('pedidos')
       .select(`
@@ -31,6 +33,10 @@ async function getInitialData() {
       .from('configuracion')
       .select('clave, valor')
       .in('clave', ['almacen_nombre', 'almacen_lat', 'almacen_lng', 'almacen_direccion']),
+    (supabase as any)
+      .from('v_flota_en_vivo')
+      .select('id, placa, numero, estado, pedidos_entregados, total_pedidos')
+      .in('estado', ['en_ruta', 'preparacion']),
   ])
 
   const vcByVehiculo: Record<string, { id: string; nombre: string }> = {}
@@ -93,10 +99,51 @@ async function getInitialData() {
     lng: Number(conf.almacen_lng ?? '-70.25362'),
   }
 
-  return { pedidos, vehiculos, almacen }
+  const flota = {
+    enRuta: (flotaRaw ?? []).filter((f: any) => f.estado === 'en_ruta'),
+    enPreparacion: (flotaRaw ?? []).filter((f: any) => f.estado === 'preparacion'),
+  }
+
+  return { pedidos, vehiculos, almacen, flota }
 }
 
 export default async function DespachoPage() {
-  const { pedidos, vehiculos, almacen } = await getInitialData()
-  return <DespachoClient pedidosIniciales={pedidos} vehiculos={vehiculos} almacen={almacen} />
+  const { pedidos, vehiculos, almacen, flota } = await getInitialData()
+  const total = flota.enRuta.length + flota.enPreparacion.length
+  return (
+    <div className="space-y-3">
+      {total > 0 && (
+        <Link
+          href="/despacho/historial"
+          className={`flex items-center justify-between rounded-xl border px-4 py-2.5 transition-colors ${
+            flota.enRuta.length > 0
+              ? 'bg-blue-50 border-blue-200 hover:bg-blue-100'
+              : 'bg-amber-50 border-amber-200 hover:bg-amber-100'
+          }`}
+        >
+          <div className="flex items-center gap-3">
+            {flota.enRuta.length > 0 ? (
+              <Activity className="w-5 h-5 text-blue-600 animate-pulse" />
+            ) : (
+              <Package className="w-5 h-5 text-amber-600" />
+            )}
+            <div>
+              {flota.enRuta.length > 0 && (
+                <p className="text-sm font-semibold text-blue-900">
+                  🚛 {flota.enRuta.length} {flota.enRuta.length === 1 ? 'vehículo' : 'vehículos'} en ruta ahora
+                </p>
+              )}
+              {flota.enPreparacion.length > 0 && (
+                <p className="text-xs text-amber-800">
+                  {flota.enPreparacion.length} {flota.enPreparacion.length === 1 ? 'despacho listo' : 'despachos listos'} para salir
+                </p>
+              )}
+            </div>
+          </div>
+          <span className="text-xs font-medium text-gray-700">Ver flota →</span>
+        </Link>
+      )}
+      <DespachoClient pedidosIniciales={pedidos} vehiculos={vehiculos} almacen={almacen} />
+    </div>
+  )
 }

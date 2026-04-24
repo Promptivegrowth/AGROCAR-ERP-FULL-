@@ -21,11 +21,15 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Switch } from '@/components/ui/switch'
 import UbigeoSelector, { UBIGEO_EMPTY, type UbigeoValue } from '@/components/ubigeo-selector'
+import LeafletMap, { type MapMarker, type MapPolyline } from '@/components/maps/leaflet-map'
 
 const zonaSchema = z.object({
   nombre: z.string().min(2, 'Mínimo 2 caracteres'),
   descripcion: z.string().nullable().optional(),
+  referencias: z.string().nullable().optional(),
   activo: z.boolean().default(true),
+  radio_km: z.coerce.number().min(0.1).max(50).default(1.5),
+  color_hex: z.string().nullable().optional(),
 })
 
 type ZonaFormData = z.infer<typeof zonaSchema>
@@ -45,6 +49,10 @@ export default function ZonasPage() {
   const [saving, setSaving] = useState(false)
   const [activoVal, setActivoVal] = useState(true)
   const [ubigeoVal, setUbigeoVal] = useState<UbigeoValue>(UBIGEO_EMPTY)
+  const [centro, setCentro] = useState<[number, number] | null>(null)
+  const [radioKm, setRadioKm] = useState<number>(1.5)
+  const [colorHex, setColorHex] = useState<string>('#2563eb')
+  const [clientesEnZona, setClientesEnZona] = useState<any[]>([])
 
   // Cantidad de clientes por zona
   const [clientesPorZona, setClientesPorZona] = useState<Record<string, number>>({})
@@ -58,7 +66,7 @@ export default function ZonasPage() {
     setLoading(true)
     let query = supabase
       .from('zonas')
-      .select('id, nombre, descripcion, activo, created_at, ubigeo, departamento, provincia, distrito', { count: 'exact' })
+      .select('id, nombre, descripcion, referencias, activo, created_at, ubigeo, departamento, provincia, distrito, centro_lat, centro_lng, radio_km, color_hex', { count: 'exact' })
       .order('nombre')
 
     if (debouncedSearch) query = query.ilike('nombre', `%${debouncedSearch}%`)
@@ -91,11 +99,15 @@ export default function ZonasPage() {
     setEditingZona(null)
     setActivoVal(true)
     setUbigeoVal(UBIGEO_EMPTY)
-    reset({ activo: true, nombre: '', descripcion: '' })
+    setCentro(null)
+    setRadioKm(1.5)
+    setColorHex('#2563eb')
+    setClientesEnZona([])
+    reset({ activo: true, nombre: '', descripcion: '', referencias: '', radio_km: 1.5, color_hex: '#2563eb' })
     setDialogOpen(true)
   }
 
-  const openEdit = (zona: any) => {
+  const openEdit = async (zona: any) => {
     setEditingZona(zona)
     setActivoVal(zona.activo)
     setUbigeoVal({
@@ -107,11 +119,24 @@ export default function ZonasPage() {
       distrito: zona.distrito ?? null,
       ubigeo: zona.ubigeo ?? null,
     })
+    setCentro(zona.centro_lat != null && zona.centro_lng != null ? [Number(zona.centro_lat), Number(zona.centro_lng)] : null)
+    setRadioKm(Number(zona.radio_km ?? 1.5))
+    setColorHex(zona.color_hex ?? '#2563eb')
     reset({
       nombre: zona.nombre,
       descripcion: zona.descripcion ?? '',
+      referencias: zona.referencias ?? '',
       activo: zona.activo,
+      radio_km: Number(zona.radio_km ?? 1.5),
+      color_hex: zona.color_hex ?? '#2563eb',
     })
+    // Cargar clientes asignados a esta zona para el preview
+    const { data: cs } = await (supabase as any)
+      .from('clientes')
+      .select('id, razon_social, latitud, longitud')
+      .eq('zona_id', zona.id)
+      .eq('estado', 'activo')
+    setClientesEnZona(cs ?? [])
     setDialogOpen(true)
   }
 
@@ -120,14 +145,19 @@ export default function ZonasPage() {
   const onSubmit = async (data: ZonaFormData) => {
     setSaving(true)
     try {
-      const payload = {
+      const payload: any = {
         nombre: data.nombre,
         descripcion: data.descripcion || null,
+        referencias: data.referencias || null,
         activo: activoVal,
         ubigeo: ubigeoVal.ubigeo,
         departamento: ubigeoVal.departamento,
         provincia: ubigeoVal.provincia,
         distrito: ubigeoVal.distrito,
+        centro_lat: centro ? centro[0] : null,
+        centro_lng: centro ? centro[1] : null,
+        radio_km: data.radio_km ?? null,
+        color_hex: colorHex,
       }
 
       if (editingZona) {
@@ -299,21 +329,35 @@ export default function ZonasPage() {
 
       {/* Dialog Crear/Editar */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{editingZona ? 'Editar Zona' : 'Nueva Zona'}</DialogTitle>
           </DialogHeader>
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-4 mt-2">
-            <div>
-              <Label>Nombre de la Zona *</Label>
-              <Input {...register('nombre')} placeholder="Ej. Zona Norte, Zona Comercial..." className="mt-1" />
-              {errors.nombre && <p className="text-xs text-red-500 mt-1">{errors.nombre.message}</p>}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div className="sm:col-span-2">
+                <Label>Nombre de la Zona *</Label>
+                <Input {...register('nombre')} placeholder="Ej. Zona Norte, Cercado, Pocollay..." className="mt-1" />
+                {errors.nombre && <p className="text-xs text-red-500 mt-1">{errors.nombre.message}</p>}
+              </div>
+              <div>
+                <Label>Color</Label>
+                <div className="flex items-center gap-2 mt-1">
+                  <input
+                    type="color"
+                    value={colorHex}
+                    onChange={(e) => setColorHex(e.target.value)}
+                    className="w-10 h-9 rounded cursor-pointer border border-gray-200"
+                  />
+                  <Input value={colorHex} onChange={(e) => setColorHex(e.target.value)} className="font-mono text-xs" maxLength={7} />
+                </div>
+              </div>
             </div>
 
             <div>
               <Label className="text-xs font-semibold text-gray-700">Ubicación administrativa</Label>
               <div className="mt-1">
-                <UbigeoSelector value={ubigeoVal} onChange={setUbigeoVal} layout="stacked" showLabels />
+                <UbigeoSelector value={ubigeoVal} onChange={setUbigeoVal} layout="columns" showLabels />
               </div>
             </div>
 
@@ -323,7 +367,82 @@ export default function ZonasPage() {
                 {...register('descripcion')}
                 placeholder="Descripción del área geográfica o cobertura de la zona..."
                 className="mt-1 resize-none"
-                rows={3}
+                rows={2}
+              />
+            </div>
+
+            <div>
+              <Label>Referencias (calles, landmarks, límites)</Label>
+              <Textarea
+                {...register('referencias')}
+                placeholder="Ej: Desde Av. Bolognesi hasta Av. San Martín, incluye Parque 7 de Junio..."
+                className="mt-1 resize-none"
+                rows={2}
+              />
+              <p className="text-[11px] text-gray-400 mt-1">
+                Pistas textuales para identificar la zona rápidamente (calles principales, puntos de referencia).
+              </p>
+            </div>
+
+            {/* Cobertura geográfica */}
+            <div className="border-t border-gray-100 pt-3">
+              <div className="flex items-center justify-between mb-2">
+                <div>
+                  <Label className="flex items-center gap-1.5">
+                    <MapPin className="w-4 h-4 text-gray-500" />
+                    Cobertura geográfica
+                  </Label>
+                  <p className="text-[11px] text-gray-400">Haz clic en el mapa para fijar el centro. Ajusta el radio para cubrir la zona.</p>
+                </div>
+                {centro && (
+                  <button type="button" onClick={() => setCentro(null)} className="text-xs text-red-600 hover:underline">Quitar</button>
+                )}
+              </div>
+
+              <div className="grid grid-cols-3 gap-2 mb-2">
+                <div className="col-span-2">
+                  <Label className="text-[11px] text-gray-500">Radio: {radioKm.toFixed(1)} km</Label>
+                  <input
+                    type="range"
+                    min={0.2}
+                    max={10}
+                    step={0.1}
+                    value={radioKm}
+                    onChange={(e) => setRadioKm(Number(e.target.value))}
+                    className="w-full accent-yellow-400 mt-1"
+                  />
+                  <input type="hidden" {...register('radio_km')} value={radioKm} />
+                </div>
+                <div className="text-center bg-blue-50 rounded-lg p-2">
+                  <p className="text-[10px] text-blue-700 font-semibold uppercase">Clientes dentro</p>
+                  <p className="text-lg font-bold text-blue-900">
+                    {centro ? contarClientesDentro(centro, radioKm, clientesEnZona) : '—'}
+                  </p>
+                </div>
+              </div>
+
+              <LeafletMap
+                height="280px"
+                pickable
+                pickedPosition={centro}
+                onPick={(lat, lng) => setCentro([lat, lng])}
+                fitBounds={!!centro}
+                markers={[
+                  ...(centro ? [{ id: 'centro', lat: centro[0], lng: centro[1], label: 'Centro', color: colorHex, initials: '⊕' } as MapMarker] : []),
+                  ...clientesEnZona
+                    .filter((c) => c.latitud != null && c.longitud != null)
+                    .map((c) => ({
+                      id: c.id, lat: Number(c.latitud), lng: Number(c.longitud),
+                      label: c.razon_social,
+                      color: centro && distanciaKmSimple(centro, [Number(c.latitud), Number(c.longitud)]) <= radioKm ? '#16a34a' : '#9ca3af',
+                    } as MapMarker)),
+                ]}
+                polylines={centro ? [{
+                  id: 'radio',
+                  positions: generarCirculo(centro, radioKm),
+                  color: colorHex,
+                  dashed: true,
+                }] : []}
               />
             </div>
 
@@ -411,4 +530,36 @@ export default function ZonasPage() {
       </Dialog>
     </div>
   )
+}
+
+// ─── Helpers geo ─────────────────────────────────────────────────────────────
+function distanciaKmSimple(a: [number, number], b: [number, number]): number {
+  const R = 6371
+  const toRad = (d: number) => (d * Math.PI) / 180
+  const dLat = toRad(b[0] - a[0])
+  const dLng = toRad(b[1] - a[1])
+  const lat1 = toRad(a[0])
+  const lat2 = toRad(b[0])
+  const h = Math.sin(dLat / 2) ** 2 + Math.sin(dLng / 2) ** 2 * Math.cos(lat1) * Math.cos(lat2)
+  return 2 * R * Math.asin(Math.sqrt(h))
+}
+
+function generarCirculo(centro: [number, number], radioKm: number, puntos = 36): [number, number][] {
+  const [lat, lng] = centro
+  // Aproximación: 1° latitud ≈ 111 km, 1° longitud ≈ 111 × cos(lat) km
+  const dLat = radioKm / 111
+  const dLng = radioKm / (111 * Math.cos((lat * Math.PI) / 180))
+  const coords: [number, number][] = []
+  for (let i = 0; i <= puntos; i++) {
+    const theta = (i / puntos) * 2 * Math.PI
+    coords.push([lat + dLat * Math.sin(theta), lng + dLng * Math.cos(theta)])
+  }
+  return coords
+}
+
+function contarClientesDentro(centro: [number, number], radioKm: number, clientes: any[]): number {
+  return clientes.filter((c) => {
+    if (c.latitud == null || c.longitud == null) return false
+    return distanciaKmSimple(centro, [Number(c.latitud), Number(c.longitud)]) <= radioKm
+  }).length
 }

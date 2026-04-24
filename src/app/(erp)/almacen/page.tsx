@@ -63,6 +63,7 @@ export default function AlmacenPage() {
       .select(`
         id, producto_id, cantidad, cantidad_reservada, costo_promedio, updated_at,
         productos(id, codigo, nombre, activo, familia_id, unidad_medida_id, tiene_lote, tiene_vencimiento,
+          stock_minimo, stock_maximo,
           familias(nombre),
           unidades_medida(simbolo, nombre)
         )
@@ -473,17 +474,35 @@ export default function AlmacenPage() {
                       const producto = s.productos as any
                       const disponible = Number(s.cantidad) ?? 0
                       const reservada = Number(s.cantidad_reservada) ?? 0
-                      const esBajo = disponible < 10
+                      const stockMin = producto?.stock_minimo != null ? Number(producto.stock_minimo) : null
+                      const stockMax = producto?.stock_maximo != null ? Number(producto.stock_maximo) : null
+                      // Estado de stock: bajo_minimo, cerca_minimo, sobrestock, ok (legacy: fallback a <10 si no hay config)
+                      let estadoStock: 'bajo_minimo' | 'cerca_minimo' | 'sobrestock' | 'ok' = 'ok'
+                      if (stockMin != null && disponible < stockMin) estadoStock = 'bajo_minimo'
+                      else if (stockMin != null && disponible < stockMin * 1.2) estadoStock = 'cerca_minimo'
+                      else if (stockMax != null && disponible > stockMax) estadoStock = 'sobrestock'
+                      else if (stockMin == null && disponible < 10) estadoStock = 'bajo_minimo'
+                      const esAlerta = estadoStock !== 'ok'
                       const simbolo = producto?.unidades_medida?.simbolo ?? ''
+                      const reorden = stockMax != null && estadoStock === 'bajo_minimo'
+                        ? Math.max(0, stockMax - disponible)
+                        : null
                       return (
-                        <tr key={s.id} className={`hover:bg-gray-50/50 transition-colors ${esBajo ? 'bg-orange-50/30' : ''}`}>
+                        <tr key={s.id} className={`hover:bg-gray-50/50 transition-colors ${estadoStock === 'bajo_minimo' ? 'bg-red-50/40' : estadoStock === 'cerca_minimo' ? 'bg-amber-50/30' : estadoStock === 'sobrestock' ? 'bg-purple-50/30' : ''}`}>
                           <td className="py-3 px-4 font-mono text-xs text-gray-500">{producto?.codigo ?? '—'}</td>
                           <td className="py-3 px-4 font-medium text-gray-900 max-w-[240px] truncate">{producto?.nombre ?? '—'}</td>
                           <td className="py-3 px-4">
-                            <span className={`font-bold ${esBajo ? 'text-orange-600' : 'text-gray-800'}`}>
+                            <span className={`font-bold ${esAlerta ? (estadoStock === 'bajo_minimo' ? 'text-red-600' : estadoStock === 'cerca_minimo' ? 'text-amber-600' : 'text-purple-600') : 'text-gray-800'}`}>
                               {disponible.toLocaleString('es-PE')}
                             </span>
                             <span className="text-xs text-gray-400 ml-1">{simbolo}</span>
+                            {(stockMin != null || stockMax != null) && (
+                              <div className="text-[10px] text-gray-400 font-mono">
+                                {stockMin != null && `min ${stockMin}`}
+                                {stockMin != null && stockMax != null && ' · '}
+                                {stockMax != null && `max ${stockMax}`}
+                              </div>
+                            )}
                           </td>
                           <td className="py-3 px-4 text-gray-600">
                             {reservada.toLocaleString('es-PE')}
@@ -494,8 +513,17 @@ export default function AlmacenPage() {
                             {s.updated_at ? formatDate(s.updated_at) : '—'}
                           </td>
                           <td className="py-3 px-4">
-                            {esBajo ? (
-                              <Badge className="text-xs bg-orange-100 text-orange-700 border-orange-200">Stock Bajo</Badge>
+                            {estadoStock === 'bajo_minimo' ? (
+                              <div>
+                                <Badge className="text-xs bg-red-100 text-red-700 border-red-200">⚠ Bajo mínimo</Badge>
+                                {reorden != null && (
+                                  <div className="text-[10px] text-red-700 mt-0.5">Reorden: +{reorden} {simbolo}</div>
+                                )}
+                              </div>
+                            ) : estadoStock === 'cerca_minimo' ? (
+                              <Badge className="text-xs bg-amber-100 text-amber-700 border-amber-200">Cerca mín.</Badge>
+                            ) : estadoStock === 'sobrestock' ? (
+                              <Badge className="text-xs bg-purple-100 text-purple-700 border-purple-200">Sobrestock</Badge>
                             ) : (
                               <Badge className="text-xs bg-green-100 text-green-700 border-green-200">OK</Badge>
                             )}

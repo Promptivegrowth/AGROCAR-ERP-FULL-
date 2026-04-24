@@ -61,10 +61,7 @@ type DireccionExtra = {
   id?: string
   nombre: string
   direccion: string
-  ubigeo: string | null
-  departamento: string | null
-  provincia: string | null
-  distrito: string | null
+  ubigeo_value: UbigeoValue  // Se guarda el objeto completo para evitar pérdida de estado al seleccionar parcial
   latitud: number | null
   longitud: number | null
   es_principal: boolean
@@ -299,7 +296,15 @@ export default function ClientesPage() {
       .order('created_at')
     setDireccionesExtra((dirs ?? []).map((d: any) => ({
       id: d.id, nombre: d.nombre, direccion: d.direccion ?? '',
-      ubigeo: d.ubigeo, departamento: d.departamento, provincia: d.provincia, distrito: d.distrito,
+      ubigeo_value: {
+        departamento_codigo: d.ubigeo ? d.ubigeo.slice(0, 2) : null,
+        departamento: d.departamento,
+        provincia_codigo: d.ubigeo ? d.ubigeo.slice(2, 4) : null,
+        provincia: d.provincia,
+        distrito_codigo: d.ubigeo ? d.ubigeo.slice(4, 6) : null,
+        distrito: d.distrito,
+        ubigeo: d.ubigeo,
+      },
       latitud: d.latitud, longitud: d.longitud, es_principal: false,
     })))
 
@@ -455,10 +460,10 @@ export default function ClientesPage() {
           cliente_id: clienteId,
           nombre: d.nombre,
           direccion: d.direccion,
-          ubigeo: d.ubigeo,
-          departamento: d.departamento,
-          provincia: d.provincia,
-          distrito: d.distrito,
+          ubigeo: d.ubigeo_value.ubigeo,
+          departamento: d.ubigeo_value.departamento,
+          provincia: d.ubigeo_value.provincia,
+          distrito: d.ubigeo_value.distrito,
           latitud: d.latitud,
           longitud: d.longitud,
           es_principal: false,
@@ -1000,7 +1005,8 @@ export default function ClientesPage() {
                   size="sm"
                   variant="outline"
                   onClick={() => setDireccionDialog({ index: null, data: {
-                    nombre: '', direccion: '', ubigeo: null, departamento: null, provincia: null, distrito: null,
+                    nombre: '', direccion: '',
+                    ubigeo_value: UBIGEO_EMPTY,
                     latitud: null, longitud: null, es_principal: false,
                   }})}
                   className="gap-1 text-xs h-8"
@@ -1018,7 +1024,7 @@ export default function ClientesPage() {
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-medium text-gray-800">{d.nombre}</p>
                         <p className="text-xs text-gray-500 truncate">
-                          {d.distrito && <span className="font-medium">{d.distrito} · </span>}
+                          {d.ubigeo_value.distrito && <span className="font-medium">{d.ubigeo_value.distrito} · </span>}
                           {d.direccion}
                         </p>
                       </div>
@@ -1139,18 +1145,10 @@ export default function ClientesPage() {
               <div>
                 <Label>Ubigeo</Label>
                 <UbigeoSelector
-                  value={{
-                    departamento_codigo: direccionDialog.data.ubigeo ? direccionDialog.data.ubigeo.slice(0, 2) : null,
-                    departamento: direccionDialog.data.departamento,
-                    provincia_codigo: direccionDialog.data.ubigeo ? direccionDialog.data.ubigeo.slice(2, 4) : null,
-                    provincia: direccionDialog.data.provincia,
-                    distrito_codigo: direccionDialog.data.ubigeo ? direccionDialog.data.ubigeo.slice(4, 6) : null,
-                    distrito: direccionDialog.data.distrito,
-                    ubigeo: direccionDialog.data.ubigeo,
-                  }}
+                  value={direccionDialog.data.ubigeo_value}
                   onChange={(v) => setDireccionDialog({
                     ...direccionDialog,
-                    data: { ...direccionDialog.data, ubigeo: v.ubigeo, departamento: v.departamento, provincia: v.provincia, distrito: v.distrito },
+                    data: { ...direccionDialog.data, ubigeo_value: v },
                   })}
                   layout="stacked"
                 />

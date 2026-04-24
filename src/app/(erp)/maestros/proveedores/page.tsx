@@ -30,6 +30,10 @@ const proveedorSchema = z.object({
   telefono: z.string().nullable().optional(),
   email: z.string().email('Email inválido').nullable().optional().or(z.literal('')),
   contacto: z.string().nullable().optional(),
+  banco: z.string().nullable().optional(),
+  cuenta_bancaria: z.string().nullable().optional(),
+  cci: z.string().nullable().optional(),
+  condiciones_pago: z.string().nullable().optional(),
   activo: z.boolean().default(true),
 })
 
@@ -80,7 +84,7 @@ export default function ProveedoresPage() {
     setLoading(true)
     let query = supabase
       .from('proveedores')
-      .select('id, razon_social, ruc, direccion, telefono, email, contacto, activo, created_at, ubigeo, departamento, provincia, distrito', { count: 'exact' })
+      .select('id, razon_social, ruc, direccion, telefono, email, contacto, activo, created_at, ubigeo, departamento, provincia, distrito, banco, cuenta_bancaria, cci, condiciones_pago, cliente_id', { count: 'exact' })
       .order('razon_social')
       .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1)
 
@@ -100,7 +104,7 @@ export default function ProveedoresPage() {
     setActivo(true)
     setRucInput('')
     setUbigeoVal(UBIGEO_EMPTY)
-    reset({ activo: true, razon_social: '', ruc: '', direccion: '', telefono: '', email: '', contacto: '' })
+    reset({ activo: true, razon_social: '', ruc: '', direccion: '', telefono: '', email: '', contacto: '', banco: '', cuenta_bancaria: '', cci: '', condiciones_pago: '' })
     setDialogOpen(true)
   }
 
@@ -124,6 +128,10 @@ export default function ProveedoresPage() {
       telefono: p.telefono ?? '',
       email: p.email ?? '',
       contacto: p.contacto ?? '',
+      banco: p.banco ?? '',
+      cuenta_bancaria: p.cuenta_bancaria ?? '',
+      cci: p.cci ?? '',
+      condiciones_pago: p.condiciones_pago ?? '',
       activo: p.activo,
     })
     setDialogOpen(true)
@@ -141,6 +149,10 @@ export default function ProveedoresPage() {
         telefono: data.telefono || null,
         email: data.email || null,
         contacto: data.contacto || null,
+        banco: data.banco || null,
+        cuenta_bancaria: data.cuenta_bancaria || null,
+        cci: data.cci || null,
+        condiciones_pago: data.condiciones_pago || null,
         activo,
         ubigeo: ubigeoVal.ubigeo,
         departamento: ubigeoVal.departamento,
@@ -381,6 +393,30 @@ export default function ProveedoresPage() {
             <div>
               <Label>Contacto Principal</Label>
               <Input {...register('contacto')} placeholder="Nombre del contacto" className="mt-1" />
+            </div>
+
+            {/* Datos bancarios */}
+            <div className="border-t border-gray-100 pt-3">
+              <Label className="text-sm font-semibold text-gray-800">Datos bancarios (opcional)</Label>
+              <p className="text-[11px] text-gray-400 mb-2">Para registrar pagos a este proveedor.</p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <Label className="text-xs">Banco</Label>
+                  <Input {...register('banco')} placeholder="BCP, Interbank..." className="mt-1 h-9" />
+                </div>
+                <div>
+                  <Label className="text-xs">Cuenta bancaria</Label>
+                  <Input {...register('cuenta_bancaria')} placeholder="Nº cuenta corriente" className="mt-1 h-9 font-mono" />
+                </div>
+                <div>
+                  <Label className="text-xs">CCI</Label>
+                  <Input {...register('cci')} placeholder="20 dígitos" maxLength={20} className="mt-1 h-9 font-mono" />
+                </div>
+                <div>
+                  <Label className="text-xs">Condiciones de pago</Label>
+                  <Input {...register('condiciones_pago')} placeholder="Contado, 30 días..." className="mt-1 h-9" />
+                </div>
+              </div>
             </div>
 
             <div className="flex items-center gap-2">
