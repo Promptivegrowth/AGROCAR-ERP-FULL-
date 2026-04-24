@@ -32,6 +32,7 @@ import {
   IdCard,
   Boxes,
   Target,
+  Tag,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -59,6 +60,7 @@ const NAV_ITEMS: NavItem[] = [
     icon: Database,
     children: [
       { label: 'Clientes', href: '/maestros/clientes', icon: Users },
+      { label: 'Tipos de Cliente', href: '/maestros/tipos-cliente', icon: Tag, roles: ['gerente', 'administrador'] },
       {
         label: 'Solicitudes',
         href: '/solicitudes-cliente',

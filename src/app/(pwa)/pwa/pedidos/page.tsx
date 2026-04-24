@@ -50,6 +50,7 @@ export default function PedidosPage() {
   const [showProductoDropdown, setShowProductoDropdown] = useState(false)
   const [seleccionados, setSeleccionados] = useState<ProductoSeleccionado[]>([])
   const [descuento, setDescuento] = useState('')
+  const [incluirIgv, setIncluirIgv] = useState(true)
   const [loadingEnvio, setLoadingEnvio] = useState(false)
   const [mensajeExito, setMensajeExito] = useState<string | null>(null)
   const [mensajeError, setMensajeError] = useState<string | null>(null)
@@ -246,7 +247,9 @@ export default function PedidosPage() {
   const subtotalBruto = seleccionados.reduce((acc, s) => acc + s.subtotal, 0)
   const descuentoPct = parseFloat(descuento) || 0
   const descuentoMonto = subtotalBruto * (descuentoPct / 100)
-  const totalFinal = subtotalBruto - descuentoMonto
+  const baseImponible = subtotalBruto - descuentoMonto
+  const igvMonto = incluirIgv ? baseImponible * 0.18 : 0
+  const totalFinal = baseImponible + igvMonto
   const requiereAutorizacion = descuentoPct > DESCUENTO_MAX_SIN_AUTH
   const pedidoMinimo = totalFinal >= MINIMO_PEDIDO || seleccionados.length === 0
 
@@ -260,8 +263,7 @@ export default function PedidosPage() {
       // Generar número de pedido único
       const numero = `P-${Date.now().toString().slice(-8)}`
 
-      const { data: pedido, error: pedidoError } = await supabase
-        .from('pedidos')
+      const { data: pedido, error: pedidoError } = await (supabase.from('pedidos') as any)
         .insert({
           numero,
           cliente_id: clienteSeleccionado.id,
@@ -272,6 +274,8 @@ export default function PedidosPage() {
           descuento_porcentaje: descuentoPct,
           descuento_monto: descuentoMonto,
           subtotal: subtotalBruto,
+          igv: igvMonto,
+          incluir_igv: incluirIgv,
           total: totalFinal,
           requiere_autorizacion: requiereAutorizacion,
           notas: requiereAutorizacion ? `Descuento ${descuentoPct}% requiere autorización` : null,
@@ -626,6 +630,20 @@ export default function PedidosPage() {
                     )}
                   </div>
 
+                  <div className="flex items-center justify-between bg-blue-50 border border-blue-100 rounded-lg px-3 py-2">
+                    <div>
+                      <p className="text-sm font-medium text-blue-900">Aplica IGV (18%)</p>
+                      <p className="text-[11px] text-blue-700">Desactivar para operaciones sin IGV</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setIncluirIgv(!incluirIgv)}
+                      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${incluirIgv ? 'bg-green-500' : 'bg-gray-300'}`}
+                    >
+                      <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${incluirIgv ? 'translate-x-6' : 'translate-x-1'}`} />
+                    </button>
+                  </div>
+
                   <div className="bg-gray-50 rounded-xl p-3 space-y-1.5">
                     <div className="flex justify-between text-sm text-gray-600">
                       <span>Subtotal</span>
@@ -635,6 +653,17 @@ export default function PedidosPage() {
                       <div className="flex justify-between text-sm text-red-600">
                         <span>Descuento ({descuentoPct}%)</span>
                         <span>-{formatCurrency(descuentoMonto)}</span>
+                      </div>
+                    )}
+                    {incluirIgv ? (
+                      <div className="flex justify-between text-sm text-gray-600">
+                        <span>IGV (18%)</span>
+                        <span>{formatCurrency(igvMonto)}</span>
+                      </div>
+                    ) : (
+                      <div className="flex justify-between text-xs text-amber-700 italic">
+                        <span>Sin IGV</span>
+                        <span>—</span>
                       </div>
                     )}
                     <div className="flex justify-between font-bold text-gray-900 text-lg border-t border-gray-200 pt-1.5 mt-1.5">

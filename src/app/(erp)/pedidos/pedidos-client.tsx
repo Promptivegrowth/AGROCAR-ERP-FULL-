@@ -378,22 +378,45 @@ export default function PedidosClient({ pedidosIniciales }: { pedidosIniciales: 
                 </div>
 
                 <div className="bg-gray-50 rounded-lg p-3 space-y-1 text-sm">
-                  <div className="flex justify-between">
-                    <span className="text-gray-500">Subtotal</span>
-                    <span className="font-mono">{formatCurrency(Number(selected.subtotal ?? 0))}</span>
-                  </div>
-                  {Number(selected.descuento_monto ?? 0) > 0 && (
-                    <div className="flex justify-between text-red-600">
-                      <span>Descuento ({selected.descuento_porcentaje}%)</span>
-                      <span className="font-mono">-{formatCurrency(Number(selected.descuento_monto ?? 0))}</span>
-                    </div>
-                  )}
-                  <div className="flex justify-between border-t border-gray-200 pt-1 mt-1">
-                    <span className="font-semibold text-gray-900">Total</span>
-                    <span className="font-mono font-bold text-lg text-black">
-                      {formatCurrency(Number(selected.total ?? 0))}
-                    </span>
-                  </div>
+                  {(() => {
+                    const subtotal = Number(selected.subtotal ?? 0)
+                    const descuento = Number(selected.descuento_monto ?? 0)
+                    const incluirIgv = selected.incluir_igv !== false
+                    const base = subtotal - descuento
+                    const igv = incluirIgv ? Number(selected.igv ?? base * 0.18) : 0
+                    const total = incluirIgv ? base + igv : base
+                    return (
+                      <>
+                        <div className="flex justify-between">
+                          <span className="text-gray-500">Subtotal</span>
+                          <span className="font-mono">{formatCurrency(subtotal)}</span>
+                        </div>
+                        {descuento > 0 && (
+                          <div className="flex justify-between text-red-600">
+                            <span>Descuento ({selected.descuento_porcentaje}%)</span>
+                            <span className="font-mono">-{formatCurrency(descuento)}</span>
+                          </div>
+                        )}
+                        {incluirIgv ? (
+                          <div className="flex justify-between text-gray-600">
+                            <span>IGV (18%)</span>
+                            <span className="font-mono">{formatCurrency(igv)}</span>
+                          </div>
+                        ) : (
+                          <div className="flex justify-between text-xs text-amber-700">
+                            <span>Operación sin IGV</span>
+                            <span>—</span>
+                          </div>
+                        )}
+                        <div className="flex justify-between border-t border-gray-200 pt-1 mt-1">
+                          <span className="font-semibold text-gray-900">Total</span>
+                          <span className="font-mono font-bold text-lg text-black">
+                            {formatCurrency(total)}
+                          </span>
+                        </div>
+                      </>
+                    )
+                  })()}
                 </div>
 
                 {selected.notas && (

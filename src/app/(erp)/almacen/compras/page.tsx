@@ -78,11 +78,12 @@ export default function ComprasPage() {
   const { fields, append, remove } = useFieldArray({ control, name: 'items' })
   const watchItems = watch('items')
 
+  const [incluirIgv, setIncluirIgv] = useState(true)
   const subtotal = watchItems?.reduce(
     (acc, item) => acc + (Number(item.cantidad) || 0) * (Number(item.precio_unitario) || 0),
     0
   ) ?? 0
-  const igv = subtotal * IGV_RATE
+  const igv = incluirIgv ? subtotal * IGV_RATE : 0
   const totalCompra = subtotal + igv
 
   const loadData = useCallback(async () => {
@@ -124,7 +125,7 @@ export default function ComprasPage() {
     const subtotalCalc = data.items.reduce(
       (acc, item) => acc + item.cantidad * item.precio_unitario, 0
     )
-    const igvCalc = subtotalCalc * IGV_RATE
+    const igvCalc = incluirIgv ? subtotalCalc * IGV_RATE : 0
 
     try {
       const { data: userData } = await supabase.auth.getUser()
@@ -138,6 +139,7 @@ export default function ComprasPage() {
         metodo_valorizacion: data.metodo_valorizacion,
         subtotal: subtotalCalc,
         igv: igvCalc,
+        incluir_igv: incluirIgv,
         total: subtotalCalc + igvCalc,
         moneda: 'PEN',
         estado: 'activo',
@@ -203,6 +205,7 @@ export default function ComprasPage() {
         description: `Factura ${data.numero_factura} · Total ${formatCurrency(subtotalCalc + igvCalc)}`,
       })
       setDialogOpen(false)
+      setIncluirIgv(true)
       reset()
       loadData()
     } catch (err: any) {
@@ -480,14 +483,29 @@ export default function ComprasPage() {
               {errors.items && <p className="text-xs text-red-500 mt-1">{errors.items.message}</p>}
             </div>
 
+            {/* Toggle IGV */}
+            <div className="flex items-center justify-between bg-blue-50 border border-blue-100 rounded-lg px-4 py-3">
+              <div>
+                <p className="text-sm font-medium text-blue-900">Aplica IGV (18%)</p>
+                <p className="text-[11px] text-blue-700">Desactivar para compras exoneradas o sin IGV</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIncluirIgv(!incluirIgv)}
+                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${incluirIgv ? 'bg-green-500' : 'bg-gray-300'}`}
+              >
+                <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${incluirIgv ? 'translate-x-6' : 'translate-x-1'}`} />
+              </button>
+            </div>
+
             {/* Totales */}
             <div className="bg-gray-50 rounded-lg p-4 space-y-2">
               <div className="flex justify-between text-sm">
-                <span className="text-gray-600">Subtotal (sin IGV)</span>
+                <span className="text-gray-600">Subtotal</span>
                 <span className="font-medium">{formatCurrency(subtotal)}</span>
               </div>
               <div className="flex justify-between text-sm">
-                <span className="text-gray-600">IGV (18%)</span>
+                <span className="text-gray-600">IGV (18%) {!incluirIgv && <span className="text-amber-600 text-xs">· desactivado</span>}</span>
                 <span className="font-medium">{formatCurrency(igv)}</span>
               </div>
               <div className="flex justify-between text-base font-bold border-t border-gray-200 pt-2 mt-2">

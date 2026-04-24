@@ -45,7 +45,7 @@ export default function FacturacionPage() {
       supabase
         .from('pedidos')
         .select(`
-          id, numero, total, estado, created_at, cliente_id,
+          id, numero, subtotal, igv, incluir_igv, total, estado, created_at, cliente_id,
           clientes(razon_social, ruc, dni, tipo_comprobante_preferido)
         `)
         .eq('estado', 'enviado')
@@ -89,6 +89,15 @@ export default function FacturacionPage() {
 
     const numero = Date.now().toString().slice(-8)
 
+    // Respetar incluir_igv del pedido. Si el pedido ya tiene IGV calculado, usarlo directamente.
+    const pedSubtotal = Number(pedidoSeleccionado.subtotal ?? 0)
+    const pedIgv = Number(pedidoSeleccionado.igv ?? 0)
+    const pedTotal = Number(pedidoSeleccionado.total ?? 0)
+    const incluirIgv = pedidoSeleccionado.incluir_igv !== false
+    // Si el pedido no tiene igv pero incluir_igv=true, calcular a partir del total (legacy)
+    const igvCalc = pedIgv > 0 ? pedIgv : (incluirIgv ? pedTotal * 0.18 / 1.18 : 0)
+    const subtotalCalc = pedIgv > 0 ? pedSubtotal : (incluirIgv ? pedTotal - igvCalc : pedTotal)
+
     const { error: compError } = await supabase.from('comprobantes').insert({
       pedido_id: pedidoSeleccionado.id,
       cliente_id: pedidoSeleccionado.cliente_id,
@@ -96,9 +105,9 @@ export default function FacturacionPage() {
       serie,
       numero,
       fecha_emision: new Date().toISOString().split('T')[0],
-      subtotal: pedidoSeleccionado.total,
-      igv: pedidoSeleccionado.total * 0.18,
-      total: pedidoSeleccionado.total * 1.18,
+      subtotal: subtotalCalc,
+      igv: igvCalc,
+      total: pedTotal > 0 ? pedTotal : subtotalCalc + igvCalc,
       moneda: 'PEN',
       estado: 'emitido',
     } as any)
@@ -288,7 +297,7 @@ export default function FacturacionPage() {
           </DialogHeader>
           {pedidoSeleccionado && (
             <div className="space-y-4 mt-2">
-              <div className="bg-gray-50 rounded-lg p-4 space-y-2 text-sm">
+              <div className="bg-gray-50 rounded-lg p-4 space-y-1.5 text-sm">
                 <div className="flex justify-between">
                   <span className="text-gray-500">Pedido:</span>
                   <span className="font-mono font-semibold">{pedidoSeleccionado.numero}</span>
@@ -297,10 +306,28 @@ export default function FacturacionPage() {
                   <span className="text-gray-500">Cliente:</span>
                   <span className="font-medium">{pedidoSeleccionado.clientes?.razon_social}</span>
                 </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-500">Total:</span>
-                  <span className="font-bold text-green-600">{formatCurrency(pedidoSeleccionado.total ?? 0)}</span>
-                </div>
+                {(() => {
+                  const st = Number(pedidoSeleccionado.subtotal ?? 0)
+                  const ig = Number(pedidoSeleccionado.igv ?? 0)
+                  const tt = Number(pedidoSeleccionado.total ?? 0)
+                  const incIgv = pedidoSeleccionado.incluir_igv !== false
+                  return (
+                    <>
+                      <div className="border-t border-gray-200 pt-1.5 mt-1.5" />
+                      <div className="flex justify-between text-xs text-gray-600">
+                        <span>Subtotal</span><span className="font-mono">{formatCurrency(st > 0 ? st : tt / (incIgv ? 1.18 : 1))}</span>
+                      </div>
+                      <div className="flex justify-between text-xs text-gray-600">
+                        <span>IGV (18%) {!incIgv && <span className="text-amber-600">· desactivado</span>}</span>
+                        <span className="font-mono">{formatCurrency(ig > 0 ? ig : (incIgv ? tt - tt / 1.18 : 0))}</span>
+                      </div>
+                      <div className="flex justify-between border-t border-gray-200 pt-1.5 mt-1">
+                        <span className="font-semibold">Total:</span>
+                        <span className="font-bold text-green-600">{formatCurrency(tt)}</span>
+                      </div>
+                    </>
+                  )
+                })()}
               </div>
 
               <div>

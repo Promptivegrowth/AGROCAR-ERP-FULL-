@@ -24,6 +24,7 @@ import {
 } from '@/components/ui/select'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
+import { Switch } from '@/components/ui/switch'
 import LeafletMap from '@/components/maps/leaflet-map'
 import UbigeoSelector, { UBIGEO_EMPTY, type UbigeoValue } from '@/components/ubigeo-selector'
 import { matchUbigeoFromNombres } from '@/lib/ubigeo/match'
@@ -33,7 +34,6 @@ const clienteSchema = z.object({
   razon_social: z.string().min(2, 'Mínimo 2 caracteres'),
   ruc: z.string().nullable().optional(),
   dni: z.string().nullable().optional(),
-  tipo_cliente: z.enum(['consumidor_final', 'tienda']),
   direccion: z.string().nullable().optional(),
   telefono: z.string()
     .regex(/^9\d{8}$/, 'Debe ser celular peruano de 9 dígitos empezando por 9')
@@ -55,8 +55,20 @@ const clienteSchema = z.object({
 
 type ClienteFormData = z.infer<typeof clienteSchema>
 type EstadoCliente = 'activo' | 'suspendido' | 'bloqueado'
-type TipoCliente = 'consumidor_final' | 'tienda'
-type TipoComprobantePref = 'factura' | 'boleta'
+type TipoComprobantePref = 'factura' | 'boleta' | 'nota_pedido_interna'
+
+type DireccionExtra = {
+  id?: string
+  nombre: string
+  direccion: string
+  ubigeo: string | null
+  departamento: string | null
+  provincia: string | null
+  distrito: string | null
+  latitud: number | null
+  longitud: number | null
+  es_principal: boolean
+}
 
 const ESTADO_CONFIG: Record<EstadoCliente, { label: string; className: string }> = {
   activo: { label: 'Activo', className: 'bg-green-100 text-green-700 border-green-200' },
@@ -87,8 +99,17 @@ export default function ClientesPage() {
   const [saving, setSaving] = useState(false)
 
   // Estados controlados para selects
-  const [tipoCliente, setTipoCliente] = useState<TipoCliente>('tienda')
+  const [tiposCliente, setTiposCliente] = useState<any[]>([])
+  const [tipoClienteId, setTipoClienteId] = useState<string>('')
   const [tipoComprobantePref, setTipoComprobantePref] = useState<TipoComprobantePref>('boleta')
+
+  // Direcciones adicionales (además de la principal que va en el form)
+  const [direccionesExtra, setDireccionesExtra] = useState<DireccionExtra[]>([])
+  const [direccionDialog, setDireccionDialog] = useState<{ index: number | null; data: DireccionExtra } | null>(null)
+
+  // Cliente también proveedor
+  const [esProveedor, setEsProveedor] = useState(false)
+  const [datosProveedor, setDatosProveedor] = useState({ banco: '', cuenta_bancaria: '', cci: '', condiciones_pago: '' })
   const [listaPrecioId, setListaPrecioId] = useState<string>('')
   const [zonaId, setZonaId] = useState<string>('')
   const [vendedorId, setVendedorId] = useState<string>('')
@@ -117,7 +138,9 @@ export default function ClientesPage() {
     if (!data) return
     setValue('razon_social', data.razonSocial, { shouldValidate: true })
     if (data.direccion) setValue('direccion', data.direccion, { shouldValidate: true })
-    setTipoCliente('tienda')
+    // Por defecto "Tienda" si existe el tipo
+    const tienda = tiposCliente.find((t: any) => t.nombre === 'Tienda')
+    if (tienda) setTipoClienteId(tienda.id)
     // Auto-seleccionar factura porque el cliente tiene RUC
     setTipoComprobantePref('factura')
     // Auto-seleccionar zona si hay match con el distrito
@@ -156,20 +179,23 @@ export default function ClientesPage() {
     if (!data) return
     setValue('razon_social', data.nombreCompleto, { shouldValidate: true })
     setValue('contacto', data.nombreCompleto, { shouldValidate: true })
-    setTipoCliente('consumidor_final')
+    const cf = tiposCliente.find((t: any) => t.nombre === 'Consumidor Final')
+    if (cf) setTipoClienteId(cf.id)
     // Solo DNI → boleta obligatoria
     setTipoComprobantePref('boleta')
   }
 
   const loadMeta = useCallback(async () => {
-    const [{ data: z }, { data: l }, { data: v }] = await Promise.all([
+    const [{ data: z }, { data: l }, { data: v }, { data: tc }] = await Promise.all([
       supabase.from('zonas').select('id, nombre').eq('activo', true).order('nombre'),
       supabase.from('listas_precio').select('id, nombre').order('nombre'),
       supabase.from('profiles').select('id, full_name').eq('role', 'vendedor').order('full_name'),
+      (supabase as any).from('tipos_cliente').select('id, nombre').eq('activo', true).order('nombre'),
     ])
     setZonas(z ?? [])
     setListas(l ?? [])
     setVendedores(v ?? [])
+    setTiposCliente(tc ?? [])
   }, [])
 
   const loadClientes = useCallback(async () => {
@@ -177,12 +203,13 @@ export default function ClientesPage() {
     let query = supabase
       .from('clientes')
       .select(`
-        id, razon_social, ruc, dni, tipo_cliente, tipo_comprobante_preferido, estado,
+        id, razon_social, ruc, dni, tipo_cliente_id, tipo_comprobante_preferido, estado,
         credito_limite, credito_dias, direccion, telefono, email, contacto,
         lista_precio_id, zona_id, vendedor_id, latitud, longitud, notas, created_at,
         ubigeo, departamento, provincia, distrito,
         zonas(id, nombre),
         listas_precio(id, nombre),
+        tipos_cliente(id, nombre),
         profiles!clientes_vendedor_id_fkey(id, full_name)
       `, { count: 'exact' })
       .order('razon_social')
@@ -204,7 +231,8 @@ export default function ClientesPage() {
 
   const openCreate = () => {
     setEditingCliente(null)
-    setTipoCliente('tienda')
+    const tipoDefault = tiposCliente.find((t: any) => t.nombre === 'Tienda') ?? tiposCliente[0]
+    setTipoClienteId(tipoDefault?.id ?? '')
     setTipoComprobantePref('boleta')
     setListaPrecioId('')
     setZonaId('')
@@ -214,11 +242,13 @@ export default function ClientesPage() {
     setRucInput('')
     setDniInput('')
     setUbigeoVal(UBIGEO_EMPTY)
+    setDireccionesExtra([])
+    setEsProveedor(false)
+    setDatosProveedor({ banco: '', cuenta_bancaria: '', cci: '', condiciones_pago: '' })
     reset({
       razon_social: '',
       ruc: '',
       dni: '',
-      tipo_cliente: 'tienda',
       direccion: '',
       telefono: '',
       email: '',
@@ -254,10 +284,43 @@ export default function ClientesPage() {
     )
   }
 
-  const openEdit = (cliente: any) => {
+  const openEdit = async (cliente: any) => {
     setEditingCliente(cliente)
-    setTipoCliente((cliente.tipo_cliente as TipoCliente) ?? 'tienda')
+    setTipoClienteId(cliente.tipo_cliente_id ?? tiposCliente[0]?.id ?? '')
     setTipoComprobantePref((cliente.tipo_comprobante_preferido as TipoComprobantePref) ?? tipoComprobanteSugerido(cliente))
+
+    // Cargar direcciones extra (todas las no principales)
+    const { data: dirs } = await (supabase as any)
+      .from('cliente_direcciones')
+      .select('*')
+      .eq('cliente_id', cliente.id)
+      .eq('es_principal', false)
+      .eq('activo', true)
+      .order('created_at')
+    setDireccionesExtra((dirs ?? []).map((d: any) => ({
+      id: d.id, nombre: d.nombre, direccion: d.direccion ?? '',
+      ubigeo: d.ubigeo, departamento: d.departamento, provincia: d.provincia, distrito: d.distrito,
+      latitud: d.latitud, longitud: d.longitud, es_principal: false,
+    })))
+
+    // Cargar datos de proveedor si existe
+    const { data: prov } = await (supabase as any)
+      .from('proveedores')
+      .select('*')
+      .eq('cliente_id', cliente.id)
+      .maybeSingle()
+    if (prov) {
+      setEsProveedor(true)
+      setDatosProveedor({
+        banco: prov.banco ?? '',
+        cuenta_bancaria: prov.cuenta_bancaria ?? '',
+        cci: prov.cci ?? '',
+        condiciones_pago: prov.condiciones_pago ?? '',
+      })
+    } else {
+      setEsProveedor(false)
+      setDatosProveedor({ banco: '', cuenta_bancaria: '', cci: '', condiciones_pago: '' })
+    }
     setListaPrecioId(cliente.lista_precio_id ?? '')
     setZonaId(cliente.zona_id ?? '')
     setVendedorId(cliente.vendedor_id ?? '')
@@ -282,7 +345,6 @@ export default function ClientesPage() {
       razon_social: cliente.razon_social,
       ruc: cliente.ruc ?? '',
       dni: cliente.dni ?? '',
-      tipo_cliente: cliente.tipo_cliente,
       direccion: cliente.direccion ?? '',
       telefono: cliente.telefono ?? '',
       email: cliente.email ?? '',
@@ -299,6 +361,10 @@ export default function ClientesPage() {
   const openDetail = (c: any) => { setSelected(c); setDetailOpen(true) }
 
   const onSubmit = async (data: ClienteFormData) => {
+    if (!tipoClienteId) {
+      toast.error('Selecciona un tipo de cliente')
+      return
+    }
     setSaving(true)
     try {
       // Enforce SUNAT rule: factura requiere RUC
@@ -313,7 +379,7 @@ export default function ClientesPage() {
         razon_social: data.razon_social,
         ruc: rucVal || null,
         dni: dniVal || null,
-        tipo_cliente: tipoCliente,
+        tipo_cliente_id: tipoClienteId,
         tipo_comprobante_preferido: tcp,
         lista_precio_id: listaPrecioId || null,
         zona_id: zonaId || null,
@@ -335,20 +401,110 @@ export default function ClientesPage() {
         updated_at: new Date().toISOString(),
       }
 
+      let clienteId: string | null = editingCliente?.id ?? null
       if (editingCliente) {
         const { error } = await (supabase.from('clientes') as any)
           .update(payload)
           .eq('id', editingCliente.id)
         if (error) throw error
-        toast.success('Cliente actualizado', { description: `${data.razon_social} se guardó correctamente.` })
       } else {
-        const { error } = await (supabase.from('clientes') as any).insert({
+        const { data: inserted, error } = await (supabase.from('clientes') as any).insert({
           ...payload,
           created_at: new Date().toISOString(),
-        })
+        }).select('id').single()
         if (error) throw error
-        toast.success('Cliente creado', { description: `${data.razon_social} se registró correctamente.` })
+        clienteId = inserted.id
       }
+
+      if (!clienteId) throw new Error('No se pudo obtener el ID del cliente')
+
+      // Sincronizar dirección principal en cliente_direcciones
+      const { data: principalExistente } = await (supabase as any)
+        .from('cliente_direcciones')
+        .select('id')
+        .eq('cliente_id', clienteId)
+        .eq('es_principal', true)
+        .maybeSingle()
+      const principalData = {
+        cliente_id: clienteId,
+        nombre: 'Principal',
+        direccion: data.direccion || null,
+        ubigeo: ubigeoVal.ubigeo,
+        departamento: ubigeoVal.departamento,
+        provincia: ubigeoVal.provincia,
+        distrito: ubigeoVal.distrito,
+        latitud: picked ? picked[0] : null,
+        longitud: picked ? picked[1] : null,
+        es_principal: true,
+        activo: true,
+      }
+      if (principalExistente) {
+        await (supabase as any).from('cliente_direcciones').update(principalData).eq('id', principalExistente.id)
+      } else {
+        await (supabase as any).from('cliente_direcciones').insert(principalData)
+      }
+
+      // Direcciones extra: eliminar todas las no principales y reinsertar
+      await (supabase as any)
+        .from('cliente_direcciones')
+        .delete()
+        .eq('cliente_id', clienteId)
+        .eq('es_principal', false)
+      if (direccionesExtra.length > 0) {
+        const inserts = direccionesExtra.map((d) => ({
+          cliente_id: clienteId,
+          nombre: d.nombre,
+          direccion: d.direccion,
+          ubigeo: d.ubigeo,
+          departamento: d.departamento,
+          provincia: d.provincia,
+          distrito: d.distrito,
+          latitud: d.latitud,
+          longitud: d.longitud,
+          es_principal: false,
+          activo: true,
+        }))
+        await (supabase as any).from('cliente_direcciones').insert(inserts)
+      }
+
+      // Sincronizar proveedor si es_proveedor marcado
+      const { data: proveedorExistente } = await (supabase as any)
+        .from('proveedores')
+        .select('id')
+        .eq('cliente_id', clienteId)
+        .maybeSingle()
+      if (esProveedor) {
+        const provPayload = {
+          cliente_id: clienteId,
+          razon_social: data.razon_social,
+          ruc: rucVal || null,
+          direccion: data.direccion || null,
+          telefono: data.telefono || null,
+          email: data.email || null,
+          contacto: data.contacto || null,
+          banco: datosProveedor.banco || null,
+          cuenta_bancaria: datosProveedor.cuenta_bancaria || null,
+          cci: datosProveedor.cci || null,
+          condiciones_pago: datosProveedor.condiciones_pago || null,
+          activo: true,
+          ubigeo: ubigeoVal.ubigeo,
+          departamento: ubigeoVal.departamento,
+          provincia: ubigeoVal.provincia,
+          distrito: ubigeoVal.distrito,
+        }
+        if (proveedorExistente) {
+          await (supabase as any).from('proveedores').update(provPayload).eq('id', proveedorExistente.id)
+        } else {
+          await (supabase as any).from('proveedores').insert(provPayload)
+        }
+      } else if (proveedorExistente) {
+        // Si se desmarca, eliminar el proveedor (cascade OK porque no hay compras con este proveedor_id en la demo)
+        await (supabase as any).from('proveedores').delete().eq('id', proveedorExistente.id)
+      }
+
+      toast.success(editingCliente ? 'Cliente actualizado' : 'Cliente creado', {
+        description: `${data.razon_social} se guardó correctamente${esProveedor ? ' (también como proveedor)' : ''}.`,
+      })
 
       setDialogOpen(false)
       loadClientes()
@@ -452,7 +608,7 @@ export default function ClientesPage() {
                           <p className="font-medium text-gray-900 truncate">{c.razon_social}</p>
                           <p className="text-xs text-gray-500 font-mono">{getIdentificadorLabel(c)}</p>
                           <div className="flex items-center gap-2 mt-1 text-xs text-gray-500">
-                            <span>{c.tipo_cliente === 'consumidor_final' ? 'Consumidor' : 'Tienda'}</span>
+                            <span>{c.tipos_cliente?.nombre ?? '—'}</span>
                             {c.listas_precio?.nombre && <span>· Lista {c.listas_precio.nombre}</span>}
                           </div>
                           {c.telefono && <p className="text-xs text-gray-500 mt-1">{c.telefono}</p>}
@@ -506,7 +662,7 @@ export default function ClientesPage() {
                             </span>
                           </td>
                           <td className="py-3 px-4 text-gray-600 text-xs">
-                            {c.tipo_cliente === 'consumidor_final' ? 'Consumidor' : 'Tienda'}
+                            {c.tipos_cliente?.nombre ?? '—'}
                           </td>
                           <td className="py-3 px-4 text-gray-600">{c.listas_precio?.nombre ?? '—'}</td>
                           <td className="py-3 px-4 text-gray-600 text-xs">{c.zonas?.nombre ?? '—'}</td>
@@ -646,15 +802,19 @@ export default function ClientesPage() {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <Label>Tipo de Cliente *</Label>
-                <Select value={tipoCliente} onValueChange={(v) => setTipoCliente(v as TipoCliente)}>
+                <Select value={tipoClienteId} onValueChange={setTipoClienteId}>
                   <SelectTrigger className="mt-1">
-                    <SelectValue />
+                    <SelectValue placeholder="Seleccionar tipo..." />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="tienda">Tienda</SelectItem>
-                    <SelectItem value="consumidor_final">Consumidor Final</SelectItem>
+                    {tiposCliente.map((t) => (
+                      <SelectItem key={t.id} value={t.id}>{t.nombre}</SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
+                <p className="text-[11px] text-gray-400 mt-1">
+                  <a href="/maestros/tipos-cliente" className="text-green-700 hover:underline">Gestionar tipos →</a>
+                </p>
               </div>
               <div>
                 <Label>Comprobante Preferido *</Label>
@@ -670,6 +830,7 @@ export default function ClientesPage() {
                       Factura {rucInput.length !== 11 && '(requiere RUC)'}
                     </SelectItem>
                     <SelectItem value="boleta">Boleta</SelectItem>
+                    <SelectItem value="nota_pedido_interna">Documento Interno</SelectItem>
                   </SelectContent>
                 </Select>
                 <p className="text-[11px] text-gray-400 mt-1">
@@ -827,6 +988,110 @@ export default function ClientesPage() {
               </p>
             </div>
 
+            {/* Direcciones adicionales */}
+            <div className="border-t border-gray-100 pt-3">
+              <div className="flex items-center justify-between mb-2">
+                <div>
+                  <Label>Direcciones adicionales</Label>
+                  <p className="text-[11px] text-gray-400">Sucursales, almacenes u otros puntos de entrega del cliente.</p>
+                </div>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setDireccionDialog({ index: null, data: {
+                    nombre: '', direccion: '', ubigeo: null, departamento: null, provincia: null, distrito: null,
+                    latitud: null, longitud: null, es_principal: false,
+                  }})}
+                  className="gap-1 text-xs h-8"
+                >
+                  <Plus className="w-3.5 h-3.5" /> Agregar dirección
+                </Button>
+              </div>
+              {direccionesExtra.length === 0 ? (
+                <p className="text-xs text-gray-400 text-center py-3 bg-gray-50 rounded-lg">Sin direcciones adicionales</p>
+              ) : (
+                <div className="space-y-2">
+                  {direccionesExtra.map((d, i) => (
+                    <div key={i} className="flex items-start gap-2 p-2.5 bg-gray-50 rounded-lg">
+                      <MapPin className="w-4 h-4 text-gray-400 mt-0.5 shrink-0" />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-gray-800">{d.nombre}</p>
+                        <p className="text-xs text-gray-500 truncate">
+                          {d.distrito && <span className="font-medium">{d.distrito} · </span>}
+                          {d.direccion}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <Button type="button" size="sm" variant="ghost" className="h-7 w-7 p-0"
+                          onClick={() => setDireccionDialog({ index: i, data: { ...d } })}>
+                          <Edit className="w-3.5 h-3.5" />
+                        </Button>
+                        <Button type="button" size="sm" variant="ghost" className="h-7 w-7 p-0 text-red-600"
+                          onClick={() => setDireccionesExtra((prev) => prev.filter((_, idx) => idx !== i))}>
+                          <X className="w-3.5 h-3.5" />
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Toggle cliente-proveedor */}
+            <div className="border-t border-gray-100 pt-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <Label className="flex items-center gap-2">
+                    <Building2 className="w-4 h-4 text-gray-500" /> También es Proveedor
+                  </Label>
+                  <p className="text-[11px] text-gray-400">Registra al cliente también como proveedor para comprarle.</p>
+                </div>
+                <Switch checked={esProveedor} onCheckedChange={setEsProveedor} />
+              </div>
+              {esProveedor && (
+                <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-3 p-3 bg-purple-50 rounded-lg border border-purple-100">
+                  <div>
+                    <Label className="text-xs">Banco</Label>
+                    <Input
+                      value={datosProveedor.banco}
+                      onChange={(e) => setDatosProveedor({ ...datosProveedor, banco: e.target.value })}
+                      placeholder="BCP, Interbank..."
+                      className="mt-1 h-9"
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-xs">Cuenta bancaria</Label>
+                    <Input
+                      value={datosProveedor.cuenta_bancaria}
+                      onChange={(e) => setDatosProveedor({ ...datosProveedor, cuenta_bancaria: e.target.value })}
+                      placeholder="Nº cuenta corriente"
+                      className="mt-1 h-9 font-mono"
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-xs">CCI</Label>
+                    <Input
+                      value={datosProveedor.cci}
+                      onChange={(e) => setDatosProveedor({ ...datosProveedor, cci: e.target.value })}
+                      placeholder="20 dígitos"
+                      className="mt-1 h-9 font-mono"
+                      maxLength={20}
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-xs">Condiciones de pago</Label>
+                    <Input
+                      value={datosProveedor.condiciones_pago}
+                      onChange={(e) => setDatosProveedor({ ...datosProveedor, condiciones_pago: e.target.value })}
+                      placeholder="Contado, 30 días..."
+                      className="mt-1 h-9"
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
+
             <div>
               <Label>Notas</Label>
               <Textarea {...register('notas')} placeholder="Observaciones adicionales" className="mt-1" rows={2} />
@@ -842,6 +1107,81 @@ export default function ClientesPage() {
               </Button>
             </div>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialog agregar/editar dirección extra */}
+      <Dialog open={!!direccionDialog} onOpenChange={(o) => !o && setDireccionDialog(null)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>{direccionDialog?.index != null ? 'Editar dirección' : 'Nueva dirección'}</DialogTitle>
+          </DialogHeader>
+          {direccionDialog && (
+            <div className="space-y-3 mt-2">
+              <div>
+                <Label>Nombre *</Label>
+                <Input
+                  value={direccionDialog.data.nombre}
+                  onChange={(e) => setDireccionDialog({ ...direccionDialog, data: { ...direccionDialog.data, nombre: e.target.value } })}
+                  placeholder="Ej: Sucursal Norte, Almacén Central..."
+                  className="mt-1"
+                />
+              </div>
+              <div>
+                <Label>Dirección *</Label>
+                <Input
+                  value={direccionDialog.data.direccion}
+                  onChange={(e) => setDireccionDialog({ ...direccionDialog, data: { ...direccionDialog.data, direccion: e.target.value } })}
+                  placeholder="Calle, número, referencia"
+                  className="mt-1"
+                />
+              </div>
+              <div>
+                <Label>Ubigeo</Label>
+                <UbigeoSelector
+                  value={{
+                    departamento_codigo: direccionDialog.data.ubigeo ? direccionDialog.data.ubigeo.slice(0, 2) : null,
+                    departamento: direccionDialog.data.departamento,
+                    provincia_codigo: direccionDialog.data.ubigeo ? direccionDialog.data.ubigeo.slice(2, 4) : null,
+                    provincia: direccionDialog.data.provincia,
+                    distrito_codigo: direccionDialog.data.ubigeo ? direccionDialog.data.ubigeo.slice(4, 6) : null,
+                    distrito: direccionDialog.data.distrito,
+                    ubigeo: direccionDialog.data.ubigeo,
+                  }}
+                  onChange={(v) => setDireccionDialog({
+                    ...direccionDialog,
+                    data: { ...direccionDialog.data, ubigeo: v.ubigeo, departamento: v.departamento, provincia: v.provincia, distrito: v.distrito },
+                  })}
+                  layout="stacked"
+                />
+              </div>
+              <div className="flex justify-end gap-2 pt-2 border-t border-gray-100">
+                <Button type="button" variant="outline" onClick={() => setDireccionDialog(null)}>Cancelar</Button>
+                <Button
+                  type="button"
+                  onClick={() => {
+                    const d = direccionDialog.data
+                    if (!d.nombre.trim() || !d.direccion.trim()) {
+                      toast.error('Nombre y dirección son obligatorios')
+                      return
+                    }
+                    setDireccionesExtra((prev) => {
+                      if (direccionDialog.index != null) {
+                        const next = [...prev]
+                        next[direccionDialog.index] = d
+                        return next
+                      }
+                      return [...prev, d]
+                    })
+                    setDireccionDialog(null)
+                  }}
+                  className="bg-[#FBE600] hover:bg-[#E5D100] text-black font-semibold"
+                >
+                  {direccionDialog.index != null ? 'Guardar' : 'Agregar'}
+                </Button>
+              </div>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
 
@@ -899,7 +1239,7 @@ export default function ClientesPage() {
                     <div>
                       <p className="text-xs text-gray-500">Tipo</p>
                       <p className="text-gray-800">
-                        {selected.tipo_cliente === 'consumidor_final' ? 'Consumidor Final' : 'Tienda'}
+                        {selected.tipos_cliente?.nombre ?? '—'}
                       </p>
                     </div>
                   </div>
