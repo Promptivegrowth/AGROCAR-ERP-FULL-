@@ -79,13 +79,22 @@ export default async function HistorialDespachosPage() {
                           <Badge className={`text-[10px] ${cfg.className} border`}>{cfg.label}</Badge>
                         </td>
                         <td className="py-3 px-4">
-                          <Link
-                            href={`/hoja-ruta/${d.id}`}
-                            target="_blank"
-                            className="inline-flex items-center gap-1 text-xs text-blue-700 hover:underline font-medium"
-                          >
-                            <FileText className="w-3 h-3" /> Ver / Imprimir
-                          </Link>
+                          <div className="flex items-center gap-3">
+                            <Link
+                              href={`/hoja-ruta/${d.id}`}
+                              target="_blank"
+                              className="inline-flex items-center gap-1 text-xs text-blue-700 hover:underline font-medium"
+                            >
+                              <FileText className="w-3 h-3" /> Premium
+                            </Link>
+                            <Link
+                              href={`/hoja-ruta/${d.id}/simple`}
+                              target="_blank"
+                              className="inline-flex items-center gap-1 text-xs text-gray-600 hover:underline"
+                            >
+                              Simple
+                            </Link>
+                          </div>
                         </td>
                       </tr>
                     )

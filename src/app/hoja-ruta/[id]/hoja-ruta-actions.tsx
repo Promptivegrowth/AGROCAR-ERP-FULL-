@@ -1,9 +1,13 @@
 'use client'
 
-import { Printer, MessageCircle } from 'lucide-react'
+import Link from 'next/link'
+import { Printer, MessageCircle, List } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { usePathname } from 'next/navigation'
 
 export default function HojaRutaActions({ telefono, numero }: { telefono: string | null; numero: string }) {
+  const pathname = usePathname()
+  const despachoId = pathname?.split('/').pop() ?? ''
   const imprimir = () => window.print()
 
   const enviarWhatsapp = () => {
@@ -16,6 +20,11 @@ export default function HojaRutaActions({ telefono, numero }: { telefono: string
 
   return (
     <div className="flex items-center gap-2">
+      <Link href={`/hoja-ruta/${despachoId}/simple`}>
+        <Button variant="outline" className="gap-2 text-gray-700">
+          <List className="w-4 h-4" /> Versión simple
+        </Button>
+      </Link>
       {telefono && (
         <Button onClick={enviarWhatsapp} variant="outline" className="gap-2 text-green-700 border-green-300 hover:bg-green-50">
           <MessageCircle className="w-4 h-4" /> WhatsApp
