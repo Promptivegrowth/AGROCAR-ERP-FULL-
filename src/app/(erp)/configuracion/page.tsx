@@ -44,7 +44,7 @@ export default function ConfiguracionPage() {
 
   const [userDialog, setUserDialog] = useState(false)
   const [editingUser, setEditingUser] = useState<any>(null)
-  const [userForm, setUserForm] = useState({ full_name: '', email: '', role: 'vendedor', activo: true })
+  const [userForm, setUserForm] = useState({ full_name: '', email: '', role: 'vendedor', activo: true, codigo: '' })
 
   // Almacén (punto de partida para optimización de rutas)
   const [almacen, setAlmacen] = useState({
@@ -60,7 +60,7 @@ export default function ConfiguracionPage() {
     setLoading(true)
     const sb = supabase as any
     const [{ data: u }, { data: s }, { data: p }, { data: conf }] = await Promise.all([
-      supabase.from('profiles').select('id, full_name, email, role, activo').order('full_name'),
+      supabase.from('profiles').select('id, full_name, email, role, activo, codigo').order('full_name'),
       sb.from('series_comprobante').select('*').order('serie'),
       sb.from('parametros_sistema').select('clave, valor'),
       sb.from('configuracion').select('clave, valor').in('clave', ['almacen_nombre', 'almacen_direccion', 'almacen_lat', 'almacen_lng']),
@@ -183,17 +183,18 @@ export default function ConfiguracionPage() {
 
   const openEditUser = (user: any) => {
     setEditingUser(user)
-    setUserForm({ full_name: user.full_name ?? '', email: user.email, role: user.role, activo: user.activo })
+    setUserForm({ full_name: user.full_name ?? '', email: user.email, role: user.role, activo: user.activo, codigo: user.codigo ?? '' })
     setUserDialog(true)
   }
 
   const saveUser = async () => {
     setSaving(true)
     if (editingUser) {
-      const { error } = await supabase.from('profiles').update({
+      const { error } = await (supabase.from('profiles') as any).update({
         full_name: userForm.full_name,
         role: userForm.role as any,
         activo: userForm.activo,
+        codigo: userForm.codigo?.trim() || null,
         updated_at: new Date().toISOString(),
       }).eq('id', editingUser.id)
       setSaving(false)
@@ -581,6 +582,19 @@ export default function ConfiguracionPage() {
             <div>
               <Label>Email</Label>
               <Input value={editingUser?.email ?? ''} disabled className="mt-1 bg-gray-50" />
+            </div>
+            <div>
+              <Label>Código (opcional)</Label>
+              <Input
+                value={userForm.codigo}
+                onChange={(e) => setUserForm((f) => ({ ...f, codigo: e.target.value.toUpperCase().slice(0, 6) }))}
+                placeholder="Ej: 001, V01"
+                maxLength={6}
+                className="mt-1 font-mono"
+              />
+              <p className="text-[11px] text-gray-400 mt-1">
+                Código corto que aparece en hoja de ruta simple y exports. No afecta gráficos del dashboard.
+              </p>
             </div>
             <div>
               <Label>Rol</Label>

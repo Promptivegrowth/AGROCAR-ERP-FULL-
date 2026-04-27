@@ -25,7 +25,7 @@ async function getData(id: string) {
       pedidos(
         id, numero, total,
         clientes(razon_social, ruc, dni, tipo_comprobante_preferido),
-        profiles!pedidos_vendedor_id_fkey(id, full_name),
+        profiles!pedidos_vendedor_id_fkey(id, full_name, codigo),
         comprobantes(serie, numero, tipo)
       )
     `)
@@ -39,7 +39,10 @@ async function getData(id: string) {
       const ped = it.pedidos ?? {}
       const cpe = (ped.comprobantes ?? [])[0]
       const tipoDoc = cpe?.tipo === 'factura' ? '01' : cpe?.tipo === 'boleta' ? '03' : cpe?.tipo === 'nota_pedido_interna' ? '00' : '—'
-      const vendedorCodigo = ped.profiles?.id ? ped.profiles.id.slice(-3).toUpperCase() : '—'
+      // Si el vendedor tiene código asignado, usarlo. Si no, fallback al ID corto.
+      const vendedorCodigo = ped.profiles?.codigo
+        ? ped.profiles.codigo
+        : ped.profiles?.id ? ped.profiles.id.slice(-3).toUpperCase() : '—'
       return {
         pedido_numero: ped.numero ?? '—',
         vendedor_codigo: vendedorCodigo,
