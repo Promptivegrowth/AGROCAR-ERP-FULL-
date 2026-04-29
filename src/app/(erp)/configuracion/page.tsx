@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState, useCallback } from 'react'
-import { Settings, Plus, Edit, Loader2, CheckCircle } from 'lucide-react'
+import { Settings, Plus, Edit, Loader2, CheckCircle, KeyRound, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { createClient } from '@/lib/supabase/client'
 import { ROLES_LABELS } from '@/lib/utils'
@@ -44,7 +44,21 @@ export default function ConfiguracionPage() {
 
   const [userDialog, setUserDialog] = useState(false)
   const [editingUser, setEditingUser] = useState<any>(null)
-  const [userForm, setUserForm] = useState({ full_name: '', email: '', role: 'vendedor', activo: true, codigo: '' })
+  const [userForm, setUserForm] = useState({
+    full_name: '',
+    email: '',
+    role: 'vendedor',
+    activo: true,
+    codigo: '',
+    dni: '',
+    telefono: '',
+    zona_id: '',
+    password: '',
+  })
+  const [resetPwdDialog, setResetPwdDialog] = useState<any>(null)
+  const [resetPwd, setResetPwd] = useState('')
+  const [deleteUserDialog, setDeleteUserDialog] = useState<any>(null)
+  const [zonas, setZonas] = useState<any[]>([])
 
   // Almacén (punto de partida para optimización de rutas)
   const [almacen, setAlmacen] = useState({
@@ -59,12 +73,14 @@ export default function ConfiguracionPage() {
   const loadData = useCallback(async () => {
     setLoading(true)
     const sb = supabase as any
-    const [{ data: u }, { data: s }, { data: p }, { data: conf }] = await Promise.all([
-      supabase.from('profiles').select('id, full_name, email, role, activo, codigo').order('full_name'),
+    const [{ data: u }, { data: s }, { data: p }, { data: conf }, { data: zs }] = await Promise.all([
+      supabase.from('profiles').select('id, full_name, email, role, activo, codigo, dni, telefono, zona_id, zonas(nombre)').order('full_name'),
       sb.from('series_comprobante').select('*').order('serie'),
       sb.from('parametros_sistema').select('clave, valor'),
       sb.from('configuracion').select('clave, valor').in('clave', ['almacen_nombre', 'almacen_direccion', 'almacen_lat', 'almacen_lng']),
+      sb.from('zonas').select('id, nombre').eq('activo', true).order('nombre'),
     ])
+    setZonas(zs ?? [])
 
     // Cargar almacén desde tabla configuracion
     const confMap: Record<string, string> = {}
@@ -181,36 +197,136 @@ export default function ConfiguracionPage() {
     }
   }
 
+  const openCreateUser = () => {
+    setEditingUser(null)
+    setUserForm({
+      full_name: '',
+      email: '',
+      role: 'vendedor',
+      activo: true,
+      codigo: '',
+      dni: '',
+      telefono: '',
+      zona_id: '',
+      password: '',
+    })
+    setUserDialog(true)
+  }
+
   const openEditUser = (user: any) => {
     setEditingUser(user)
-    setUserForm({ full_name: user.full_name ?? '', email: user.email, role: user.role, activo: user.activo, codigo: user.codigo ?? '' })
+    setUserForm({
+      full_name: user.full_name ?? '',
+      email: user.email,
+      role: user.role,
+      activo: user.activo,
+      codigo: user.codigo ?? '',
+      dni: user.dni ?? '',
+      telefono: user.telefono ?? '',
+      zona_id: user.zona_id ?? '',
+      password: '',
+    })
     setUserDialog(true)
   }
 
   const saveUser = async () => {
     setSaving(true)
-    if (editingUser) {
-      const { error } = await (supabase.from('profiles') as any).update({
-        full_name: userForm.full_name,
-        role: userForm.role as any,
-        activo: userForm.activo,
-        codigo: userForm.codigo?.trim() || null,
-        updated_at: new Date().toISOString(),
-      }).eq('id', editingUser.id)
-      setSaving(false)
-      setUserDialog(false)
-      if (error) {
-        toast.error('Error al guardar usuario', { description: error.message })
-      } else {
+    try {
+      if (editingUser) {
+        const { error } = await (supabase.from('profiles') as any).update({
+          full_name: userForm.full_name,
+          role: userForm.role as any,
+          activo: userForm.activo,
+          codigo: userForm.codigo?.trim() || null,
+          dni: userForm.dni?.trim() || null,
+          telefono: userForm.telefono?.trim() || null,
+          zona_id: userForm.zona_id || null,
+          updated_at: new Date().toISOString(),
+        }).eq('id', editingUser.id)
+        if (error) throw error
         toast.success('Usuario actualizado', {
           description: `${userForm.full_name || editingUser.email} guardado correctamente.`,
         })
+      } else {
+        // Crear nuevo
+        if (!userForm.email || !userForm.password || !userForm.full_name) {
+          toast.error('Email, password y nombre son obligatorios')
+          setSaving(false)
+          return
+        }
+        if (userForm.password.length < 6) {
+          toast.error('Password debe tener al menos 6 caracteres')
+          setSaving(false)
+          return
+        }
+        const res = await fetch('/api/usuarios', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            email: userForm.email,
+            password: userForm.password,
+            full_name: userForm.full_name,
+            role: userForm.role,
+            codigo: userForm.codigo,
+            dni: userForm.dni,
+            telefono: userForm.telefono,
+            zona_id: userForm.zona_id || null,
+            activo: userForm.activo,
+          }),
+        })
+        const data = await res.json()
+        if (!res.ok) throw new Error(data.error ?? 'No se pudo crear el usuario')
+        toast.success('Usuario creado', {
+          description: `${userForm.full_name} (${userForm.email}) ya puede iniciar sesión.`,
+        })
       }
-    } else {
-      setSaving(false)
       setUserDialog(false)
+      loadData()
+    } catch (err: any) {
+      toast.error('Error al guardar usuario', { description: err?.message ?? 'Error desconocido' })
+    } finally {
+      setSaving(false)
     }
-    loadData()
+  }
+
+  const resetPassword = async () => {
+    if (!resetPwdDialog) return
+    if (resetPwd.length < 6) {
+      toast.error('Password debe tener al menos 6 caracteres')
+      return
+    }
+    setSaving(true)
+    try {
+      const res = await fetch(`/api/usuarios/${resetPwdDialog.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: resetPwd }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error ?? 'No se pudo resetear')
+      toast.success('Password actualizada', {
+        description: `${resetPwdDialog.full_name ?? resetPwdDialog.email}.`,
+      })
+      setResetPwdDialog(null)
+      setResetPwd('')
+    } catch (err: any) {
+      toast.error('Error', { description: err?.message ?? '' })
+    } finally { setSaving(false) }
+  }
+
+  const eliminarUsuario = async () => {
+    if (!deleteUserDialog) return
+    setSaving(true)
+    try {
+      const res = await fetch(`/api/usuarios/${deleteUserDialog.id}`, { method: 'DELETE' })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error ?? 'No se pudo eliminar')
+      toast.success('Usuario eliminado', { description: deleteUserDialog.full_name ?? deleteUserDialog.email })
+      setDeleteUserDialog(null)
+      loadData()
+    } catch (err: any) {
+      toast.error('Error', { description: err?.message ?? '' })
+    } finally { setSaving(false) }
   }
 
   const toggleUserActivo = async (user: any) => {
@@ -410,6 +526,9 @@ export default function ConfiguracionPage() {
               <CardTitle className="text-base font-semibold text-gray-800">
                 Usuarios del Sistema ({usuarios.length})
               </CardTitle>
+              <Button onClick={openCreateUser} className="bg-[#FBE600] hover:bg-[#E5D100] text-black font-semibold gap-2 h-8">
+                <Plus className="w-4 h-4" /> Nuevo Usuario
+              </Button>
             </CardHeader>
             <CardContent className="p-0">
               {loading ? (
@@ -417,44 +536,51 @@ export default function ConfiguracionPage() {
                   <Loader2 className="w-6 h-6 text-green-600 animate-spin" />
                 </div>
               ) : (
-                <table className="w-full text-sm">
-                  <thead className="border-b border-gray-100 bg-gray-50/50">
-                    <tr>
-                      {['Nombre', 'Email', 'Rol', 'Estado', 'Acciones'].map((h) => (
-                        <th key={h} className="text-left py-2.5 px-4 text-xs font-semibold text-gray-500 uppercase tracking-wide">{h}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-50">
-                    {usuarios.map((u) => (
-                      <tr key={u.id} className="hover:bg-gray-50/50">
-                        <td className="py-2.5 px-4 font-medium text-gray-800">{u.full_name ?? '—'}</td>
-                        <td className="py-2.5 px-4 text-gray-500 text-xs">{u.email}</td>
-                        <td className="py-2.5 px-4">
-                          <Badge variant="outline" className="text-xs">{ROLES_LABELS[u.role] ?? u.role}</Badge>
-                        </td>
-                        <td className="py-2.5 px-4">
-                          {u.activo
-                            ? <Badge className="text-xs bg-green-100 text-green-700 border-green-200">Activo</Badge>
-                            : <Badge variant="secondary" className="text-xs">Inactivo</Badge>
-                          }
-                        </td>
-                        <td className="py-2.5 px-4">
-                          <div className="flex gap-1">
-                            <Button variant="ghost" size="sm" onClick={() => openEditUser(u)} className="h-7 w-7 p-0">
-                              <Edit className="w-3.5 h-3.5 text-gray-500" />
-                            </Button>
-                            <Switch
-                              checked={u.activo}
-                              onCheckedChange={() => toggleUserActivo(u)}
-                              className="scale-75"
-                            />
-                          </div>
-                        </td>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead className="border-b border-gray-100 bg-gray-50/50">
+                      <tr>
+                        {['Código', 'Nombre', 'Email', 'DNI', 'Teléfono', 'Zona', 'Rol', 'Estado', 'Acciones'].map((h) => (
+                          <th key={h} className="text-left py-2.5 px-3 text-xs font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap">{h}</th>
+                        ))}
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody className="divide-y divide-gray-50">
+                      {usuarios.map((u) => (
+                        <tr key={u.id} className="hover:bg-gray-50/50">
+                          <td className="py-2.5 px-3 font-mono text-xs text-gray-800">{u.codigo ?? '—'}</td>
+                          <td className="py-2.5 px-3 font-medium text-gray-800">{u.full_name ?? '—'}</td>
+                          <td className="py-2.5 px-3 text-gray-500 text-xs">{u.email}</td>
+                          <td className="py-2.5 px-3 text-gray-600 text-xs font-mono">{u.dni ?? '—'}</td>
+                          <td className="py-2.5 px-3 text-gray-600 text-xs">{u.telefono ?? '—'}</td>
+                          <td className="py-2.5 px-3 text-gray-600 text-xs">{u.zonas?.nombre ?? '—'}</td>
+                          <td className="py-2.5 px-3">
+                            <Badge variant="outline" className="text-xs">{ROLES_LABELS[u.role] ?? u.role}</Badge>
+                          </td>
+                          <td className="py-2.5 px-3">
+                            {u.activo
+                              ? <Badge className="text-xs bg-green-100 text-green-700 border-green-200">Activo</Badge>
+                              : <Badge variant="secondary" className="text-xs">Inactivo</Badge>
+                            }
+                          </td>
+                          <td className="py-2.5 px-3">
+                            <div className="flex gap-1">
+                              <Button variant="ghost" size="sm" onClick={() => openEditUser(u)} className="h-7 w-7 p-0" title="Editar">
+                                <Edit className="w-3.5 h-3.5 text-gray-500" />
+                              </Button>
+                              <Button variant="ghost" size="sm" onClick={() => { setResetPwdDialog(u); setResetPwd('') }} className="h-7 w-7 p-0" title="Resetear password">
+                                <KeyRound className="w-3.5 h-3.5 text-amber-600" />
+                              </Button>
+                              <Button variant="ghost" size="sm" onClick={() => setDeleteUserDialog(u)} className="h-7 w-7 p-0" title="Eliminar">
+                                <Trash2 className="w-3.5 h-3.5 text-red-600" />
+                              </Button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               )}
             </CardContent>
           </Card>
@@ -568,62 +694,184 @@ export default function ConfiguracionPage() {
       <Dialog open={userDialog} onOpenChange={setUserDialog}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>Editar Usuario</DialogTitle>
+            <DialogTitle>{editingUser ? 'Editar Usuario' : 'Nuevo Usuario'}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 mt-2">
             <div>
-              <Label>Nombre Completo</Label>
+              <Label>Nombre Completo *</Label>
               <Input
                 value={userForm.full_name}
                 onChange={(e) => setUserForm((f) => ({ ...f, full_name: e.target.value }))}
                 className="mt-1"
+                placeholder="Nombre y apellidos"
               />
             </div>
-            <div>
-              <Label>Email</Label>
-              <Input value={editingUser?.email ?? ''} disabled className="mt-1 bg-gray-50" />
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <Label>Email {!editingUser && '*'}</Label>
+                {editingUser ? (
+                  <Input value={editingUser.email ?? ''} disabled className="mt-1 bg-gray-50" />
+                ) : (
+                  <Input
+                    type="email"
+                    value={userForm.email}
+                    onChange={(e) => setUserForm((f) => ({ ...f, email: e.target.value }))}
+                    placeholder="usuario@agrocar.pe"
+                    className="mt-1"
+                  />
+                )}
+              </div>
+              <div>
+                <Label>Rol *</Label>
+                <Select value={userForm.role} onValueChange={(v) => setUserForm((f) => ({ ...f, role: v }))}>
+                  <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {Object.entries(ROLES_LABELS).map(([key, label]) => (
+                      <SelectItem key={key} value={key}>{label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
-            <div>
-              <Label>Código (opcional)</Label>
-              <Input
-                value={userForm.codigo}
-                onChange={(e) => setUserForm((f) => ({ ...f, codigo: e.target.value.toUpperCase().slice(0, 6) }))}
-                placeholder="Ej: 001, V01"
-                maxLength={6}
-                className="mt-1 font-mono"
-              />
-              <p className="text-[11px] text-gray-400 mt-1">
-                Código corto que aparece en hoja de ruta simple y exports. No afecta gráficos del dashboard.
-              </p>
+
+            {!editingUser && (
+              <div>
+                <Label>Password * (mínimo 6 caracteres)</Label>
+                <Input
+                  type="password"
+                  value={userForm.password}
+                  onChange={(e) => setUserForm((f) => ({ ...f, password: e.target.value }))}
+                  placeholder="Password inicial"
+                  className="mt-1 font-mono"
+                  minLength={6}
+                />
+                <p className="text-[11px] text-gray-400 mt-1">El usuario podrá cambiarla luego desde su perfil.</p>
+              </div>
+            )}
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div>
+                <Label className="text-xs">Código (opcional)</Label>
+                <Input
+                  value={userForm.codigo}
+                  onChange={(e) => setUserForm((f) => ({ ...f, codigo: e.target.value.toUpperCase().slice(0, 6) }))}
+                  placeholder="001"
+                  maxLength={6}
+                  className="mt-1 font-mono h-9"
+                />
+              </div>
+              <div>
+                <Label className="text-xs">DNI</Label>
+                <Input
+                  value={userForm.dni}
+                  onChange={(e) => setUserForm((f) => ({ ...f, dni: e.target.value.replace(/\D/g, '').slice(0, 8) }))}
+                  placeholder="12345678"
+                  maxLength={8}
+                  inputMode="numeric"
+                  className="mt-1 font-mono h-9"
+                />
+              </div>
+              <div>
+                <Label className="text-xs">Teléfono</Label>
+                <Input
+                  value={userForm.telefono}
+                  onChange={(e) => setUserForm((f) => ({ ...f, telefono: e.target.value.replace(/\D/g, '').slice(0, 9) }))}
+                  placeholder="987654321"
+                  maxLength={9}
+                  inputMode="numeric"
+                  className="mt-1 font-mono h-9"
+                />
+              </div>
             </div>
+
             <div>
-              <Label>Rol</Label>
-              <Select value={userForm.role} onValueChange={(v) => setUserForm((f) => ({ ...f, role: v }))}>
-                <SelectTrigger className="mt-1">
-                  <SelectValue />
-                </SelectTrigger>
+              <Label className="text-xs">Zona asignada (vendedores/repartidores)</Label>
+              <Select value={userForm.zona_id || 'ninguna'} onValueChange={(v) => setUserForm((f) => ({ ...f, zona_id: v === 'ninguna' ? '' : v }))}>
+                <SelectTrigger className="mt-1 h-9"><SelectValue placeholder="Sin zona asignada" /></SelectTrigger>
                 <SelectContent>
-                  {Object.entries(ROLES_LABELS).map(([key, label]) => (
-                    <SelectItem key={key} value={key}>{label}</SelectItem>
-                  ))}
+                  <SelectItem value="ninguna">Sin zona asignada</SelectItem>
+                  {zonas.map((z) => <SelectItem key={z.id} value={z.id}>{z.nombre}</SelectItem>)}
                 </SelectContent>
               </Select>
+              <p className="text-[11px] text-gray-400 mt-1">Solo aplica a vendedores y repartidores.</p>
             </div>
-            <div className="flex items-center gap-2">
+
+            <div className="flex items-center gap-2 pt-1 border-t border-gray-100">
               <Switch
                 checked={userForm.activo}
                 onCheckedChange={(v) => setUserForm((f) => ({ ...f, activo: v }))}
               />
               <Label>Usuario activo</Label>
             </div>
+
             <div className="flex justify-end gap-3 pt-2 border-t border-gray-100">
               <Button variant="outline" onClick={() => setUserDialog(false)}>Cancelar</Button>
               <Button onClick={saveUser} disabled={saving} className="bg-[#FBE600] hover:bg-[#E5D100] text-black font-semibold gap-2">
                 {saving && <Loader2 className="w-4 h-4 animate-spin" />}
-                Guardar Cambios
+                {editingUser ? 'Guardar Cambios' : 'Crear Usuario'}
               </Button>
             </div>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Reset password */}
+      <Dialog open={!!resetPwdDialog} onOpenChange={(o) => !o && setResetPwdDialog(null)}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Resetear password</DialogTitle>
+          </DialogHeader>
+          {resetPwdDialog && (
+            <div className="space-y-3 mt-2">
+              <p className="text-sm text-gray-600">
+                Asigna una nueva password para <strong>{resetPwdDialog.full_name ?? resetPwdDialog.email}</strong>.
+              </p>
+              <div>
+                <Label>Nueva password (mín. 6)</Label>
+                <Input
+                  type="password"
+                  value={resetPwd}
+                  onChange={(e) => setResetPwd(e.target.value)}
+                  className="mt-1 font-mono"
+                  minLength={6}
+                />
+              </div>
+              <div className="flex justify-end gap-2 pt-2">
+                <Button variant="outline" onClick={() => setResetPwdDialog(null)}>Cancelar</Button>
+                <Button onClick={resetPassword} disabled={saving || resetPwd.length < 6} className="bg-amber-600 hover:bg-amber-700 text-white gap-2">
+                  {saving && <Loader2 className="w-4 h-4 animate-spin" />}
+                  <KeyRound className="w-4 h-4" /> Resetear
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Eliminar usuario */}
+      <Dialog open={!!deleteUserDialog} onOpenChange={(o) => !o && setDeleteUserDialog(null)}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Eliminar usuario</DialogTitle>
+          </DialogHeader>
+          {deleteUserDialog && (
+            <div className="space-y-3 mt-2">
+              <p className="text-sm text-gray-700">
+                ¿Eliminar a <strong>{deleteUserDialog.full_name ?? deleteUserDialog.email}</strong>?
+              </p>
+              <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-xs text-red-800">
+                ⚠ Esta acción es permanente. Si el usuario tiene pedidos, comprobantes o cobros
+                registrados, no podrá ser eliminado y deberás desactivarlo en su lugar.
+              </div>
+              <div className="flex justify-end gap-2 pt-2">
+                <Button variant="outline" onClick={() => setDeleteUserDialog(null)}>Cancelar</Button>
+                <Button onClick={eliminarUsuario} disabled={saving} className="bg-red-600 hover:bg-red-700 text-white gap-2">
+                  {saving && <Loader2 className="w-4 h-4 animate-spin" />}
+                  <Trash2 className="w-4 h-4" /> Eliminar
+                </Button>
+              </div>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
     </div>
