@@ -30,6 +30,7 @@ export async function POST(req: NextRequest) {
     dni,
     telefono,
     zona_id,
+    zona_ids,    // ← array de zonas adicionales (M:N)
     activo = true,
   } = body
 
@@ -70,6 +71,14 @@ export async function POST(req: NextRequest) {
     // Rollback: eliminar el auth user creado
     await admin.auth.admin.deleteUser(newUserId)
     return NextResponse.json({ error: `Error en perfil: ${profErr.message}` }, { status: 400 })
+  }
+
+  // Sincronizar zonas (M:N)
+  const zonasFinales = Array.isArray(zona_ids) ? zona_ids : (zona_id ? [zona_id] : [])
+  if (zonasFinales.length > 0) {
+    await (admin as any).from('profile_zonas').insert(
+      zonasFinales.map((z: string) => ({ profile_id: newUserId, zona_id: z }))
+    )
   }
 
   return NextResponse.json({ id: newUserId, email, full_name, role })

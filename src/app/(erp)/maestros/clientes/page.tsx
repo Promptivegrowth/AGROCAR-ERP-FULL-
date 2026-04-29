@@ -363,7 +363,19 @@ export default function ClientesPage() {
     setDialogOpen(true)
   }
 
-  const openDetail = (c: any) => { setSelected(c); setDetailOpen(true) }
+  const openDetail = async (c: any) => {
+    setSelected({ ...c, direcciones_extra: [] })
+    setDetailOpen(true)
+    // Cargar direcciones adicionales
+    const { data: dirs } = await (supabase as any)
+      .from('cliente_direcciones')
+      .select('id, nombre, direccion, ubigeo, departamento, provincia, distrito, latitud, longitud')
+      .eq('cliente_id', c.id)
+      .eq('es_principal', false)
+      .eq('activo', true)
+      .order('created_at')
+    setSelected((prev: any) => prev?.id === c.id ? { ...prev, direcciones_extra: dirs ?? [] } : prev)
+  }
 
   const onSubmit = async (data: ClienteFormData) => {
     if (!tipoClienteId) {
@@ -1295,7 +1307,12 @@ export default function ClientesPage() {
                     <div className="flex items-start gap-3">
                       <MapPin className="w-4 h-4 text-gray-400 mt-0.5 shrink-0" />
                       <div className="min-w-0 flex-1">
-                        <p className="text-xs text-gray-500">Dirección</p>
+                        <p className="text-xs text-gray-500">
+                          Dirección principal
+                          {selected.direcciones_extra && selected.direcciones_extra.length > 0 && (
+                            <span className="ml-2 text-blue-600">+ {selected.direcciones_extra.length} adicional{selected.direcciones_extra.length === 1 ? '' : 'es'}</span>
+                          )}
+                        </p>
                         <p className="text-gray-800 break-words">{selected.direccion}</p>
                         {mapsUrl && (
                           <a
@@ -1308,6 +1325,40 @@ export default function ClientesPage() {
                           </a>
                         )}
                       </div>
+                    </div>
+                  )}
+
+                  {/* Direcciones adicionales */}
+                  {selected.direcciones_extra && selected.direcciones_extra.length > 0 && (
+                    <div className="space-y-2 pl-7">
+                      <p className="text-[11px] text-gray-500 font-semibold uppercase tracking-wide">Direcciones adicionales</p>
+                      {selected.direcciones_extra.map((d: any) => {
+                        const dMaps = d.latitud != null && d.longitud != null
+                          ? `https://www.google.com/maps?q=${d.latitud},${d.longitud}`
+                          : null
+                        return (
+                          <div key={d.id} className="bg-blue-50 border border-blue-100 rounded-lg p-2.5">
+                            <div className="flex items-start gap-2">
+                              <MapPin className="w-3.5 h-3.5 text-blue-600 mt-0.5 shrink-0" />
+                              <div className="flex-1 min-w-0">
+                                <p className="text-xs font-semibold text-blue-900">{d.nombre}</p>
+                                <p className="text-xs text-gray-700 break-words mt-0.5">{d.direccion}</p>
+                                {(d.distrito || d.provincia || d.departamento) && (
+                                  <p className="text-[10px] text-gray-500 mt-0.5">
+                                    {[d.distrito, d.provincia, d.departamento].filter(Boolean).join(' · ')}
+                                  </p>
+                                )}
+                                {dMaps && (
+                                  <a href={dMaps} target="_blank" rel="noopener noreferrer"
+                                    className="inline-flex items-center gap-1 mt-1 text-[11px] text-green-700 font-medium hover:underline">
+                                    <MapPin className="w-2.5 h-2.5" /> Ver en Google Maps
+                                  </a>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        )
+                      })}
                     </div>
                   )}
                   {!selected.direccion && mapsUrl && (

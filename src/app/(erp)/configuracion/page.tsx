@@ -53,6 +53,7 @@ export default function ConfiguracionPage() {
     dni: '',
     telefono: '',
     zona_id: '',
+    zona_ids: [] as string[],
     password: '',
   })
   const [resetPwdDialog, setResetPwdDialog] = useState<any>(null)
@@ -73,14 +74,19 @@ export default function ConfiguracionPage() {
   const loadData = useCallback(async () => {
     setLoading(true)
     const sb = supabase as any
-    const [{ data: u }, { data: s }, { data: p }, { data: conf }, { data: zs }] = await Promise.all([
+    const [{ data: u }, { data: s }, { data: p }, { data: conf }, { data: zs }, { data: pz }] = await Promise.all([
       supabase.from('profiles').select('id, full_name, email, role, activo, codigo, dni, telefono, zona_id, zonas(nombre)').order('full_name'),
       sb.from('series_comprobante').select('*').order('serie'),
       sb.from('parametros_sistema').select('clave, valor'),
       sb.from('configuracion').select('clave, valor').in('clave', ['almacen_nombre', 'almacen_direccion', 'almacen_lat', 'almacen_lng']),
       sb.from('zonas').select('id, nombre').eq('activo', true).order('nombre'),
+      sb.from('v_profile_zonas_resumen').select('profile_id, total_zonas, zonas_nombres'),
     ])
     setZonas(zs ?? [])
+
+    // Mapear resumen de zonas por usuario
+    const zonasResumenMap = new Map<string, { total: number; nombres: string }>()
+    ;(pz ?? []).forEach((r: any) => zonasResumenMap.set(r.profile_id, { total: r.total_zonas ?? 0, nombres: r.zonas_nombres ?? '' }))
 
     // Cargar almacén desde tabla configuracion
     const confMap: Record<string, string> = {}
@@ -94,7 +100,10 @@ export default function ConfiguracionPage() {
       lng: isNaN(lng) ? -70.25362 : lng,
     })
     setPickingAlmacen([isNaN(lat) ? -18.01465 : lat, isNaN(lng) ? -70.25362 : lng])
-    setUsuarios(u ?? [])
+    setUsuarios((u ?? []).map((usr: any) => ({
+      ...usr,
+      zonas_resumen: zonasResumenMap.get(usr.id) ?? { total: 0, nombres: '' },
+    })))
     setSeries(s && s.length > 0 ? s : SERIES_INICIALES.map((s, i) => ({ ...s, id: i, correlativo_actual: 0 })))
 
     const paramMap: Record<string, string> = {}
@@ -208,13 +217,20 @@ export default function ConfiguracionPage() {
       dni: '',
       telefono: '',
       zona_id: '',
+      zona_ids: [],
       password: '',
     })
     setUserDialog(true)
   }
 
-  const openEditUser = (user: any) => {
+  const openEditUser = async (user: any) => {
     setEditingUser(user)
+    // Cargar zonas asignadas (M:N)
+    const { data: pz } = await (supabase as any)
+      .from('profile_zonas')
+      .select('zona_id')
+      .eq('profile_id', user.id)
+    const zonasAsignadas = (pz ?? []).map((r: any) => r.zona_id as string)
     setUserForm({
       full_name: user.full_name ?? '',
       email: user.email,
@@ -224,6 +240,7 @@ export default function ConfiguracionPage() {
       dni: user.dni ?? '',
       telefono: user.telefono ?? '',
       zona_id: user.zona_id ?? '',
+      zona_ids: zonasAsignadas,
       password: '',
     })
     setUserDialog(true)
@@ -233,6 +250,8 @@ export default function ConfiguracionPage() {
     setSaving(true)
     try {
       if (editingUser) {
+        // Zona principal: si tiene zonas múltiples, la primera es la principal
+        const zonaPrincipal = userForm.zona_ids[0] ?? userForm.zona_id ?? null
         const { error } = await (supabase.from('profiles') as any).update({
           full_name: userForm.full_name,
           role: userForm.role as any,
@@ -240,10 +259,19 @@ export default function ConfiguracionPage() {
           codigo: userForm.codigo?.trim() || null,
           dni: userForm.dni?.trim() || null,
           telefono: userForm.telefono?.trim() || null,
-          zona_id: userForm.zona_id || null,
+          zona_id: zonaPrincipal,
           updated_at: new Date().toISOString(),
         }).eq('id', editingUser.id)
         if (error) throw error
+
+        // Sincronizar profile_zonas: borrar todas y reinsertar las seleccionadas
+        await (supabase as any).from('profile_zonas').delete().eq('profile_id', editingUser.id)
+        if (userForm.zona_ids.length > 0) {
+          await (supabase as any).from('profile_zonas').insert(
+            userForm.zona_ids.map((z) => ({ profile_id: editingUser.id, zona_id: z }))
+          )
+        }
+
         toast.success('Usuario actualizado', {
           description: `${userForm.full_name || editingUser.email} guardado correctamente.`,
         })
@@ -270,7 +298,8 @@ export default function ConfiguracionPage() {
             codigo: userForm.codigo,
             dni: userForm.dni,
             telefono: userForm.telefono,
-            zona_id: userForm.zona_id || null,
+            zona_id: userForm.zona_ids[0] ?? null,  // primera = principal
+            zona_ids: userForm.zona_ids,            // todas las asignadas
             activo: userForm.activo,
           }),
         })
@@ -553,7 +582,19 @@ export default function ConfiguracionPage() {
                           <td className="py-2.5 px-3 text-gray-500 text-xs">{u.email}</td>
                           <td className="py-2.5 px-3 text-gray-600 text-xs font-mono">{u.dni ?? '—'}</td>
                           <td className="py-2.5 px-3 text-gray-600 text-xs">{u.telefono ?? '—'}</td>
-                          <td className="py-2.5 px-3 text-gray-600 text-xs">{u.zonas?.nombre ?? '—'}</td>
+                          <td className="py-2.5 px-3 text-gray-600 text-xs">
+                            {u.zonas_resumen?.total > 0 ? (
+                              <span title={u.zonas_resumen.nombres} className="cursor-help">
+                                {u.zonas_resumen.total === 1
+                                  ? u.zonas_resumen.nombres
+                                  : <>
+                                      <span className="font-semibold text-blue-700">{u.zonas_resumen.total}</span>
+                                      <span className="text-gray-500"> zonas</span>
+                                    </>
+                                }
+                              </span>
+                            ) : '—'}
+                          </td>
                           <td className="py-2.5 px-3">
                             <Badge variant="outline" className="text-xs">{ROLES_LABELS[u.role] ?? u.role}</Badge>
                           </td>
@@ -785,15 +826,60 @@ export default function ConfiguracionPage() {
             </div>
 
             <div>
-              <Label className="text-xs">Zona asignada (vendedores/repartidores)</Label>
-              <Select value={userForm.zona_id || 'ninguna'} onValueChange={(v) => setUserForm((f) => ({ ...f, zona_id: v === 'ninguna' ? '' : v }))}>
-                <SelectTrigger className="mt-1 h-9"><SelectValue placeholder="Sin zona asignada" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="ninguna">Sin zona asignada</SelectItem>
-                  {zonas.map((z) => <SelectItem key={z.id} value={z.id}>{z.nombre}</SelectItem>)}
-                </SelectContent>
-              </Select>
-              <p className="text-[11px] text-gray-400 mt-1">Solo aplica a vendedores y repartidores.</p>
+              <div className="flex items-center justify-between mb-1.5">
+                <Label className="text-xs">Zonas asignadas (vendedores/repartidores)</Label>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setUserForm((f) => ({ ...f, zona_ids: zonas.map((z: any) => z.id) }))}
+                    className="text-[11px] text-blue-600 hover:underline"
+                  >
+                    Todas
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setUserForm((f) => ({ ...f, zona_ids: [] }))}
+                    className="text-[11px] text-gray-500 hover:underline"
+                  >
+                    Limpiar
+                  </button>
+                </div>
+              </div>
+              <div className="border border-gray-200 rounded-lg p-2 max-h-40 overflow-y-auto bg-white">
+                {zonas.length === 0 ? (
+                  <p className="text-xs text-gray-400 text-center py-2">No hay zonas creadas aún</p>
+                ) : (
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
+                    {zonas.map((z: any) => {
+                      const checked = userForm.zona_ids.includes(z.id)
+                      return (
+                        <label key={z.id} className={`flex items-center gap-1.5 px-2 py-1 rounded cursor-pointer text-xs hover:bg-gray-50 ${checked ? 'bg-yellow-50 border border-yellow-200' : 'border border-transparent'}`}>
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={(e) => {
+                              setUserForm((f) => ({
+                                ...f,
+                                zona_ids: e.target.checked
+                                  ? [...f.zona_ids, z.id]
+                                  : f.zona_ids.filter((id) => id !== z.id),
+                              }))
+                            }}
+                            className="accent-yellow-400 w-3.5 h-3.5"
+                          />
+                          <span className="truncate">{z.nombre}</span>
+                        </label>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+              <p className="text-[11px] text-gray-400 mt-1">
+                Un vendedor puede tener varias zonas o todas. La primera marcada se considera principal.
+                {userForm.zona_ids.length > 0 && (
+                  <span className="ml-1 font-semibold text-gray-600">{userForm.zona_ids.length} seleccionada{userForm.zona_ids.length === 1 ? '' : 's'}</span>
+                )}
+              </p>
             </div>
 
             <div className="flex items-center gap-2 pt-1 border-t border-gray-100">
