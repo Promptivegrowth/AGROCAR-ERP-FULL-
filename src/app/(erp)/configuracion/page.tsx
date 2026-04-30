@@ -75,7 +75,7 @@ export default function ConfiguracionPage() {
     setLoading(true)
     const sb = supabase as any
     const [{ data: u }, { data: s }, { data: p }, { data: conf }, { data: zs }, { data: pz }] = await Promise.all([
-      supabase.from('profiles').select('id, full_name, email, role, activo, codigo, dni, telefono, zona_id, zonas(nombre)').order('full_name'),
+      supabase.from('profiles').select('id, full_name, email, role, activo, codigo, dni, telefono, zona_id, zonas!profiles_zona_id_fkey(nombre)').order('full_name'),
       sb.from('series_comprobante').select('*').order('serie'),
       sb.from('parametros_sistema').select('clave, valor'),
       sb.from('configuracion').select('clave, valor').in('clave', ['almacen_nombre', 'almacen_direccion', 'almacen_lat', 'almacen_lng']),

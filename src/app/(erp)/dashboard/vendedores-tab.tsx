@@ -47,7 +47,7 @@ export default function VendedoresTab() {
     ;(async () => {
       const { data } = await supabase
         .from('profiles')
-        .select('id, full_name, email, zonas(nombre)')
+        .select('id, full_name, email, zonas!profiles_zona_id_fkey(nombre)')
         .eq('role', 'vendedor')
         .eq('activo', true)
         .order('full_name')

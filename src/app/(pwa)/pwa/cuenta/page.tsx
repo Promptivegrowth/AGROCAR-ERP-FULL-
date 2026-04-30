@@ -50,7 +50,7 @@ export default function CuentaPage() {
       // Cargar perfil
       const { data: profileData } = await supabase
         .from('profiles')
-        .select('*, zonas(nombre)')
+        .select('*, zonas!profiles_zona_id_fkey(nombre)')
         .eq('id', user.id)
         .single()
 

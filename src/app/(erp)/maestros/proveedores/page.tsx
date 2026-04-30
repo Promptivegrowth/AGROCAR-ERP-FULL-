@@ -165,7 +165,29 @@ export default function ProveedoresPage() {
           .update(payload)
           .eq('id', editingProveedor.id)
         if (error) throw error
-        toast.success('Proveedor actualizado', { description: `${data.razon_social} se guardó correctamente.` })
+
+        // Sincronización bidireccional: si tiene cliente_id, actualizar el cliente con campos comunes
+        if (editingProveedor.cliente_id) {
+          await (supabase as any).from('clientes').update({
+            razon_social: data.razon_social,
+            ruc: data.ruc || null,
+            direccion: data.direccion || null,
+            telefono: data.telefono || null,
+            email: data.email || null,
+            contacto: data.contacto || null,
+            ubigeo: ubigeoVal.ubigeo,
+            departamento: ubigeoVal.departamento,
+            provincia: ubigeoVal.provincia,
+            distrito: ubigeoVal.distrito,
+            updated_at: new Date().toISOString(),
+          }).eq('id', editingProveedor.cliente_id)
+        }
+
+        toast.success('Proveedor actualizado', {
+          description: editingProveedor.cliente_id
+            ? `${data.razon_social} guardado (sincronizado con su ficha de cliente).`
+            : `${data.razon_social} se guardó correctamente.`,
+        })
       } else {
         const { error } = await (supabase.from('proveedores') as any).insert(payload)
         if (error) throw error
@@ -240,6 +262,11 @@ export default function ProveedoresPage() {
                       <div className="min-w-0 flex-1">
                         <p className="font-medium text-gray-900 truncate">{p.razon_social}</p>
                         <p className="text-xs text-gray-500 font-mono">{p.ruc ?? 'Sin RUC'}</p>
+                        {p.cliente_id && (
+                          <span className="inline-flex items-center gap-1 mt-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-blue-50 text-blue-700 border border-blue-200">
+                            👥 También Cliente
+                          </span>
+                        )}
                         {p.telefono && <p className="text-xs text-gray-500 mt-1">{p.telefono}</p>}
                       </div>
                       {p.activo
@@ -275,7 +302,14 @@ export default function ProveedoresPage() {
                   <tbody className="divide-y divide-gray-50">
                     {proveedores.map((p) => (
                       <tr key={p.id} className="hover:bg-gray-50/50 transition-colors">
-                        <td className="py-3 px-4 font-medium text-gray-900 max-w-[240px] truncate">{p.razon_social}</td>
+                        <td className="py-3 px-4 max-w-[260px]">
+                          <div className="font-medium text-gray-900 truncate">{p.razon_social}</div>
+                          {p.cliente_id && (
+                            <span className="inline-flex items-center gap-1 mt-0.5 px-1.5 py-0.5 rounded text-[10px] font-medium bg-blue-50 text-blue-700 border border-blue-200">
+                              👥 También Cliente
+                            </span>
+                          )}
+                        </td>
                         <td className="py-3 px-4 text-gray-500 font-mono text-xs">{p.ruc ?? '—'}</td>
                         <td className="py-3 px-4 text-gray-600 text-xs">{p.telefono ?? '—'}</td>
                         <td className="py-3 px-4 text-gray-600 text-xs truncate max-w-[200px]">{p.email ?? '—'}</td>

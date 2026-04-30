@@ -218,7 +218,19 @@ export default function ClientesPage() {
 
     const { data, count, error } = await query
     if (error) toast.error('Error al cargar clientes', { description: error.message })
-    setClientes(data ?? [])
+
+    // Cargar cuáles también son proveedor (cliente_id IS NOT NULL en proveedores)
+    const idsClientes = (data ?? []).map((c: any) => c.id)
+    let provedoresSet = new Set<string>()
+    if (idsClientes.length > 0) {
+      const { data: provs } = await (supabase as any)
+        .from('proveedores')
+        .select('cliente_id')
+        .in('cliente_id', idsClientes)
+      provedoresSet = new Set((provs ?? []).map((p: any) => p.cliente_id))
+    }
+
+    setClientes((data ?? []).map((c: any) => ({ ...c, es_tambien_proveedor: provedoresSet.has(c.id) })))
     setTotal(count ?? 0)
     setLoading(false)
   }, [page, debouncedSearch, filterEstado, filterZona])
@@ -624,6 +636,11 @@ export default function ClientesPage() {
                         <div className="min-w-0 flex-1">
                           <p className="font-medium text-gray-900 truncate">{c.razon_social}</p>
                           <p className="text-xs text-gray-500 font-mono">{getIdentificadorLabel(c)}</p>
+                          {c.es_tambien_proveedor && (
+                            <span className="inline-flex items-center gap-1 mt-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-purple-50 text-purple-700 border border-purple-200">
+                              🏢 También Proveedor
+                            </span>
+                          )}
                           <div className="flex items-center gap-2 mt-1 text-xs text-gray-500">
                             <span>{c.tipos_cliente?.nombre ?? '—'}</span>
                             {c.listas_precio?.nombre && <span>· Lista {c.listas_precio.nombre}</span>}
@@ -672,7 +689,14 @@ export default function ClientesPage() {
                           <td className="py-3 px-4 font-mono text-xs text-gray-500">
                             {c.ruc ? <span><span className="text-gray-400">RUC</span> {c.ruc}</span> : c.dni ? <span><span className="text-gray-400">DNI</span> {c.dni}</span> : '—'}
                           </td>
-                          <td className="py-3 px-4 font-medium text-gray-900 max-w-[200px] truncate">{c.razon_social}</td>
+                          <td className="py-3 px-4 max-w-[240px]">
+                            <div className="font-medium text-gray-900 truncate">{c.razon_social}</div>
+                            {c.es_tambien_proveedor && (
+                              <span className="inline-flex items-center gap-1 mt-0.5 px-1.5 py-0.5 rounded text-[10px] font-medium bg-purple-50 text-purple-700 border border-purple-200">
+                                🏢 También Proveedor
+                              </span>
+                            )}
+                          </td>
                           <td className="py-3 px-4 text-xs">
                             <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border ${c.tipo_comprobante_preferido === 'factura' ? 'bg-blue-50 text-blue-700 border-blue-200' : 'bg-gray-50 text-gray-700 border-gray-200'}`}>
                               {c.tipo_comprobante_preferido === 'factura' ? 'Factura' : 'Boleta'}
