@@ -158,6 +158,10 @@ export default function VendedoresClient({
   const [reglaOpen, setReglaOpen] = useState(false)
   const [liqOpen, setLiqOpen] = useState(false)
   const [detalleOpen, setDetalleOpen] = useState(false)
+  const [zonasOpen, setZonasOpen] = useState(false)
+  const [zonasDisponibles, setZonasDisponibles] = useState<Array<{ id: string; nombre: string }>>([])
+  const [zonasSel, setZonasSel] = useState<string[]>([])
+  const [savingZonas, setSavingZonas] = useState(false)
   const [selected, setSelected] = useState<VendedorData | null>(null)
 
   // Form: Meta
@@ -552,6 +556,51 @@ export default function VendedoresClient({
     setDetalleOpen(true)
   }
 
+  const openZonas = async (v: VendedorData) => {
+    setSelected(v)
+    setSavingZonas(false)
+    setZonasOpen(true)
+    // Cargar zonas disponibles + zonas asignadas al vendedor
+    const [{ data: zs }, { data: pz }] = await Promise.all([
+      supabase.from('zonas').select('id, nombre').eq('activo', true).order('nombre'),
+      (supabase as any).from('profile_zonas').select('zona_id').eq('profile_id', v.id),
+    ])
+    setZonasDisponibles(zs ?? [])
+    setZonasSel((pz ?? []).map((r: any) => r.zona_id as string))
+  }
+
+  const guardarZonas = async () => {
+    if (!selected) return
+    setSavingZonas(true)
+    try {
+      // Borrar todas las asignaciones actuales y reinsertar las seleccionadas
+      const { error: errDel } = await (supabase as any).from('profile_zonas').delete().eq('profile_id', selected.id)
+      if (errDel) throw errDel
+      if (zonasSel.length > 0) {
+        const { error: errIns } = await (supabase as any).from('profile_zonas').insert(
+          zonasSel.map((z) => ({ profile_id: selected.id, zona_id: z }))
+        )
+        if (errIns) throw errIns
+      }
+      // Actualizar zona principal en profiles (la primera de la lista)
+      const zonaPrincipal = zonasSel[0] ?? null
+      await (supabase as any).from('profiles').update({
+        zona_id: zonaPrincipal,
+        updated_at: new Date().toISOString(),
+      }).eq('id', selected.id)
+
+      toast.success('Zonas actualizadas', {
+        description: `${selected.full_name}: ${zonasSel.length} zona${zonasSel.length === 1 ? '' : 's'} asignada${zonasSel.length === 1 ? '' : 's'}.`,
+      })
+      setZonasOpen(false)
+      router.refresh()
+    } catch (err: any) {
+      toast.error('No se pudo guardar', { description: err?.message ?? '' })
+    } finally {
+      setSavingZonas(false)
+    }
+  }
+
   // Gráfico de ventas por día del mes
   const ventasPorDiaChart = useMemo(() => {
     if (!selected) return []
@@ -715,15 +764,18 @@ export default function VendedoresClient({
                     <Button size="sm" variant="outline" onClick={() => openRegla(v)} className="text-xs gap-1">
                       <Percent className="w-3.5 h-3.5" /> Comisión
                     </Button>
-                    <Button
-                      size="sm"
-                      onClick={() => openLiq(v)}
-                      className="text-xs gap-1 bg-[#FBE600] hover:bg-[#E5D100] text-black font-semibold"
-                    >
-                      <Banknote className="w-3.5 h-3.5" /> Liquidar
+                    <Button size="sm" variant="outline" onClick={() => openZonas(v)} className="text-xs gap-1">
+                      <MapPin className="w-3.5 h-3.5" /> Zonas
                     </Button>
                     <Button size="sm" variant="outline" onClick={() => openDetalle(v)} className="text-xs gap-1">
                       <Eye className="w-3.5 h-3.5" /> Detalle
+                    </Button>
+                    <Button
+                      size="sm"
+                      onClick={() => openLiq(v)}
+                      className="col-span-2 text-xs gap-1 bg-[#FBE600] hover:bg-[#E5D100] text-black font-semibold"
+                    >
+                      <Banknote className="w-3.5 h-3.5" /> Liquidar
                     </Button>
                   </div>
                 </CardContent>
@@ -1193,6 +1245,84 @@ export default function VendedoresClient({
               </Tabs>
             </div>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal Zonas asignadas */}
+      <Dialog open={zonasOpen} onOpenChange={setZonasOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Zonas asignadas · {selected?.full_name}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 mt-2">
+            <div className="flex items-center justify-between">
+              <p className="text-xs text-gray-500">Selecciona las zonas que cubre este vendedor</p>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setZonasSel(zonasDisponibles.map((z) => z.id))}
+                  className="text-[11px] text-blue-600 hover:underline"
+                >
+                  Todas
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setZonasSel([])}
+                  className="text-[11px] text-gray-500 hover:underline"
+                >
+                  Limpiar
+                </button>
+              </div>
+            </div>
+            <div className="border border-gray-200 rounded-lg p-2 max-h-72 overflow-y-auto bg-white">
+              {zonasDisponibles.length === 0 ? (
+                <p className="text-xs text-gray-400 text-center py-4">No hay zonas activas</p>
+              ) : (
+                <div className="grid grid-cols-2 gap-1.5">
+                  {zonasDisponibles.map((z) => {
+                    const checked = zonasSel.includes(z.id)
+                    return (
+                      <label
+                        key={z.id}
+                        className={`flex items-center gap-1.5 px-2 py-1.5 rounded cursor-pointer text-xs hover:bg-gray-50 ${checked ? 'bg-yellow-50 border border-yellow-200' : 'border border-transparent'}`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={(e) => {
+                            setZonasSel((prev) =>
+                              e.target.checked ? [...prev, z.id] : prev.filter((id) => id !== z.id),
+                            )
+                          }}
+                          className="accent-yellow-400 w-3.5 h-3.5"
+                        />
+                        <span className="truncate">{z.nombre}</span>
+                      </label>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+            <p className="text-[11px] text-gray-400">
+              {zonasSel.length === 0
+                ? 'Sin zonas asignadas'
+                : <>
+                    <span className="font-semibold text-gray-700">{zonasSel.length}</span> zona{zonasSel.length === 1 ? '' : 's'} seleccionada{zonasSel.length === 1 ? '' : 's'}.
+                    La primera marcada se considera principal.
+                  </>}
+            </p>
+            <div className="flex justify-end gap-2 pt-2 border-t border-gray-100">
+              <Button variant="outline" onClick={() => setZonasOpen(false)}>Cancelar</Button>
+              <Button
+                onClick={guardarZonas}
+                disabled={savingZonas}
+                className="bg-[#FBE600] hover:bg-[#E5D100] text-black font-semibold gap-2"
+              >
+                {savingZonas && <Loader2 className="w-4 h-4 animate-spin" />}
+                Guardar Zonas
+              </Button>
+            </div>
+          </div>
         </DialogContent>
       </Dialog>
     </div>

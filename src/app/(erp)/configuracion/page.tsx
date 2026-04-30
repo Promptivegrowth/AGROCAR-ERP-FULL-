@@ -825,9 +825,10 @@ export default function ConfiguracionPage() {
               </div>
             </div>
 
+            {(userForm.role === 'vendedor' || userForm.role === 'repartidor') && (
             <div>
               <div className="flex items-center justify-between mb-1.5">
-                <Label className="text-xs">Zonas asignadas (vendedores/repartidores)</Label>
+                <Label className="text-xs">Zonas asignadas</Label>
                 <div className="flex items-center gap-2">
                   <button
                     type="button"
@@ -881,6 +882,7 @@ export default function ConfiguracionPage() {
                 )}
               </p>
             </div>
+            )}
 
             <div className="flex items-center gap-2 pt-1 border-t border-gray-100">
               <Switch
