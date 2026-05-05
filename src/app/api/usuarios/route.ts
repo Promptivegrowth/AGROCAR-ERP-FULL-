@@ -40,9 +40,36 @@ export async function POST(req: NextRequest) {
 
   const admin = createAdminClient()
 
+  // Validar duplicados ANTES de crear (mensajes claros)
+  const emailNorm = String(email).trim().toLowerCase()
+  const codigoNorm = codigo?.trim() || null
+  const dniNorm = dni?.trim() || null
+
+  const { data: existentes } = await (admin as any)
+    .from('profiles')
+    .select('email, codigo, dni, full_name')
+    .or([
+      `email.eq.${emailNorm}`,
+      codigoNorm ? `codigo.eq.${codigoNorm}` : null,
+      dniNorm ? `dni.eq.${dniNorm}` : null,
+    ].filter(Boolean).join(','))
+
+  if (existentes && existentes.length > 0) {
+    const e = existentes[0]
+    if (e.email === emailNorm) {
+      return NextResponse.json({ error: `El email ${emailNorm} ya está registrado para "${e.full_name}".` }, { status: 409 })
+    }
+    if (codigoNorm && e.codigo === codigoNorm) {
+      return NextResponse.json({ error: `El código "${codigoNorm}" ya está asignado a "${e.full_name}". Usa otro.` }, { status: 409 })
+    }
+    if (dniNorm && e.dni === dniNorm) {
+      return NextResponse.json({ error: `El DNI ${dniNorm} ya está registrado para "${e.full_name}".` }, { status: 409 })
+    }
+  }
+
   // 1. Crear en auth.users
   const { data: authData, error: authErr } = await admin.auth.admin.createUser({
-    email: String(email).trim().toLowerCase(),
+    email: emailNorm,
     password,
     email_confirm: true,
     user_metadata: { full_name },
@@ -56,11 +83,11 @@ export async function POST(req: NextRequest) {
   // 2. Upsert profile (puede que el handle_new_user trigger ya lo haya creado)
   const { error: profErr } = await (admin as any).from('profiles').upsert({
     id: newUserId,
-    email: String(email).trim().toLowerCase(),
+    email: emailNorm,
     full_name,
     role,
-    codigo: codigo?.trim() || null,
-    dni: dni?.trim() || null,
+    codigo: codigoNorm,
+    dni: dniNorm,
     telefono: telefono?.trim() || null,
     zona_id: zona_id || null,
     activo,
@@ -70,7 +97,12 @@ export async function POST(req: NextRequest) {
   if (profErr) {
     // Rollback: eliminar el auth user creado
     await admin.auth.admin.deleteUser(newUserId)
-    return NextResponse.json({ error: `Error en perfil: ${profErr.message}` }, { status: 400 })
+    // Mensajes amigables para errores de constraint
+    let msg = profErr.message ?? 'Error al crear el perfil'
+    if (msg.includes('profiles_codigo_unique')) msg = `El código "${codigoNorm}" ya está en uso por otro usuario.`
+    else if (msg.includes('profiles_dni_unique')) msg = `El DNI ${dniNorm} ya está registrado.`
+    else if (msg.includes('profiles_email_unique')) msg = `El email ${emailNorm} ya está registrado.`
+    return NextResponse.json({ error: msg }, { status: 400 })
   }
 
   // Sincronizar zonas (M:N)

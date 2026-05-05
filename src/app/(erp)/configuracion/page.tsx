@@ -252,17 +252,25 @@ export default function ConfiguracionPage() {
       if (editingUser) {
         // Zona principal: si tiene zonas múltiples, la primera es la principal
         const zonaPrincipal = userForm.zona_ids[0] ?? userForm.zona_id ?? null
+        const codigoNorm = userForm.codigo?.trim() || null
+        const dniNorm = userForm.dni?.trim() || null
         const { error } = await (supabase.from('profiles') as any).update({
           full_name: userForm.full_name,
           role: userForm.role as any,
           activo: userForm.activo,
-          codigo: userForm.codigo?.trim() || null,
-          dni: userForm.dni?.trim() || null,
+          codigo: codigoNorm,
+          dni: dniNorm,
           telefono: userForm.telefono?.trim() || null,
           zona_id: zonaPrincipal,
           updated_at: new Date().toISOString(),
         }).eq('id', editingUser.id)
-        if (error) throw error
+        if (error) {
+          // Mensajes amigables para constraint UNIQUE
+          let msg = error.message
+          if (msg.includes('profiles_codigo_unique')) msg = `El código "${codigoNorm}" ya está en uso por otro usuario.`
+          else if (msg.includes('profiles_dni_unique')) msg = `El DNI ${dniNorm} ya está registrado para otro usuario.`
+          throw new Error(msg)
+        }
 
         // Sincronizar profile_zonas: borrar todas y reinsertar las seleccionadas
         await (supabase as any).from('profile_zonas').delete().eq('profile_id', editingUser.id)
