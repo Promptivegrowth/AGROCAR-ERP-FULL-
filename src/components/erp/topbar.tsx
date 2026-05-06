@@ -83,13 +83,13 @@ export default function Topbar({ user, onMenuClick }: TopbarProps) {
         sb.from('solicitudes_cliente').select('id', { count: 'exact', head: true }).eq('estado', 'pendiente'),
         sb.from('cobros').select('id', { count: 'exact', head: true }).eq('conciliado', false),
         sb.from('lotes')
-          .select('id, fecha_vencimiento, productos(nombre)')
+          .select('id, fecha_vencimiento, productos(nombre, descripcion)')
           .eq('activo', true)
           .gt('cantidad_actual', 0)
           .lte('fecha_vencimiento', new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0])
           .limit(3),
         sb.from('v_stock_alertas')
-          .select('codigo, nombre, estado_stock, stock_actual, stock_minimo')
+          .select('codigo, nombre, descripcion, estado_stock, stock_actual, stock_minimo')
           .eq('estado_stock', 'bajo_minimo')
           .limit(3),
       ])
@@ -119,17 +119,19 @@ export default function Topbar({ user, onMenuClick }: TopbarProps) {
         })
       }
       ;(stockBajo ?? []).forEach((s: any, i: number) => {
+        const label = s.descripcion?.trim() || s.nombre
         result.push({
           id: `stk-${i}`,
-          msg: `Stock bajo: ${s.nombre} (${s.stock_actual} / mín ${s.stock_minimo})`,
+          msg: `Stock bajo: ${label} (${s.stock_actual} / mín ${s.stock_minimo})`,
           href: '/almacen',
           dot: 'bg-orange-400',
         })
       })
       ;(lotesVenc ?? []).forEach((l: any, i: number) => {
+        const label = l.productos?.descripcion?.trim() || l.productos?.nombre || '—'
         result.push({
           id: `lot-${i}`,
-          msg: `Lote por vencer: ${l.productos?.nombre ?? '—'} (${l.fecha_vencimiento})`,
+          msg: `Lote por vencer: ${label} (${l.fecha_vencimiento})`,
           href: '/almacen/lotes',
           dot: 'bg-purple-400',
         })

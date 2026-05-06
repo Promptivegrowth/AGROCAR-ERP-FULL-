@@ -14,6 +14,7 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { productoLabel, productoSubLabel } from '@/lib/producto-utils'
 
 const TIPO_MOV_CONFIG: Record<string, { label: string; className: string }> = {
   entrada: { label: 'Entrada', className: 'bg-green-100 text-green-700 border-green-200' },
@@ -62,7 +63,7 @@ export default function AlmacenPage() {
       .from('stock')
       .select(`
         id, producto_id, cantidad, cantidad_reservada, costo_promedio, updated_at,
-        productos(id, codigo, nombre, activo, familia_id, unidad_medida_id, tiene_lote, tiene_vencimiento,
+        productos(id, codigo, nombre, descripcion, activo, familia_id, unidad_medida_id, tiene_lote, tiene_vencimiento,
           stock_minimo, stock_maximo,
           familias(nombre),
           unidades_medida(simbolo, nombre)
@@ -273,7 +274,9 @@ export default function AlmacenPage() {
     const q = debouncedSearch.toLowerCase()
     return (
       (producto?.codigo ?? '').toLowerCase().includes(q) ||
-      (producto?.nombre ?? '').toLowerCase().includes(q)
+      productoLabel(producto).toLowerCase().includes(q) ||
+      (producto?.nombre ?? '').toLowerCase().includes(q) ||
+      (producto?.codigo ?? '').toLowerCase().includes(q)
     )
   })
 
@@ -421,7 +424,10 @@ export default function AlmacenPage() {
                     >
                       <div className="flex items-start justify-between gap-2">
                         <div className="min-w-0 flex-1">
-                          <p className="font-medium text-gray-900 truncate">{producto?.nombre ?? '—'}</p>
+                          <p className="font-medium text-gray-900 truncate">{productoLabel(producto)}</p>
+                          {productoSubLabel(producto) && (
+                            <p className="text-[10px] text-gray-400 truncate">{productoSubLabel(producto)}</p>
+                          )}
                           <p className="text-xs text-gray-500 font-mono">{producto?.codigo ?? '—'}</p>
                           <div className="flex items-center gap-3 mt-2 text-xs">
                             <span className={`font-bold ${esBajo ? 'text-orange-600' : 'text-gray-800'}`}>
@@ -490,7 +496,12 @@ export default function AlmacenPage() {
                       return (
                         <tr key={s.id} className={`hover:bg-gray-50/50 transition-colors ${estadoStock === 'bajo_minimo' ? 'bg-red-50/40' : estadoStock === 'cerca_minimo' ? 'bg-amber-50/30' : estadoStock === 'sobrestock' ? 'bg-purple-50/30' : ''}`}>
                           <td className="py-3 px-4 font-mono text-xs text-gray-500">{producto?.codigo ?? '—'}</td>
-                          <td className="py-3 px-4 font-medium text-gray-900 max-w-[240px] truncate">{producto?.nombre ?? '—'}</td>
+                          <td className="py-3 px-4 max-w-[280px]">
+                            <div className="font-medium text-gray-900 truncate">{productoLabel(producto)}</div>
+                            {productoSubLabel(producto) && (
+                              <div className="text-[10px] text-gray-400 truncate">{productoSubLabel(producto)}</div>
+                            )}
+                          </td>
                           <td className="py-3 px-4">
                             <span className={`font-bold ${esAlerta ? (estadoStock === 'bajo_minimo' ? 'text-red-600' : estadoStock === 'cerca_minimo' ? 'text-amber-600' : 'text-purple-600') : 'text-gray-800'}`}>
                               {disponible.toLocaleString('es-PE')}
@@ -574,7 +585,7 @@ export default function AlmacenPage() {
                     <Package className="w-6 h-6 text-blue-600" />
                   </div>
                   <div className="min-w-0 flex-1">
-                    <p className="font-semibold text-gray-900 truncate">{producto?.nombre ?? '—'}</p>
+                    <p className="font-semibold text-gray-900 truncate">{productoLabel(producto)}</p>
                     <p className="text-xs text-gray-500 font-mono">{producto?.codigo ?? '—'}</p>
                     <div className="flex flex-wrap items-center gap-2 mt-2 text-xs">
                       {producto?.familias?.nombre && (

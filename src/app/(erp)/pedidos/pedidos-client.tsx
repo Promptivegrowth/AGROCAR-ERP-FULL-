@@ -87,7 +87,7 @@ export default function PedidosClient({ pedidosIniciales }: { pedidosIniciales: 
     const [{ data }, { data: comp }] = await Promise.all([
       supabase
         .from('pedidos_items')
-        .select('id, cantidad, precio_unitario, descuento_porcentaje, subtotal, productos(codigo, nombre, unidades_medida(simbolo))')
+        .select('id, cantidad, precio_unitario, descuento_porcentaje, subtotal, productos(codigo, nombre, descripcion, unidades_medida(simbolo))')
         .eq('pedido_id', p.id),
       supabase
         .from('comprobantes')
@@ -357,7 +357,7 @@ export default function PedidosClient({ pedidosIniciales }: { pedidosIniciales: 
                           {items.map((it: any) => (
                             <tr key={it.id}>
                               <td className="px-3 py-2">
-                                <div className="font-medium text-gray-900 text-sm">{it.productos?.nombre ?? '—'}</div>
+                                <div className="font-medium text-gray-900 text-sm">{it.productos?.descripcion?.trim() || it.productos?.nombre || '—'}</div>
                                 <div className="text-xs text-gray-400 font-mono">{it.productos?.codigo}</div>
                               </td>
                               <td className="px-3 py-2 text-right font-mono text-sm">

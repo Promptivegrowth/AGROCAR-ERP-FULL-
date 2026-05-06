@@ -68,7 +68,7 @@ export default function VendedoresTab() {
           .select(`
             id, vendedor_id, fecha_pedido, total, estado,
             clientes(razon_social, distrito, tipo_comprobante_preferido, zonas(nombre)),
-            pedidos_items(cantidad, precio_unitario, subtotal, productos(nombre, familias(nombre)))
+            pedidos_items(cantidad, precio_unitario, subtotal, productos(nombre, descripcion, familias(nombre)))
           `)
           .gte('fecha_pedido', desde)
           .in('estado', ['facturado','despachado','entregado'])
@@ -102,7 +102,7 @@ export default function VendedoresTab() {
           cantidad: Number(it.cantidad),
           precio_unitario: Number(it.precio_unitario),
           subtotal: Number(it.subtotal),
-          producto_nombre: it.productos?.nombre ?? '—',
+          producto_nombre: it.productos?.descripcion?.trim() || it.productos?.nombre || '—',
           familia_nombre: it.productos?.familias?.nombre ?? null,
         })),
       })))

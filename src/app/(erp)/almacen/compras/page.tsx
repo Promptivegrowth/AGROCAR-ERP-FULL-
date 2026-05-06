@@ -95,7 +95,7 @@ export default function ComprasPage() {
         .order('fecha', { ascending: false })
         .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1),
       supabase.from('proveedores').select('id, razon_social').eq('activo', true).order('razon_social'),
-      supabase.from('productos').select('id, codigo, nombre, tiene_lote, tiene_vencimiento').eq('activo', true).order('nombre'),
+      supabase.from('productos').select('id, codigo, nombre, descripcion, tiene_lote, tiene_vencimiento').eq('activo', true).order('nombre'),
     ])
     setCompras(c ?? [])
     setTotal(count ?? 0)
@@ -114,7 +114,7 @@ export default function ComprasPage() {
       if (!prod) continue
       if (prod.tiene_lote && !item.lote_numero?.trim()) {
         toast.error('Lote requerido', {
-          description: `El producto "${prod.nombre}" requiere número de lote.`,
+          description: `El producto "${(prod as any).descripcion?.trim() || prod.nombre}" requiere número de lote.`,
         })
         return
       }
@@ -386,9 +386,9 @@ export default function ComprasPage() {
                                 <SelectValue placeholder="Seleccionar..." />
                               </SelectTrigger>
                               <SelectContent>
-                                {productos.map((p) => (
+                                {productos.map((p: any) => (
                                   <SelectItem key={p.id} value={p.id}>
-                                    {p.nombre}
+                                    {p.descripcion?.trim() || p.nombre}
                                     {(p.tiene_lote || p.tiene_vencimiento) && (
                                       <span className="ml-1 text-[10px] text-amber-600">· lote</span>
                                     )}

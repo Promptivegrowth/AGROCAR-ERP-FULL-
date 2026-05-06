@@ -24,7 +24,7 @@ export default function PedidoDetalleModal({ pedido, open, onOpenChange }: Props
     ;(async () => {
       const { data } = await supabase
         .from('pedidos_items')
-        .select('id, cantidad, precio_unitario, subtotal, productos(codigo, nombre, peso_kg, unidades_medida(simbolo))')
+        .select('id, cantidad, precio_unitario, subtotal, productos(codigo, nombre, descripcion, peso_kg, unidades_medida(simbolo))')
         .eq('pedido_id', pedido.id)
       setItems(data ?? [])
       setLoading(false)
@@ -137,7 +137,7 @@ export default function PedidoDetalleModal({ pedido, open, onOpenChange }: Props
                       return (
                         <tr key={it.id}>
                           <td className="px-3 py-2">
-                            <p className="font-medium text-gray-900 text-xs">{it.productos?.nombre}</p>
+                            <p className="font-medium text-gray-900 text-xs">{it.productos?.descripcion?.trim() || it.productos?.nombre || '—'}</p>
                             <p className="text-[10px] text-gray-400 font-mono">{it.productos?.codigo}</p>
                           </td>
                           <td className="px-3 py-2 text-right font-mono text-xs">

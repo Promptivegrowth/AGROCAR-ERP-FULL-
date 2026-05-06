@@ -40,7 +40,7 @@ async function getData(id: string) {
         id, numero, total, notas,
         clientes(id, razon_social, ruc, dni, tipo_comprobante_preferido, direccion, telefono, latitud, longitud, dias_visita, zonas(nombre), distrito),
         profiles!pedidos_vendedor_id_fkey(id, full_name),
-        pedidos_items(cantidad, productos(codigo, nombre, peso_kg, unidades_medida(simbolo)))
+        pedidos_items(cantidad, productos(codigo, nombre, descripcion, peso_kg, unidades_medida(simbolo)))
       )
     `)
     .eq('despacho_id', id)
@@ -84,7 +84,7 @@ async function getData(id: string) {
         items: (it.pedidos?.pedidos_items ?? []).map((x: any) => ({
           cantidad: Number(x.cantidad),
           simbolo: x.productos?.unidades_medida?.simbolo ?? '',
-          nombre: x.productos?.nombre ?? '—',
+          nombre: x.productos?.descripcion?.trim() || x.productos?.nombre || '—',
           codigo: x.productos?.codigo ?? '',
         })),
         secuencia: ordenMap.get(it.pedido_id) ?? 999,

@@ -94,7 +94,7 @@ export default function PedidosPage() {
           .order('razon_social'),
         supabase
           .from('productos')
-          .select('id, nombre, codigo, activo, tiene_lote, tiene_vencimiento')
+          .select('id, nombre, descripcion, codigo, activo, tiene_lote, tiene_vencimiento')
           .eq('activo', true)
           .order('nombre'),
       ])
@@ -146,6 +146,7 @@ export default function PedidosPage() {
     const q = debouncedProductoSearch.toLowerCase()
     const filtrados = productosDisponibles.filter(
       (p) =>
+        ((p as any).descripcion ?? '').toLowerCase().includes(q) ||
         p.nombre.toLowerCase().includes(q) ||
         (p.codigo ?? '').toLowerCase().includes(q)
     )
@@ -177,7 +178,7 @@ export default function PedidosPage() {
         .eq('cliente_id', cliente.id),
       supabase
         .from('productos')
-        .select('id, nombre, codigo, activo')
+        .select('id, nombre, descripcion, codigo, activo')
         .eq('activo', true)
         .order('nombre'),
       cliente.lista_precio_id
@@ -205,6 +206,7 @@ export default function PedidosPage() {
     const mapped = (allProductos ?? []).map((p: any) => ({
       id: p.id,
       nombre: p.nombre,
+      descripcion: p.descripcion ?? null,
       codigo: p.codigo ?? null,
       activo: p.activo ?? true,
       precio: precioMap.get(p.id) ?? 0,
@@ -316,7 +318,7 @@ export default function PedidosPage() {
           if (lote) {
             lotePorProducto[s.producto.id] = (lote as any).id
           } else {
-            productosSinLote.push(s.producto.nombre)
+            productosSinLote.push((s.producto as any).descripcion?.trim() || s.producto.nombre)
           }
         }
 
@@ -593,12 +595,12 @@ export default function PedidosPage() {
                           onClick={() => agregarProducto(p)}
                           className="w-full text-left px-4 py-3 hover:bg-green-50 border-b border-gray-100 last:border-0"
                         >
-                          <div className="flex items-center justify-between">
-                            <div>
-                              <div className="font-medium text-gray-900 text-sm">{p.nombre}</div>
-                              <div className="text-xs text-gray-500">{p.codigo}</div>
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="min-w-0 flex-1">
+                              <div className="font-medium text-gray-900 text-sm truncate">{(p as any).descripcion?.trim() || p.nombre}</div>
+                              <div className="text-[10px] text-gray-400 font-mono">{p.codigo}</div>
                             </div>
-                            <div className="text-green-700 font-semibold text-sm">
+                            <div className="text-green-700 font-semibold text-sm shrink-0">
                               {formatCurrency(p.precio)}
                             </div>
                           </div>
@@ -620,7 +622,7 @@ export default function PedidosPage() {
                       <div key={producto.id} className="bg-gray-50 rounded-xl p-3">
                         <div className="flex items-start justify-between mb-2">
                           <div className="flex-1 min-w-0">
-                            <div className="font-medium text-gray-900 text-sm truncate">{producto.nombre}</div>
+                            <div className="font-medium text-gray-900 text-sm truncate">{(producto as any).descripcion?.trim() || producto.nombre}</div>
                             <div className="text-xs text-gray-500">{formatCurrency(producto.precio)} c/u</div>
                           </div>
                           <button

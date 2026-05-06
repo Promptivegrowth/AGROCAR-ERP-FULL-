@@ -48,7 +48,7 @@ export default async function ComprobantePage({ params }: { params: Promise<{ id
     .from('comprobantes_items')
     .select(`
       id, descripcion, cantidad, precio_unitario, subtotal, igv_porcentaje,
-      productos(codigo, nombre)
+      productos(codigo, nombre, descripcion)
     `)
     .eq('comprobante_id', id)
 
@@ -170,7 +170,7 @@ export default async function ComprobantePage({ params }: { params: Promise<{ id
             {(items ?? []).map((it: any) => (
               <tr key={it.id} style={{ verticalAlign: 'top' }}>
                 <td style={{ padding: '2px 2px 2px 0' }}>{it.productos?.codigo ?? '—'}</td>
-                <td style={{ padding: '2px 2px' }}>{truncar(it.descripcion ?? it.productos?.nombre ?? '', 18)}</td>
+                <td style={{ padding: '2px 2px' }}>{truncar(it.descripcion ?? it.productos?.descripcion ?? it.productos?.nombre ?? '', 18)}</td>
                 <td style={{ textAlign: 'right', padding: '2px 2px' }}>{Number(it.cantidad).toFixed(0)}</td>
                 <td style={{ textAlign: 'right', padding: '2px 2px' }}>{fmtNum(Number(it.precio_unitario))}</td>
                 <td style={{ textAlign: 'right', padding: '2px 0 2px 2px' }}>{fmtNum(Number(it.subtotal))}</td>

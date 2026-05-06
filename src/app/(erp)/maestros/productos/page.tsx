@@ -21,6 +21,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
+import { productoLabel, productoSubLabel } from '@/lib/producto-utils'
 
 const productoSchema = z.object({
   codigo: z.string().min(1, 'Requerido'),
@@ -96,7 +97,10 @@ export default function ProductosPage() {
       .order('nombre')
       .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1)
 
-    if (debouncedSearch) query = query.ilike('nombre', `%${debouncedSearch}%`)
+    if (debouncedSearch) {
+      // Buscar en nombre (grupo), descripcion (nombre comercial) y código
+      query = query.or(`nombre.ilike.%${debouncedSearch}%,descripcion.ilike.%${debouncedSearch}%,codigo.ilike.%${debouncedSearch}%`)
+    }
     if (filterFamilia !== 'todas') query = query.eq('familia_id', filterFamilia)
 
     const { data, count, error } = await query
@@ -281,7 +285,7 @@ export default function ProductosPage() {
             <div className="relative flex-1 min-w-[200px]">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
               <Input
-                placeholder="Buscar por nombre..."
+                placeholder="Buscar por nombre, descripción o código..."
                 className="pl-9"
                 value={search}
                 onChange={(e) => { setSearch(e.target.value); setPage(0) }}
@@ -322,7 +326,10 @@ export default function ProductosPage() {
                   <div key={p.id} className="p-4 hover:bg-gray-50/50">
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0 flex-1">
-                        <p className="font-medium text-gray-900 truncate">{p.nombre}</p>
+                        <p className="font-medium text-gray-900 truncate">{productoLabel(p)}</p>
+                        {productoSubLabel(p) && (
+                          <p className="text-[10px] text-gray-400 font-mono truncate">{productoSubLabel(p)}</p>
+                        )}
                         <p className="text-xs text-gray-500 font-mono">{p.codigo}</p>
                         <p className="text-xs text-gray-500 mt-1">
                           {p.familias?.nombre ?? 'Sin familia'} · {p.unidades_medida?.simbolo ?? '—'}
@@ -357,7 +364,7 @@ export default function ProductosPage() {
                 <table className="w-full text-sm">
                   <thead className="border-b border-gray-100 bg-gray-50/50">
                     <tr>
-                      {['Código', 'Nombre', 'Familia', 'UM', 'Peso (kg)', 'Precio A', 'Precio B', 'Precio C', 'Estado', 'Acciones'].map((h) => (
+                      {['Código', 'Producto', 'Familia', 'UM', 'Peso (kg)', 'Precio A', 'Precio B', 'Precio C', 'Estado', 'Acciones'].map((h) => (
                         <th key={h} className="text-left py-3 px-4 text-xs font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap">
                           {h}
                         </th>
@@ -368,7 +375,12 @@ export default function ProductosPage() {
                     {productos.map((p) => (
                       <tr key={p.id} className="hover:bg-gray-50/50 transition-colors">
                         <td className="py-3 px-4 font-mono text-xs text-gray-500">{p.codigo}</td>
-                        <td className="py-3 px-4 font-medium text-gray-900 max-w-[220px] truncate">{p.nombre}</td>
+                        <td className="py-3 px-4 max-w-[280px]">
+                          <div className="font-medium text-gray-900 truncate">{productoLabel(p)}</div>
+                          {productoSubLabel(p) && (
+                            <div className="text-[10px] text-gray-400 truncate">{productoSubLabel(p)}</div>
+                          )}
+                        </td>
                         <td className="py-3 px-4 text-gray-600 text-xs">{p.familias?.nombre ?? '—'}</td>
                         <td className="py-3 px-4 text-gray-600 text-xs">{p.unidades_medida?.simbolo ?? '—'}</td>
                         <td className="py-3 px-4 text-xs">
@@ -440,15 +452,24 @@ export default function ProductosPage() {
                 {errors.codigo && <p className="text-xs text-red-500 mt-1">{errors.codigo.message}</p>}
               </div>
               <div>
-                <Label>Nombre *</Label>
-                <Input {...register('nombre')} placeholder="Nombre del producto" className="mt-1" />
+                <Label>Categoría / Grupo *</Label>
+                <Input {...register('nombre')} placeholder="Ej: CHORIZOS, AHUMADOS..." className="mt-1" />
+                <p className="text-[11px] text-gray-400 mt-1">Grupo genérico (uso interno para agrupar productos similares).</p>
                 {errors.nombre && <p className="text-xs text-red-500 mt-1">{errors.nombre.message}</p>}
               </div>
             </div>
 
             <div>
-              <Label>Descripción</Label>
-              <Textarea {...register('descripcion')} placeholder="Descripción opcional" className="mt-1" rows={2} />
+              <Label>Nombre comercial</Label>
+              <Textarea
+                {...register('descripcion')}
+                placeholder="Ej: CHORIZO PARRILLERO X 500GR.CERDEÑA"
+                className="mt-1"
+                rows={2}
+              />
+              <p className="text-[11px] text-gray-400 mt-1">
+                Nombre específico que se mostrará en pedidos, comprobantes, hoja de ruta y PWA.
+              </p>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -632,18 +653,23 @@ export default function ProductosPage() {
                   <Package className="w-6 h-6 text-green-600" />
                 </div>
                 <div className="min-w-0 flex-1">
-                  <p className="font-semibold text-gray-900 truncate">{selected.nombre}</p>
-                  <p className="text-xs text-gray-500 font-mono">{selected.codigo}</p>
+                  <p className="font-semibold text-gray-900 truncate">{productoLabel(selected)}</p>
+                  <p className="text-xs text-gray-500 font-mono">
+                    {selected.nombre && selected.descripcion && selected.nombre !== selected.descripcion ? (
+                      <>{selected.nombre} · </>
+                    ) : null}
+                    {selected.codigo}
+                  </p>
                 </div>
                 {selected.activo
                   ? <Badge className="text-xs bg-green-100 text-green-700 border-green-200">Activo</Badge>
                   : <Badge variant="secondary" className="text-xs">Inactivo</Badge>}
               </div>
 
-              {selected.descripcion && (
+              {selected.nombre && (
                 <div>
-                  <p className="text-xs text-gray-500">Descripción</p>
-                  <p className="text-sm text-gray-800">{selected.descripcion}</p>
+                  <p className="text-xs text-gray-500">Categoría / Grupo</p>
+                  <p className="text-sm text-gray-800">{selected.nombre}</p>
                 </div>
               )}
 

@@ -10,6 +10,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select'
+import { productoLabel, productoSubLabel } from '@/lib/producto-utils'
 
 interface LotesClientProps {
   initialLotes: any[]
@@ -86,6 +87,7 @@ export default function LotesClient({ initialLotes, productos }: LotesClientProp
       if (!q) return true
       return (
         (l.numero_lote ?? '').toLowerCase().includes(q) ||
+        productoLabel(l.productos).toLowerCase().includes(q) ||
         (l.productos?.nombre ?? '').toLowerCase().includes(q) ||
         (l.productos?.codigo ?? '').toLowerCase().includes(q)
       )
@@ -275,7 +277,10 @@ export default function LotesClient({ initialLotes, productos }: LotesClientProp
                     return (
                       <tr key={l.id} className={`hover:bg-gray-50/50 transition-colors ${cfg.rowClassName}`}>
                         <td className="py-3 px-4">
-                          <p className="font-medium text-gray-900">{l.productos?.nombre ?? '—'}</p>
+                          <p className="font-medium text-gray-900">{productoLabel(l.productos)}</p>
+                          {productoSubLabel(l.productos) && (
+                            <p className="text-[10px] text-gray-400">{productoSubLabel(l.productos)}</p>
+                          )}
                           <p className="text-xs text-gray-500 font-mono">{l.productos?.codigo ?? '—'}</p>
                         </td>
                         <td className="py-3 px-4 font-mono text-xs text-gray-700">{l.numero_lote ?? '—'}</td>
