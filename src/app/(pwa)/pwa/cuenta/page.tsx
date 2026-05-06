@@ -17,6 +17,7 @@ interface ResumenDia {
   cobrosRegistrados: number
   montoTotalCobros: number
   clientesVisitados: number
+  clientesProgramadosHoy: number
 }
 
 interface ComisionMes {
@@ -62,7 +63,10 @@ export default function CuentaPage() {
       // Resumen del día
       const hoy = new Date().toISOString().split('T')[0]
 
-      const [{ data: pedidos }, { data: cobros }, { data: checkins }] = await Promise.all([
+      const JS_DAY_TO_KEY = ['dom', 'lun', 'mar', 'mie', 'jue', 'vie', 'sab']
+      const diaHoy = JS_DAY_TO_KEY[new Date().getDay()]
+
+      const [{ data: pedidos }, { data: cobros }, { data: checkins }, { data: programados }] = await Promise.all([
         supabase
           .from('pedidos')
           .select('total')
@@ -79,6 +83,12 @@ export default function CuentaPage() {
           .eq('usuario_id', user.id)
           .eq('tipo', 'entrada')
           .gte('created_at', hoy),
+        (supabase as any)
+          .from('clientes')
+          .select('id')
+          .eq('vendedor_id', user.id)
+          .eq('estado', 'activo')
+          .contains('dias_visita', [diaHoy]),
       ])
 
       const clientesUnicosDia = new Set(checkins?.map((c) => c.cliente_id) ?? []).size
@@ -91,6 +101,7 @@ export default function CuentaPage() {
         cobrosRegistrados: cobros?.length ?? 0,
         montoTotalCobros: montoCobros,
         clientesVisitados: clientesUnicosDia,
+        clientesProgramadosHoy: programados?.length ?? 0,
       })
 
       // Comisiones del mes
@@ -219,6 +230,27 @@ export default function CuentaPage() {
                   <div className="text-xs text-purple-400 mt-0.5">clientes</div>
                 </div>
               </div>
+
+              {/* Programados hoy */}
+              {resumen.clientesProgramadosHoy > 0 && (
+                <div className="mt-3 bg-yellow-50 border border-yellow-200 rounded-xl p-3 flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="text-lg">📅</span>
+                    <div>
+                      <p className="text-xs font-semibold text-yellow-900">Agenda de hoy</p>
+                      <p className="text-[11px] text-yellow-800">
+                        {resumen.clientesProgramadosHoy} cliente{resumen.clientesProgramadosHoy === 1 ? '' : 's'} programado{resumen.clientesProgramadosHoy === 1 ? '' : 's'}
+                        {' · '}{resumen.clientesVisitados} visitado{resumen.clientesVisitados === 1 ? '' : 's'}
+                      </p>
+                    </div>
+                  </div>
+                  <span className="text-xl font-bold text-yellow-900">
+                    {resumen.clientesProgramadosHoy > 0
+                      ? `${Math.min(100, Math.round((resumen.clientesVisitados / resumen.clientesProgramadosHoy) * 100))}%`
+                      : '—'}
+                  </span>
+                </div>
+              )}
             </CardContent>
           </Card>
         )}

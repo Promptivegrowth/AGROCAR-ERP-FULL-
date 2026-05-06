@@ -38,7 +38,7 @@ async function getData(id: string) {
       id, pedido_id, estado, notas_entrega,
       pedidos(
         id, numero, total, notas,
-        clientes(id, razon_social, ruc, dni, tipo_comprobante_preferido, direccion, telefono, latitud, longitud, zonas(nombre), distrito),
+        clientes(id, razon_social, ruc, dni, tipo_comprobante_preferido, direccion, telefono, latitud, longitud, dias_visita, zonas(nombre), distrito),
         profiles!pedidos_vendedor_id_fkey(id, full_name),
         pedidos_items(cantidad, productos(codigo, nombre, peso_kg, unidades_medida(simbolo)))
       )
@@ -70,6 +70,7 @@ async function getData(id: string) {
         tipo_comprobante: it.pedidos?.clientes?.tipo_comprobante_preferido ?? null,
         direccion: it.pedidos?.clientes?.direccion ?? '—',
         zona: it.pedidos?.clientes?.zonas?.nombre ?? null,
+        dias_visita: it.pedidos?.clientes?.dias_visita ?? [],
         distrito: it.pedidos?.clientes?.distrito ?? null,
         telefono: it.pedidos?.clientes?.telefono ?? null,
         lat: it.pedidos?.clientes?.latitud ?? null,
@@ -118,6 +119,10 @@ export default async function HojaRutaPage({ params }: { params: { id: string } 
   const v = despacho.vehiculos as any
   const conductor = despacho.profiles as any
   const distanciaTotal = paradas.reduce((a: number, p: any) => a + (p.distancia_km ?? 0), 0)
+
+  // Día de la semana del despacho para comparar con dias_visita del cliente
+  const JS_DAY_TO_KEY = ['dom', 'lun', 'mar', 'mie', 'jue', 'vie', 'sab']
+  const diaDespacho = JS_DAY_TO_KEY[new Date(despacho.fecha_despacho + 'T12:00:00').getDay()]
   const pctCapacidad = v?.capacidad_kg ? (Number(despacho.peso_total_kg) / Number(v.capacidad_kg)) * 100 : 0
   const fecha = new Date(despacho.fecha_despacho).toLocaleDateString('es-PE', { year: 'numeric', month: 'long', day: 'numeric' })
 
@@ -226,7 +231,20 @@ export default async function HojaRutaPage({ params }: { params: { id: string } 
                   <div className="flex-1 min-w-0">
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0 flex-1">
-                        <p className="font-bold text-gray-900 uppercase tracking-wide">{p.cliente}</p>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <p className="font-bold text-gray-900 uppercase tracking-wide">{p.cliente}</p>
+                          {Array.isArray(p.dias_visita) && p.dias_visita.length > 0 && (
+                            p.dias_visita.includes(diaDespacho) ? (
+                              <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-bold bg-green-100 text-green-700 border border-green-200">
+                                ✓ Día programado
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-bold bg-amber-100 text-amber-700 border border-amber-200" title={`Cliente programado para: ${p.dias_visita.join(', ')}`}>
+                                ⚠ Fuera de día
+                              </span>
+                            )
+                          )}
+                        </div>
                         <p className="text-[11px] text-gray-600 font-mono">
                           {p.ruc ? `RUC ${p.ruc}` : p.dni ? `DNI ${p.dni}` : 'Sin doc.'}
                           {p.vendedor && <> · Vendedor: <span className="font-semibold">{p.vendedor}</span></>}

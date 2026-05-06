@@ -24,6 +24,7 @@ import { formatCurrency, formatDate } from '@/lib/utils'
 import type { Cliente, Pedido, Cobro } from '@/types'
 import UbigeoSelector, { UBIGEO_EMPTY, type UbigeoValue } from '@/components/ubigeo-selector'
 import { matchUbigeoFromNombres } from '@/lib/ubigeo/match'
+import { clienteVisitaHoy, labelDias } from '@/lib/dias-visita'
 
 interface ClienteConDeuda extends Cliente {
   deuda_pendiente: number
@@ -72,6 +73,7 @@ type TipoCliente = 'consumidor_final' | 'tienda'
 export default function ClientesPage() {
   const [clientes, setClientes] = useState<ClienteConDeuda[]>([])
   const [filtrados, setFiltrados] = useState<ClienteConDeuda[]>([])
+  const [soloHoy, setSoloHoy] = useState(false)
   const [search, setSearch] = useState('')
   const debouncedSearch = useDebounce(search, 300)
   const [loading, setLoading] = useState(true)
@@ -223,13 +225,17 @@ export default function ClientesPage() {
   }, [cargarSolicitudes])
 
   useEffect(() => {
+    let base = clientes
+    if (soloHoy) {
+      base = base.filter((c) => clienteVisitaHoy((c as any).dias_visita))
+    }
     if (!debouncedSearch.trim()) {
-      setFiltrados(clientes)
+      setFiltrados(base)
       return
     }
     const q = debouncedSearch.toLowerCase()
     setFiltrados(
-      clientes.filter(
+      base.filter(
         (c) =>
           c.razon_social.toLowerCase().includes(q) ||
           (c.ruc ?? '').toLowerCase().includes(q) ||
@@ -237,7 +243,7 @@ export default function ClientesPage() {
           (c.telefono ?? '').includes(q)
       )
     )
-  }, [debouncedSearch, clientes])
+  }, [debouncedSearch, clientes, soloHoy])
 
   async function verDetalle(cliente: ClienteConDeuda) {
     setLoadingDetalle(true)
@@ -590,14 +596,29 @@ export default function ClientesPage() {
             </div>
           ) : (
             <div className="space-y-2">
-              <p className="text-xs text-gray-500 mb-3">{filtrados.length} clientes</p>
-              {filtrados.map((cliente) => (
+              <div className="flex items-center justify-between mb-3">
+                <p className="text-xs text-gray-500">{filtrados.length} clientes</p>
+                <button
+                  type="button"
+                  onClick={() => setSoloHoy(!soloHoy)}
+                  className={`text-xs font-semibold px-3 py-1.5 rounded-full border transition-colors ${
+                    soloHoy
+                      ? 'bg-yellow-200 text-yellow-900 border-yellow-300'
+                      : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'
+                  }`}
+                >
+                  {soloHoy ? '📅 Solo Hoy' : '📅 Filtrar Hoy'}
+                </button>
+              </div>
+              {filtrados.map((cliente) => {
+                const tocaHoy = clienteVisitaHoy((cliente as any).dias_visita)
+                return (
                 <button
                   key={cliente.id}
                   onClick={() => verDetalle(cliente)}
                   className="w-full text-left"
                 >
-                  <Card className="border-0 shadow-sm hover:shadow-md transition-shadow">
+                  <Card className={`border-0 shadow-sm hover:shadow-md transition-shadow ${tocaHoy ? 'ring-2 ring-yellow-300' : ''}`}>
                     <CardContent className="p-4">
                       <div className="flex items-start justify-between">
                         <div className="flex-1 min-w-0">
@@ -605,6 +626,11 @@ export default function ClientesPage() {
                             <span className="font-semibold text-gray-900 text-sm truncate">
                               {cliente.razon_social}
                             </span>
+                            {tocaHoy && (
+                              <span className="shrink-0 text-[10px] font-bold px-1.5 py-0.5 rounded bg-yellow-200 text-yellow-900">
+                                📅 HOY
+                              </span>
+                            )}
                           </div>
                           <div className="flex items-center gap-2">
                             <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${estadoColors[cliente.estado] ?? 'bg-gray-100 text-gray-600'}`}>
@@ -639,7 +665,8 @@ export default function ClientesPage() {
                     </CardContent>
                   </Card>
                 </button>
-              ))}
+                )
+              })}
             </div>
           )}
         </div>

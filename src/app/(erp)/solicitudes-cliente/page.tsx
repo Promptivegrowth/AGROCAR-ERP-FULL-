@@ -122,6 +122,7 @@ export default function SolicitudesClientePage() {
         dni: s.dni,
         tipo_cliente: s.tipo_cliente,
         tipo_comprobante_preferido: tipoComprobantePref,
+        dias_visita: Array.isArray((s as any).dias_visita) ? (s as any).dias_visita : [],
         direccion: s.direccion,
         telefono: s.telefono,
         email: s.email,

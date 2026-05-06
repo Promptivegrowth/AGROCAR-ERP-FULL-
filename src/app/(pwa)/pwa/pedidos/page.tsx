@@ -12,6 +12,7 @@ import { Badge } from '@/components/ui/badge'
 import { Card, CardContent } from '@/components/ui/card'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import type { Cliente, Producto, Pedido } from '@/types'
+import { clienteVisitaHoy } from '@/lib/dias-visita'
 
 type Tab = 'nuevo' | 'mis-pedidos'
 
@@ -344,6 +345,44 @@ export default function PedidosPage() {
         return
       }
 
+      // Auto check-in si no hay uno HOY de este vendedor en este cliente
+      try {
+        const hoy = new Date().toISOString().split('T')[0]
+        const { data: existing } = await (supabase as any)
+          .from('gps_checkins')
+          .select('id')
+          .eq('usuario_id', userId)
+          .eq('cliente_id', clienteSeleccionado.id)
+          .eq('tipo', 'entrada')
+          .gte('created_at', `${hoy}T00:00:00`)
+          .limit(1)
+          .maybeSingle()
+
+        if (!existing) {
+          // Intentar capturar GPS del vendedor; si falla, usar coords del cliente
+          const obtenerCoords = (): Promise<[number | null, number | null]> =>
+            new Promise((resolve) => {
+              if (!navigator.geolocation) return resolve([null, null])
+              navigator.geolocation.getCurrentPosition(
+                (pos) => resolve([pos.coords.latitude, pos.coords.longitude]),
+                () => resolve([null, null]),
+                { enableHighAccuracy: false, timeout: 4000 },
+              )
+            })
+          const [lat, lng] = await obtenerCoords()
+          await (supabase as any).from('gps_checkins').insert({
+            usuario_id: userId,
+            cliente_id: clienteSeleccionado.id,
+            tipo: 'entrada',
+            latitud: lat ?? clienteSeleccionado.latitud ?? null,
+            longitud: lng ?? clienteSeleccionado.longitud ?? null,
+            notas: 'Check-in auto al tomar pedido',
+          })
+        }
+      } catch {
+        /* check-in es best-effort, no rompe el flujo del pedido */
+      }
+
       setMensajeExito('Pedido enviado correctamente')
       toast.success('Pedido enviado', {
         description: `${numero} · ${clienteSeleccionado.razon_social}`,
@@ -465,7 +504,14 @@ export default function PedidosPage() {
                           onClick={() => seleccionarCliente(c)}
                           className="w-full text-left px-4 py-3 hover:bg-green-50 border-b border-gray-100 last:border-0"
                         >
-                          <div className="font-medium text-gray-900 text-sm">{c.razon_social}</div>
+                          <div className="flex items-center gap-2">
+                            <div className="font-medium text-gray-900 text-sm flex-1 min-w-0 truncate">{c.razon_social}</div>
+                            {clienteVisitaHoy((c as any).dias_visita) && (
+                              <span className="shrink-0 inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-bold bg-yellow-200 text-yellow-900">
+                                📅 HOY
+                              </span>
+                            )}
+                          </div>
                           <div className="text-xs text-gray-500">
                             {c.ruc ? `RUC ${c.ruc}` : c.dni ? `DNI ${c.dni}` : 'Sin doc.'}
                             {c.direccion ? ` · ${c.direccion}` : ''}
@@ -478,7 +524,14 @@ export default function PedidosPage() {
 
                 {clienteSeleccionado && (
                   <div className="mt-3 p-3 bg-green-50 rounded-lg">
-                    <div className="font-medium text-green-800">{clienteSeleccionado.razon_social}</div>
+                    <div className="flex items-center gap-2">
+                      <div className="font-medium text-green-800 flex-1 min-w-0">{clienteSeleccionado.razon_social}</div>
+                      {clienteVisitaHoy((clienteSeleccionado as any).dias_visita) && (
+                        <span className="shrink-0 inline-flex items-center gap-0.5 px-2 py-0.5 rounded-full text-[10px] font-bold bg-yellow-200 text-yellow-900 border border-yellow-300">
+                          📅 HOY TE TOCA
+                        </span>
+                      )}
+                    </div>
                     <div className="text-xs text-green-700 mt-0.5 font-mono">
                       {clienteSeleccionado.ruc
                         ? `RUC ${clienteSeleccionado.ruc}`

@@ -29,6 +29,8 @@ import LeafletMap from '@/components/maps/leaflet-map'
 import UbigeoSelector, { UBIGEO_EMPTY, type UbigeoValue } from '@/components/ubigeo-selector'
 import { matchUbigeoFromNombres } from '@/lib/ubigeo/match'
 import { tipoComprobanteSugerido, getIdentificadorLabel } from '@/lib/cliente-utils'
+import DiasVisitaSelector from '@/components/dias-visita-selector'
+import { labelDias } from '@/lib/dias-visita'
 
 const clienteSchema = z.object({
   razon_social: z.string().min(2, 'Mínimo 2 caracteres'),
@@ -107,6 +109,9 @@ export default function ClientesPage() {
   // Cliente también proveedor
   const [esProveedor, setEsProveedor] = useState(false)
   const [datosProveedor, setDatosProveedor] = useState({ banco: '', cuenta_bancaria: '', cci: '', condiciones_pago: '' })
+
+  // Días de visita programados
+  const [diasVisita, setDiasVisita] = useState<string[]>([])
   const [listaPrecioId, setListaPrecioId] = useState<string>('')
   const [zonaId, setZonaId] = useState<string>('')
   const [vendedorId, setVendedorId] = useState<string>('')
@@ -203,7 +208,7 @@ export default function ClientesPage() {
         id, razon_social, ruc, dni, tipo_cliente_id, tipo_comprobante_preferido, estado,
         credito_limite, credito_dias, direccion, telefono, email, contacto,
         lista_precio_id, zona_id, vendedor_id, latitud, longitud, notas, created_at,
-        ubigeo, departamento, provincia, distrito,
+        ubigeo, departamento, provincia, distrito, dias_visita,
         zonas(id, nombre),
         listas_precio(id, nombre),
         tipos_cliente(id, nombre),
@@ -254,6 +259,7 @@ export default function ClientesPage() {
     setDireccionesExtra([])
     setEsProveedor(false)
     setDatosProveedor({ banco: '', cuenta_bancaria: '', cci: '', condiciones_pago: '' })
+    setDiasVisita([])
     reset({
       razon_social: '',
       ruc: '',
@@ -297,6 +303,7 @@ export default function ClientesPage() {
     setEditingCliente(cliente)
     setTipoClienteId(cliente.tipo_cliente_id ?? tiposCliente[0]?.id ?? '')
     setTipoComprobantePref((cliente.tipo_comprobante_preferido as TipoComprobantePref) ?? tipoComprobanteSugerido(cliente))
+    setDiasVisita(Array.isArray(cliente.dias_visita) ? cliente.dias_visita : [])
 
     // Cargar direcciones extra (todas las no principales)
     const { data: dirs } = await (supabase as any)
@@ -410,6 +417,7 @@ export default function ClientesPage() {
         dni: dniVal || null,
         tipo_cliente_id: tipoClienteId,
         tipo_comprobante_preferido: tcp,
+        dias_visita: diasVisita,
         lista_precio_id: listaPrecioId || null,
         zona_id: zonaId || null,
         vendedor_id: vendedorId || null,
@@ -707,8 +715,11 @@ export default function ClientesPage() {
                           </td>
                           <td className="py-3 px-4 text-gray-600">{c.listas_precio?.nombre ?? '—'}</td>
                           <td className="py-3 px-4 text-gray-600 text-xs">{c.zonas?.nombre ?? '—'}</td>
-                          <td className="py-3 px-4 text-gray-600 text-xs max-w-[140px] truncate">
+                          <td className="py-3 px-4 text-gray-600 text-xs max-w-[160px] truncate">
                             {c.profiles?.full_name ?? '—'}
+                            {c.dias_visita && c.dias_visita.length > 0 && (
+                              <div className="text-[10px] text-blue-600 mt-0.5">📅 {labelDias(c.dias_visita)}</div>
+                            )}
                           </td>
                           <td className="py-3 px-4">
                             <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border ${estadoCfg.className}`}>
@@ -923,6 +934,14 @@ export default function ClientesPage() {
                   </SelectContent>
                 </Select>
               </div>
+            </div>
+
+            <div className="border-t border-gray-100 pt-3">
+              <Label>Días de visita programados</Label>
+              <p className="text-[11px] text-gray-400 mb-2">
+                Días en que el vendedor debe visitar este cliente. Se usa en la app móvil para filtrar la agenda diaria.
+              </p>
+              <DiasVisitaSelector value={diasVisita} onChange={setDiasVisita} />
             </div>
 
             <div>
@@ -1296,6 +1315,9 @@ export default function ClientesPage() {
                     <div>
                       <p className="text-xs text-gray-500">Vendedor</p>
                       <p className="text-gray-800">{selected.profiles?.full_name ?? '—'}</p>
+                      {selected.dias_visita && selected.dias_visita.length > 0 && (
+                        <p className="text-[11px] text-blue-600 mt-0.5">📅 {labelDias(selected.dias_visita)}</p>
+                      )}
                     </div>
                   </div>
                 </div>
