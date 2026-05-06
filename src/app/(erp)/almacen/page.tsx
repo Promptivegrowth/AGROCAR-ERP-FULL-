@@ -797,7 +797,7 @@ export default function AlmacenPage() {
               <div className="space-y-4 mt-2">
                 <div className="bg-gray-50 rounded-lg p-3">
                   <p className="text-xs text-gray-500">Producto</p>
-                  <p className="font-medium text-gray-900 truncate">{producto?.nombre ?? '—'}</p>
+                  <p className="font-medium text-gray-900 truncate">{productoLabel(producto)}</p>
                   <p className="text-xs text-gray-500 font-mono">{producto?.codigo ?? '—'}</p>
                 </div>
 
@@ -970,7 +970,7 @@ export default function AlmacenPage() {
             return (
               <div className="space-y-4 mt-2">
                 <div className="bg-gray-50 rounded-lg p-3">
-                  <p className="font-medium text-gray-900 truncate">{producto?.nombre ?? '—'}</p>
+                  <p className="font-medium text-gray-900 truncate">{productoLabel(producto)}</p>
                   <p className="text-xs text-gray-500 font-mono">{producto?.codigo ?? '—'}</p>
                 </div>
                 <div className="border border-gray-100 rounded-lg overflow-hidden">

@@ -225,8 +225,8 @@ export default function LotesClient({ initialLotes, productos }: LotesClientProp
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="todos">Todos los productos</SelectItem>
-                {productos.map((p) => (
-                  <SelectItem key={p.id} value={p.id}>{p.nombre}</SelectItem>
+                {productos.map((p: any) => (
+                  <SelectItem key={p.id} value={p.id}>{p.descripcion?.trim() || p.nombre}</SelectItem>
                 ))}
               </SelectContent>
             </Select>

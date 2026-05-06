@@ -42,7 +42,7 @@ export default function VentasTab() {
           .from('pedidos')
           .select(`
             id, fecha_pedido, total, subtotal, estado,
-            pedidos_items(cantidad, subtotal, costo_unitario, utilidad, productos(id, codigo, nombre, costo_promedio, familias(id, nombre)))
+            pedidos_items(cantidad, subtotal, costo_unitario, utilidad, productos(id, codigo, nombre, descripcion, costo_promedio, familias(id, nombre)))
           `)
           .gte('fecha_pedido', `${anio}-01-01`)
           .lte('fecha_pedido', `${anio}-12-31`)
@@ -133,7 +133,7 @@ export default function VentasTab() {
         const u = utilidadDeLinea(it)
         prev.ventas += v
         prev.utilidad += u
-        const pn = it.productos?.nombre ?? '—'
+        const pn = it.productos?.descripcion?.trim() || it.productos?.nombre || '—'
         const pp = prev.productos.get(pn) ?? { ventas: 0, utilidad: 0 }
         pp.ventas += v
         pp.utilidad += u

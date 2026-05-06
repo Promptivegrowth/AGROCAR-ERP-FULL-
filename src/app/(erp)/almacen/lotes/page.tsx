@@ -19,7 +19,7 @@ export default async function LotesPage() {
       .order('fecha_vencimiento', { ascending: true, nullsFirst: false }),
     supabase
       .from('productos')
-      .select('id, nombre')
+      .select('id, nombre, descripcion')
       .eq('activo', true)
       .order('nombre'),
   ])

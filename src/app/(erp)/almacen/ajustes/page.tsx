@@ -105,14 +105,14 @@ export default function AjustesInventarioPage() {
   async function cargarAjustes() {
     const { data } = await supabase
       .from('movimientos_stock')
-      .select('*, productos(nombre, codigo), profiles!created_by(full_name)')
+      .select('*, productos(nombre, descripcion, codigo), profiles!created_by(full_name)')
       .in('tipo', ['ajuste', 'entrada', 'salida'])
       .order('created_at', { ascending: false })
       .limit(50)
 
     const mapped = (data ?? []).map((m: any) => ({
       ...m,
-      producto_nombre: m.productos?.nombre ?? '',
+      producto_nombre: m.productos?.descripcion?.trim() || m.productos?.nombre || '',
       producto_codigo: m.productos?.codigo ?? '',
       usuario_nombre: m.profiles?.full_name ?? '',
     }))
@@ -123,7 +123,7 @@ export default function AjustesInventarioPage() {
   async function cargarProductos() {
     const { data } = await supabase
       .from('productos')
-      .select('id, nombre, codigo, activo')
+      .select('id, nombre, descripcion, codigo, activo')
       .eq('activo', true)
       .order('nombre')
 
@@ -373,7 +373,7 @@ export default function AjustesInventarioPage() {
                 <SelectContent>
                   {productos.map((p) => (
                     <SelectItem key={p.id} value={p.id}>
-                      {p.nombre} {p.codigo ? `(${p.codigo})` : ''}
+                      {(p as any).descripcion?.trim() || p.nombre} {p.codigo ? `(${p.codigo})` : ''}
                     </SelectItem>
                   ))}
                 </SelectContent>

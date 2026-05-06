@@ -36,7 +36,7 @@ export default function CuotasTab() {
       const [{ data: v }, { data: f }, { data: p }] = await Promise.all([
         supabase.from('profiles').select('id, full_name').eq('role', 'vendedor').eq('activo', true).order('full_name'),
         supabase.from('familias').select('id, nombre').eq('activo', true).order('nombre'),
-        supabase.from('productos').select('id, codigo, nombre, familia_id').eq('activo', true),
+        supabase.from('productos').select('id, codigo, nombre, descripcion, familia_id').eq('activo', true),
       ])
       setVendedores(v ?? [])
       setFamilias(f ?? [])
@@ -54,7 +54,7 @@ export default function CuotasTab() {
           .from('pedidos')
           .select(`
             id, vendedor_id, fecha_pedido, total, subtotal,
-            pedidos_items(producto_id, cantidad, subtotal, productos(id, codigo, nombre, familia_id))
+            pedidos_items(producto_id, cantidad, subtotal, productos(id, codigo, nombre, descripcion, familia_id))
           `)
           .gte('fecha_pedido', desde)
           .lte('fecha_pedido', hasta)
@@ -152,7 +152,7 @@ export default function CuotasTab() {
       const valorCuota = c ? Number(c.valor_cuota) : 0
       return {
         codigo: r.prod?.codigo ?? '—',
-        nombre: r.prod?.nombre ?? '—',
+        nombre: r.prod?.descripcion?.trim() || r.prod?.nombre || '—',
         familia_id: r.prod?.familia_id,
         cantReal: Math.round(r.cantReal * 100) / 100,
         cantCuota: Math.round(cantCuota * 100) / 100,

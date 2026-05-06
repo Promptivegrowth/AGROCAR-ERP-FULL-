@@ -45,16 +45,17 @@ export default async function GuiaRemisionPage({ params }: { params: Promise<{ i
   if (pedidoIds.length > 0) {
     const { data: pedItems } = await supabase
       .from('pedidos_items')
-      .select('cantidad, productos(codigo, nombre)')
+      .select('cantidad, productos(codigo, nombre, descripcion)')
       .in('pedido_id', pedidoIds)
     for (const pi of pedItems ?? []) {
       const p: any = (pi as any).productos
       if (!p) continue
-      const key = p.codigo ?? p.nombre
+      const nombreProducto = p.descripcion?.trim() || p.nombre || '—'
+      const key = p.codigo ?? nombreProducto
       const prev = agregados.get(key)
       const cant = Number((pi as any).cantidad ?? 0)
       if (prev) prev.cantidad += cant
-      else agregados.set(key, { codigo: p.codigo ?? '—', nombre: p.nombre ?? '—', cantidad: cant })
+      else agregados.set(key, { codigo: p.codigo ?? '—', nombre: nombreProducto, cantidad: cant })
     }
   }
   const itemsAgregados = Array.from(agregados.values())
