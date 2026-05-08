@@ -10,7 +10,7 @@ async function getCobranzasData() {
   // 1) Traer todos los clientes con crédito configurado
   const { data: clientes } = await supabase
     .from('clientes')
-    .select('id, razon_social, ruc, telefono, credito_dias, credito_limite, estado')
+    .select('id, razon_social, ruc, dni, telefono, credito_dias, credito_limite, estado')
     .order('razon_social')
 
   // 2) Traer comprobantes NO anulados agrupados por cliente
@@ -91,6 +91,7 @@ async function getCobranzasData() {
       id: cli.id,
       razon_social: cli.razon_social,
       ruc: cli.ruc,
+      dni: cli.dni ?? null,
       telefono: cli.telefono ?? null,
       credito_dias: creditoDias,
       credito_limite: cli.credito_limite ?? 0,

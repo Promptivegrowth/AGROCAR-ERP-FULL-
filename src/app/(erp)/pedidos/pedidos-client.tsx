@@ -56,8 +56,10 @@ export default function PedidosClient({ pedidosIniciales }: { pedidosIniciales: 
       if (debouncedSearch) {
         const q = debouncedSearch.toLowerCase()
         const matchCliente = (p.clientes?.razon_social ?? '').toLowerCase().includes(q)
+        const matchRuc = (p.clientes?.ruc ?? '').toLowerCase().includes(q)
+        const matchDni = (p.clientes?.dni ?? '').toLowerCase().includes(q)
         const matchNumero = (p.numero ?? '').toLowerCase().includes(q)
-        if (!matchCliente && !matchNumero) return false
+        if (!matchCliente && !matchRuc && !matchDni && !matchNumero) return false
       }
       if (filterEstado === 'pendientes') {
         return ['enviado', 'validado'].includes(p.estado)
@@ -158,7 +160,7 @@ export default function PedidosClient({ pedidosIniciales }: { pedidosIniciales: 
             <div className="relative flex-1">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
               <Input
-                placeholder="Buscar por cliente o número..."
+                placeholder="Buscar por cliente, RUC, DNI o N° pedido..."
                 className="pl-9"
                 value={search}
                 onChange={(e) => { setSearch(e.target.value); setPage(0) }}

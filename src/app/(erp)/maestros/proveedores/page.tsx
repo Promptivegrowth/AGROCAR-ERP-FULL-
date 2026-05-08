@@ -88,7 +88,9 @@ export default function ProveedoresPage() {
       .order('razon_social')
       .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1)
 
-    if (debouncedSearch) query = query.ilike('razon_social', `%${debouncedSearch}%`)
+    if (debouncedSearch) {
+      query = query.or(`razon_social.ilike.%${debouncedSearch}%,ruc.ilike.%${debouncedSearch}%`)
+    }
 
     const { data, count, error } = await query
     if (error) toast.error('Error al cargar proveedores', { description: error.message })
@@ -232,7 +234,7 @@ export default function ProveedoresPage() {
           <div className="relative w-full max-w-sm">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
             <Input
-              placeholder="Buscar proveedor..."
+              placeholder="Buscar por razón social o RUC..."
               className="pl-9"
               value={search}
               onChange={(e) => { setSearch(e.target.value); setPage(0) }}

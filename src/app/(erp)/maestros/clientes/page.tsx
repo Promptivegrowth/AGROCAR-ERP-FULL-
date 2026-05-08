@@ -217,7 +217,12 @@ export default function ClientesPage() {
       .order('razon_social')
       .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1)
 
-    if (debouncedSearch) query = query.ilike('razon_social', `%${debouncedSearch}%`)
+    if (debouncedSearch) {
+      // Buscar en razón social, RUC o DNI (RUC/DNI son el "código" del cliente)
+      query = query.or(
+        `razon_social.ilike.%${debouncedSearch}%,ruc.ilike.%${debouncedSearch}%,dni.ilike.%${debouncedSearch}%`,
+      )
+    }
     if (filterEstado !== 'todos') query = query.eq('estado', filterEstado as any)
     if (filterZona !== 'todas') query = query.eq('zona_id', filterZona)
 
@@ -587,7 +592,7 @@ export default function ClientesPage() {
             <div className="relative flex-1 min-w-[200px]">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
               <Input
-                placeholder="Buscar por razón social..."
+                placeholder="Buscar por razón social, RUC o DNI..."
                 className="pl-9"
                 value={search}
                 onChange={(e) => { setSearch(e.target.value); setPage(0) }}

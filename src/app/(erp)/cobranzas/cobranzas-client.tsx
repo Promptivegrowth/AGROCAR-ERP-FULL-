@@ -25,6 +25,7 @@ export interface ClienteSaldo {
   id: string
   razon_social: string
   ruc: string | null
+  dni: string | null
   telefono: string | null
   credito_dias: number
   credito_limite: number
@@ -83,9 +84,15 @@ export default function CobranzasClient({
   })
 
   const filtrados = useMemo(() => {
+    const q = search.trim().toLowerCase()
     return clientesIniciales.filter((c) => {
       if (filtroEstado !== 'todos' && c.estado_deuda !== filtroEstado) return false
-      if (search && !c.razon_social.toLowerCase().includes(search.toLowerCase())) return false
+      if (q) {
+        const matchNombre = c.razon_social.toLowerCase().includes(q)
+        const matchRuc = (c.ruc ?? '').toLowerCase().includes(q)
+        const matchDni = (c.dni ?? '').toLowerCase().includes(q)
+        if (!matchNombre && !matchRuc && !matchDni) return false
+      }
       return true
     })
   }, [clientesIniciales, search, filtroEstado])
@@ -242,7 +249,7 @@ export default function CobranzasClient({
           <div className="relative flex-1 max-w-sm">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
             <Input
-              placeholder="Buscar cliente..."
+              placeholder="Buscar por razón social, RUC o DNI..."
               className="pl-9"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
