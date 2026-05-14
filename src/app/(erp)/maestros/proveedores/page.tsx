@@ -20,12 +20,14 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import UbigeoSelector, { UBIGEO_EMPTY, type UbigeoValue } from '@/components/ubigeo-selector'
 import { matchUbigeoFromNombres } from '@/lib/ubigeo/match'
 
 const proveedorSchema = z.object({
   razon_social: z.string().min(2, 'Mínimo 2 caracteres'),
   ruc: z.string().nullable().optional(),
+  pais: z.enum(['PE', 'CL', 'AR', 'OT']).default('PE'),
   direccion: z.string().nullable().optional(),
   telefono: z.string().nullable().optional(),
   email: z.string().email('Email inválido').nullable().optional().or(z.literal('')),
@@ -38,6 +40,14 @@ const proveedorSchema = z.object({
 })
 
 type ProveedorFormData = z.infer<typeof proveedorSchema>
+type PaisCode = 'PE' | 'CL' | 'AR' | 'OT'
+
+const PAIS_CONFIG: Record<PaisCode, { label: string; bandera: string; docLabel: string; docPlaceholder: string; soloDigitos: boolean; maxLen: number }> = {
+  PE: { label: 'Perú',      bandera: '🇵🇪', docLabel: 'RUC',         docPlaceholder: '20xxxxxxxxx',     soloDigitos: true,  maxLen: 11 },
+  CL: { label: 'Chile',     bandera: '🇨🇱', docLabel: 'RUT',         docPlaceholder: '76.123.456-7',    soloDigitos: false, maxLen: 15 },
+  AR: { label: 'Argentina', bandera: '🇦🇷', docLabel: 'CUIT',        docPlaceholder: '30-12345678-9',   soloDigitos: false, maxLen: 15 },
+  OT: { label: 'Otro',      bandera: '🌐', docLabel: 'ID fiscal',   docPlaceholder: 'Identificador',   soloDigitos: false, maxLen: 30 },
+}
 
 const PAGE_SIZE = 15
 
@@ -56,7 +66,9 @@ export default function ProveedoresPage() {
   const [editingProveedor, setEditingProveedor] = useState<any>(null)
   const [saving, setSaving] = useState(false)
   const [activo, setActivo] = useState(true)
+  const [pais, setPais] = useState<PaisCode>('PE')
   const [ubigeoVal, setUbigeoVal] = useState<UbigeoValue>(UBIGEO_EMPTY)
+  const paisCfg = PAIS_CONFIG[pais]
 
   const { register, handleSubmit, reset, setValue, formState: { errors } } = useForm<ProveedorFormData>({
     resolver: zodResolver(proveedorSchema) as any,
@@ -104,15 +116,17 @@ export default function ProveedoresPage() {
   const openCreate = () => {
     setEditingProveedor(null)
     setActivo(true)
+    setPais('PE')
     setRucInput('')
     setUbigeoVal(UBIGEO_EMPTY)
-    reset({ activo: true, razon_social: '', ruc: '', direccion: '', telefono: '', email: '', contacto: '', banco: '', cuenta_bancaria: '', cci: '', condiciones_pago: '' })
+    reset({ activo: true, pais: 'PE', razon_social: '', ruc: '', direccion: '', telefono: '', email: '', contacto: '', banco: '', cuenta_bancaria: '', cci: '', condiciones_pago: '' })
     setDialogOpen(true)
   }
 
   const openEdit = (p: any) => {
     setEditingProveedor(p)
     setActivo(p.activo)
+    setPais((p.pais as PaisCode) ?? 'PE')
     setRucInput(p.ruc ?? '')
     setUbigeoVal({
       departamento_codigo: p.ubigeo ? p.ubigeo.slice(0, 2) : null,
@@ -126,6 +140,7 @@ export default function ProveedoresPage() {
     reset({
       razon_social: p.razon_social,
       ruc: p.ruc ?? '',
+      pais: (p.pais as PaisCode) ?? 'PE',
       direccion: p.direccion ?? '',
       telefono: p.telefono ?? '',
       email: p.email ?? '',
@@ -147,6 +162,7 @@ export default function ProveedoresPage() {
       const payload = {
         razon_social: data.razon_social,
         ruc: data.ruc || null,
+        pais,
         direccion: data.direccion || null,
         telefono: data.telefono || null,
         email: data.email || null,
@@ -372,33 +388,67 @@ export default function ProveedoresPage() {
               {errors.razon_social && <p className="text-xs text-red-500 mt-1">{errors.razon_social.message}</p>}
             </div>
 
-            <div>
-              <Label>RUC</Label>
-              <div className="flex gap-2 mt-1">
-                <Input
-                  value={rucInput}
-                  onChange={(e) => {
-                    const v = e.target.value.replace(/\D/g, '').slice(0, 11)
-                    setRucInput(v)
-                    setValue('ruc', v)
-                  }}
-                  placeholder="20xxxxxxxxx"
-                  maxLength={11}
-                  inputMode="numeric"
-                  className="font-mono flex-1"
-                />
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={autocompletarRuc}
-                  disabled={sunatLoading || rucInput.length !== 11}
-                  className="shrink-0 gap-1 border-[#FBE600] hover:bg-[#FBE600] hover:text-black"
-                  title="Consultar SUNAT"
-                >
-                  {sunatLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
-                  SUNAT
-                </Button>
+            <div className="grid grid-cols-3 gap-3">
+              <div className="col-span-1">
+                <Label>País</Label>
+                <Select value={pais} onValueChange={(v) => {
+                  const nuevo = v as PaisCode
+                  setPais(nuevo)
+                  setValue('pais', nuevo)
+                  // Si pasa a PE y el RUC actual tiene caracteres no numéricos, limpiar
+                  if (nuevo === 'PE' && rucInput && /\D/.test(rucInput)) {
+                    const limpio = rucInput.replace(/\D/g, '').slice(0, 11)
+                    setRucInput(limpio)
+                    setValue('ruc', limpio)
+                  }
+                }}>
+                  <SelectTrigger className="mt-1">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {(['PE', 'CL', 'AR', 'OT'] as PaisCode[]).map((code) => (
+                      <SelectItem key={code} value={code}>
+                        {PAIS_CONFIG[code].bandera} {PAIS_CONFIG[code].label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="col-span-2">
+                <Label>{paisCfg.docLabel}</Label>
+                <div className="flex gap-2 mt-1">
+                  <Input
+                    value={rucInput}
+                    onChange={(e) => {
+                      let v = e.target.value
+                      if (paisCfg.soloDigitos) v = v.replace(/\D/g, '')
+                      v = v.slice(0, paisCfg.maxLen)
+                      setRucInput(v)
+                      setValue('ruc', v)
+                    }}
+                    placeholder={paisCfg.docPlaceholder}
+                    maxLength={paisCfg.maxLen}
+                    inputMode={paisCfg.soloDigitos ? 'numeric' : 'text'}
+                    className="font-mono flex-1"
+                  />
+                  {pais === 'PE' && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={autocompletarRuc}
+                      disabled={sunatLoading || rucInput.length !== 11}
+                      className="shrink-0 gap-1 border-[#FBE600] hover:bg-[#FBE600] hover:text-black"
+                      title="Consultar SUNAT"
+                    >
+                      {sunatLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
+                      SUNAT
+                    </Button>
+                  )}
+                </div>
+                {pais !== 'PE' && (
+                  <p className="text-[11px] text-gray-400 mt-1">Importador extranjero · sin validación SUNAT</p>
+                )}
               </div>
             </div>
 
