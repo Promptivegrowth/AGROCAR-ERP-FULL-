@@ -314,6 +314,16 @@ export interface Database {
           contacto: string | null
           activo: boolean
           created_at: string
+          ubigeo: string | null
+          departamento: string | null
+          provincia: string | null
+          distrito: string | null
+          cliente_id: string | null
+          banco: string | null
+          cuenta_bancaria: string | null
+          cci: string | null
+          condiciones_pago: string | null
+          pais: string
         }
         Insert: {
           id?: string
@@ -325,6 +335,16 @@ export interface Database {
           contacto?: string | null
           activo?: boolean
           created_at?: string
+          ubigeo?: string | null
+          departamento?: string | null
+          provincia?: string | null
+          distrito?: string | null
+          cliente_id?: string | null
+          banco?: string | null
+          cuenta_bancaria?: string | null
+          cci?: string | null
+          condiciones_pago?: string | null
+          pais?: string
         }
         Update: {
           id?: string
@@ -335,6 +355,16 @@ export interface Database {
           email?: string | null
           contacto?: string | null
           activo?: boolean
+          ubigeo?: string | null
+          departamento?: string | null
+          provincia?: string | null
+          distrito?: string | null
+          cliente_id?: string | null
+          banco?: string | null
+          cuenta_bancaria?: string | null
+          cci?: string | null
+          condiciones_pago?: string | null
+          pais?: string
         }
         Relationships: []
       }
@@ -649,6 +679,7 @@ export interface Database {
           moneda: Moneda
           estado: 'activo' | 'anulado'
           notas: string | null
+          incluir_igv: boolean
           created_at: string
           created_by: string | null      // uuid, references profiles
         }
@@ -665,6 +696,7 @@ export interface Database {
           moneda?: Moneda
           estado?: 'activo' | 'anulado'
           notas?: string | null
+          incluir_igv?: boolean
           created_at?: string
           created_by?: string | null
         }
@@ -681,6 +713,7 @@ export interface Database {
           moneda?: Moneda
           estado?: 'activo' | 'anulado'
           notas?: string | null
+          incluir_igv?: boolean
           created_by?: string | null
         }
         Relationships: [

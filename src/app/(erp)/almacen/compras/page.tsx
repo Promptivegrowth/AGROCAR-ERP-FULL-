@@ -5,7 +5,7 @@ import { useForm, useFieldArray } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import {
-  Plus, Loader2, ShoppingCart, ChevronLeft, ChevronRight, X, Package2,
+  Plus, Loader2, ShoppingCart, ChevronLeft, ChevronRight, X, Package2, Eye, Calendar, FileText, Building2, Receipt,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { createClient } from '@/lib/supabase/client'
@@ -64,6 +64,19 @@ export default function ComprasPage() {
   const [productos, setProductos] = useState<ProductoCatalogo[]>([])
   const [dialogOpen, setDialogOpen] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [detailOpen, setDetailOpen] = useState(false)
+  const [detailLoading, setDetailLoading] = useState(false)
+  const [detailCompra, setDetailCompra] = useState<any>(null)
+  const [detailItems, setDetailItems] = useState<any[]>([])
+  const [editMode, setEditMode] = useState(false)
+  const [editSaving, setEditSaving] = useState(false)
+  const [editForm, setEditForm] = useState({
+    proveedor_id: '',
+    numero_factura: '',
+    fecha: '',
+    metodo_valorizacion: 'promedio' as 'promedio' | 'fifo' | 'directo',
+    incluir_igv: true,
+  })
 
   const { register, handleSubmit, watch, setValue, control, reset, formState: { errors } } = useForm<CompraFormData>({
     resolver: zodResolver(compraSchema) as any,
@@ -215,6 +228,87 @@ export default function ComprasPage() {
     }
   }
 
+  const openDetail = async (compraId: string) => {
+    setDetailOpen(true)
+    setDetailLoading(true)
+    setEditMode(false)
+    setDetailCompra(null)
+    setDetailItems([])
+    try {
+      const [{ data: compra }, { data: items }] = await Promise.all([
+        supabase
+          .from('compras')
+          .select(`
+            id, numero_factura_proveedor, fecha, total, subtotal, igv, incluir_igv,
+            metodo_valorizacion, moneda, estado, created_at, proveedor_id,
+            proveedores(id, razon_social, ruc, pais)
+          `)
+          .eq('id', compraId)
+          .single(),
+        supabase
+          .from('compras_items')
+          .select(`
+            id, cantidad, precio_unitario, subtotal,
+            productos(id, codigo, nombre, descripcion, unidades_medida(simbolo)),
+            lotes(id, numero_lote, fecha_vencimiento)
+          `)
+          .eq('compra_id', compraId)
+          .order('id'),
+      ])
+      setDetailCompra(compra)
+      setDetailItems(items ?? [])
+      if (compra) {
+        setEditForm({
+          proveedor_id: compra.proveedor_id ?? '',
+          numero_factura: compra.numero_factura_proveedor ?? '',
+          fecha: compra.fecha ?? '',
+          metodo_valorizacion: (compra.metodo_valorizacion as any) ?? 'promedio',
+          incluir_igv: compra.incluir_igv ?? true,
+        })
+      }
+    } catch (err: any) {
+      toast.error('No se pudo cargar el detalle', { description: err?.message })
+    } finally {
+      setDetailLoading(false)
+    }
+  }
+
+  const guardarEdicionCabecera = async () => {
+    if (!detailCompra) return
+    if (!editForm.proveedor_id || !editForm.numero_factura.trim() || !editForm.fecha) {
+      toast.error('Completa proveedor, factura y fecha')
+      return
+    }
+    setEditSaving(true)
+    try {
+      const subtotalActual = Number(detailCompra.subtotal ?? 0)
+      const igvNuevo = editForm.incluir_igv ? subtotalActual * IGV_RATE : 0
+      const totalNuevo = subtotalActual + igvNuevo
+
+      const { error } = await (supabase.from('compras') as any)
+        .update({
+          proveedor_id: editForm.proveedor_id,
+          numero_factura_proveedor: editForm.numero_factura.trim(),
+          fecha: editForm.fecha,
+          metodo_valorizacion: editForm.metodo_valorizacion,
+          incluir_igv: editForm.incluir_igv,
+          igv: igvNuevo,
+          total: totalNuevo,
+        })
+        .eq('id', detailCompra.id)
+      if (error) throw error
+
+      toast.success('Compra actualizada', { description: 'Los cambios de cabecera se guardaron.' })
+      setEditMode(false)
+      await openDetail(detailCompra.id)
+      loadData()
+    } catch (err: any) {
+      toast.error('No se pudo guardar', { description: err?.message })
+    } finally {
+      setEditSaving(false)
+    }
+  }
+
   const totalPages = Math.ceil(total / PAGE_SIZE)
 
   return (
@@ -245,7 +339,7 @@ export default function ComprasPage() {
               <table className="w-full text-sm">
                 <thead className="border-b border-gray-100 bg-gray-50/50">
                   <tr>
-                    {['Factura', 'Proveedor', 'Fecha', 'Total', 'Estado'].map((h) => (
+                    {['Factura', 'Proveedor', 'Fecha', 'Total', 'Estado', 'Acciones'].map((h) => (
                       <th key={h} className="text-left py-3 px-4 text-xs font-semibold text-gray-500 uppercase tracking-wide">
                         {h}
                       </th>
@@ -267,6 +361,17 @@ export default function ComprasPage() {
                           <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${estadoCfg.className}`}>
                             {estadoCfg.label}
                           </span>
+                        </td>
+                        <td className="py-3 px-4">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => openDetail(c.id)}
+                            className="h-7 gap-1 text-xs"
+                            title="Ver detalle"
+                          >
+                            <Eye className="w-3.5 h-3.5 text-gray-500" /> Ver
+                          </Button>
                         </td>
                       </tr>
                     )
@@ -522,6 +627,219 @@ export default function ComprasPage() {
               </Button>
             </div>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialog Detalle / Editar Cabecera */}
+      <Dialog open={detailOpen} onOpenChange={(o) => { setDetailOpen(o); if (!o) setEditMode(false) }}>
+        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Receipt className="w-5 h-5 text-green-600" />
+              {editMode ? 'Editar Compra' : 'Detalle de Compra'}
+            </DialogTitle>
+          </DialogHeader>
+
+          {detailLoading || !detailCompra ? (
+            <div className="flex items-center justify-center py-16">
+              <Loader2 className="w-6 h-6 text-green-600 animate-spin" />
+            </div>
+          ) : (
+            <div className="space-y-5 mt-2">
+              {/* Cabecera */}
+              {editMode ? (
+                <div className="bg-amber-50/60 border border-amber-200 rounded-lg p-4 space-y-3">
+                  <p className="text-xs text-amber-800 font-medium">
+                    Solo puedes editar datos de cabecera. Los productos, cantidades y lotes ya afectaron el stock y no se modifican aquí.
+                  </p>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <Label className="text-xs">Proveedor *</Label>
+                      <Select value={editForm.proveedor_id} onValueChange={(v) => setEditForm((f) => ({ ...f, proveedor_id: v }))}>
+                        <SelectTrigger className="mt-1 h-9 text-sm"><SelectValue placeholder="Seleccionar..." /></SelectTrigger>
+                        <SelectContent>
+                          {proveedores.map((p) => (
+                            <SelectItem key={p.id} value={p.id}>{p.razon_social}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div>
+                      <Label className="text-xs">N° Factura *</Label>
+                      <Input
+                        value={editForm.numero_factura}
+                        onChange={(e) => setEditForm((f) => ({ ...f, numero_factura: e.target.value }))}
+                        className="mt-1 h-9 text-sm font-mono"
+                      />
+                    </div>
+                    <div>
+                      <Label className="text-xs">Fecha *</Label>
+                      <Input
+                        type="date"
+                        value={editForm.fecha}
+                        onChange={(e) => setEditForm((f) => ({ ...f, fecha: e.target.value }))}
+                        className="mt-1 h-9 text-sm"
+                      />
+                    </div>
+                    <div>
+                      <Label className="text-xs">Método Valorización</Label>
+                      <Select value={editForm.metodo_valorizacion} onValueChange={(v) => setEditForm((f) => ({ ...f, metodo_valorizacion: v as any }))}>
+                        <SelectTrigger className="mt-1 h-9 text-sm"><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="promedio">Promedio</SelectItem>
+                          <SelectItem value="fifo">FIFO</SelectItem>
+                          <SelectItem value="directo">Directo</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-between bg-white border border-amber-200 rounded px-3 py-2">
+                    <div>
+                      <p className="text-xs font-medium text-gray-900">Aplica IGV (18%)</p>
+                      <p className="text-[10px] text-gray-500">Al cambiar se recalcula el total</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setEditForm((f) => ({ ...f, incluir_igv: !f.incluir_igv }))}
+                      className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${editForm.incluir_igv ? 'bg-green-500' : 'bg-gray-300'}`}
+                    >
+                      <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${editForm.incluir_igv ? 'translate-x-5' : 'translate-x-1'}`} />
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="flex items-start gap-2.5">
+                    <Building2 className="w-4 h-4 text-gray-400 mt-0.5 shrink-0" />
+                    <div className="min-w-0">
+                      <p className="text-[11px] text-gray-500 uppercase tracking-wide">Proveedor</p>
+                      <p className="text-sm font-medium text-gray-900 truncate">{(detailCompra.proveedores as any)?.razon_social ?? '—'}</p>
+                      {(detailCompra.proveedores as any)?.ruc && (
+                        <p className="text-[11px] text-gray-500 font-mono">{(detailCompra.proveedores as any).ruc}</p>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex items-start gap-2.5">
+                    <FileText className="w-4 h-4 text-gray-400 mt-0.5 shrink-0" />
+                    <div className="min-w-0">
+                      <p className="text-[11px] text-gray-500 uppercase tracking-wide">N° Factura</p>
+                      <p className="text-sm font-mono text-gray-900">{detailCompra.numero_factura_proveedor ?? '—'}</p>
+                    </div>
+                  </div>
+                  <div className="flex items-start gap-2.5">
+                    <Calendar className="w-4 h-4 text-gray-400 mt-0.5 shrink-0" />
+                    <div>
+                      <p className="text-[11px] text-gray-500 uppercase tracking-wide">Fecha</p>
+                      <p className="text-sm text-gray-900">{detailCompra.fecha ? formatDate(detailCompra.fecha) : '—'}</p>
+                    </div>
+                  </div>
+                  <div className="flex items-start gap-2.5">
+                    <Package2 className="w-4 h-4 text-gray-400 mt-0.5 shrink-0" />
+                    <div>
+                      <p className="text-[11px] text-gray-500 uppercase tracking-wide">Método Valorización</p>
+                      <p className="text-sm text-gray-900 capitalize">{detailCompra.metodo_valorizacion ?? '—'}</p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Items */}
+              <div>
+                <Label className="text-xs font-semibold text-gray-700">Productos ({detailItems.length})</Label>
+                <div className="mt-2 border border-gray-200 rounded-lg overflow-hidden">
+                  <table className="w-full text-sm">
+                    <thead className="bg-gray-50 border-b border-gray-100">
+                      <tr>
+                        <th className="text-left py-2 px-3 text-[11px] font-semibold text-gray-500 uppercase">Producto</th>
+                        <th className="text-right py-2 px-3 text-[11px] font-semibold text-gray-500 uppercase">Cant.</th>
+                        <th className="text-right py-2 px-3 text-[11px] font-semibold text-gray-500 uppercase">P. Unit.</th>
+                        <th className="text-right py-2 px-3 text-[11px] font-semibold text-gray-500 uppercase">Subtotal</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-50">
+                      {detailItems.map((it) => {
+                        const prod = it.productos as any
+                        const lote = it.lotes as any
+                        const um = prod?.unidades_medida?.simbolo ?? ''
+                        const nombreProd = prod?.descripcion?.trim() || prod?.nombre || '—'
+                        return (
+                          <tr key={it.id}>
+                            <td className="py-2.5 px-3">
+                              <p className="font-medium text-gray-900">{nombreProd}</p>
+                              {lote && (
+                                <p className="text-[11px] text-amber-700 mt-0.5">
+                                  Lote {lote.numero_lote}
+                                  {lote.fecha_vencimiento && ` · vence ${formatDate(lote.fecha_vencimiento)}`}
+                                </p>
+                              )}
+                            </td>
+                            <td className="py-2.5 px-3 text-right text-gray-700">{Number(it.cantidad).toFixed(2)} {um}</td>
+                            <td className="py-2.5 px-3 text-right text-gray-700">{formatCurrency(it.precio_unitario)}</td>
+                            <td className="py-2.5 px-3 text-right font-medium text-gray-900">{formatCurrency(it.subtotal)}</td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {/* Totales */}
+              <div className="bg-gray-50 rounded-lg p-4 space-y-1.5">
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-600">Subtotal</span>
+                  <span className="font-medium">{formatCurrency(detailCompra.subtotal ?? 0)}</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-600">
+                    IGV (18%)
+                    {!(editMode ? editForm.incluir_igv : detailCompra.incluir_igv) && (
+                      <span className="text-amber-600 text-xs ml-1">· desactivado</span>
+                    )}
+                  </span>
+                  <span className="font-medium">
+                    {formatCurrency(
+                      editMode
+                        ? (editForm.incluir_igv ? Number(detailCompra.subtotal ?? 0) * IGV_RATE : 0)
+                        : (detailCompra.igv ?? 0)
+                    )}
+                  </span>
+                </div>
+                <div className="flex justify-between text-base font-bold border-t border-gray-200 pt-2 mt-1">
+                  <span>Total</span>
+                  <span className="text-green-600">
+                    {formatCurrency(
+                      editMode
+                        ? Number(detailCompra.subtotal ?? 0) + (editForm.incluir_igv ? Number(detailCompra.subtotal ?? 0) * IGV_RATE : 0)
+                        : (detailCompra.total ?? 0)
+                    )}
+                  </span>
+                </div>
+              </div>
+
+              {/* Acciones */}
+              <div className="flex justify-end gap-2 pt-3 border-t border-gray-100">
+                {editMode ? (
+                  <>
+                    <Button variant="outline" onClick={() => setEditMode(false)} disabled={editSaving}>Cancelar</Button>
+                    <Button onClick={guardarEdicionCabecera} disabled={editSaving} className="bg-[#FBE600] hover:bg-[#E5D100] text-black font-semibold gap-2">
+                      {editSaving && <Loader2 className="w-4 h-4 animate-spin" />}
+                      Guardar Cambios
+                    </Button>
+                  </>
+                ) : (
+                  <>
+                    <Button variant="outline" onClick={() => setDetailOpen(false)}>Cerrar</Button>
+                    {detailCompra.estado !== 'anulado' && (
+                      <Button onClick={() => setEditMode(true)} className="bg-[#FBE600] hover:bg-[#E5D100] text-black font-semibold gap-2">
+                        Editar cabecera
+                      </Button>
+                    )}
+                  </>
+                )}
+              </div>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
     </div>
