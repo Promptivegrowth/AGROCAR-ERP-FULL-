@@ -1,7 +1,8 @@
 'use client'
 
 import { useEffect, useState, useCallback } from 'react'
-import { FileText, Loader2, CheckCircle, AlertCircle, DollarSign } from 'lucide-react'
+import { FileText, Loader2, CheckCircle, AlertCircle, DollarSign, Receipt } from 'lucide-react'
+import VentaDirectaDialog from './venta-directa-dialog'
 import { toast } from 'sonner'
 import { createClient } from '@/lib/supabase/client'
 import { formatCurrency, formatDate } from '@/lib/utils'
@@ -36,6 +37,7 @@ export default function FacturacionPage() {
   const [serie, setSerie] = useState('F001')
   const [saving, setSaving] = useState(false)
   const [successMsg, setSuccessMsg] = useState('')
+  const [ventaDirectaOpen, setVentaDirectaOpen] = useState(false)
 
   const loadData = useCallback(async () => {
     setLoading(true)
@@ -145,16 +147,30 @@ export default function FacturacionPage() {
 
   return (
     <div className="space-y-5">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Facturación</h1>
           <p className="text-sm text-gray-500 mt-0.5">Emisión de comprobantes electrónicos</p>
         </div>
-        <div className="flex items-center gap-2 bg-blue-50 border border-blue-200 rounded-lg px-3 py-1.5">
-          <DollarSign className="w-4 h-4 text-blue-500" />
-          <span className="text-sm text-blue-700 font-medium">T/C: S/ {tipoCambio.toFixed(3)}</span>
+        <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 bg-blue-50 border border-blue-200 rounded-lg px-3 py-1.5">
+            <DollarSign className="w-4 h-4 text-blue-500" />
+            <span className="text-sm text-blue-700 font-medium">T/C: S/ {tipoCambio.toFixed(3)}</span>
+          </div>
+          <Button
+            onClick={() => setVentaDirectaOpen(true)}
+            className="bg-[#FBE600] hover:bg-[#E5D100] text-black font-semibold gap-2"
+          >
+            <Receipt className="w-4 h-4" /> Venta Directa
+          </Button>
         </div>
       </div>
+
+      <VentaDirectaDialog
+        open={ventaDirectaOpen}
+        onOpenChange={setVentaDirectaOpen}
+        onCreated={loadData}
+      />
 
       {successMsg && (
         <div className="flex items-center gap-3 bg-green-50 border border-green-200 rounded-xl px-4 py-3">

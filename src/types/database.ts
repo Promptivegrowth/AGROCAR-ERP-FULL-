@@ -902,8 +902,10 @@ export interface Database {
         Row: {
           id: string                     // uuid
           numero: string
-          cliente_id: string             // uuid, references clientes
-          vendedor_id: string            // uuid, references profiles
+          cliente_id: string | null      // uuid, nullable para venta directa a consumidor final
+          vendedor_id: string | null     // uuid, nullable cuando el pedido se crea desde oficina sin vendedor
+          cliente_externo_nombre: string | null
+          cliente_externo_doc: string | null
           fecha_pedido: string           // date
           fecha_despacho: string | null  // date
           estado: EstadoPedido
@@ -924,8 +926,10 @@ export interface Database {
         Insert: {
           id?: string
           numero: string
-          cliente_id: string
-          vendedor_id: string
+          cliente_id?: string | null
+          vendedor_id?: string | null
+          cliente_externo_nombre?: string | null
+          cliente_externo_doc?: string | null
           fecha_pedido?: string
           fecha_despacho?: string | null
           estado?: EstadoPedido
@@ -946,8 +950,10 @@ export interface Database {
         Update: {
           id?: string
           numero?: string
-          cliente_id?: string
-          vendedor_id?: string
+          cliente_id?: string | null
+          vendedor_id?: string | null
+          cliente_externo_nombre?: string | null
+          cliente_externo_doc?: string | null
           fecha_pedido?: string
           fecha_despacho?: string | null
           estado?: EstadoPedido
@@ -1054,7 +1060,9 @@ export interface Database {
           serie: string                  // F001, B001, NP01
           numero: string                 // correlativo
           pedido_id: string | null       // uuid, references pedidos
-          cliente_id: string             // uuid, references clientes
+          cliente_id: string | null      // uuid, nullable para venta directa
+          cliente_externo_nombre: string | null
+          cliente_externo_doc: string | null
           facturador_id: string | null   // uuid, references profiles
           fecha_emision: string          // date
           fecha_vencimiento: string | null // date
@@ -1077,7 +1085,9 @@ export interface Database {
           serie: string
           numero: string
           pedido_id?: string | null
-          cliente_id: string
+          cliente_id?: string | null
+          cliente_externo_nombre?: string | null
+          cliente_externo_doc?: string | null
           facturador_id?: string | null
           fecha_emision?: string
           fecha_vencimiento?: string | null
@@ -1100,7 +1110,9 @@ export interface Database {
           serie?: string
           numero?: string
           pedido_id?: string | null
-          cliente_id?: string
+          cliente_id?: string | null
+          cliente_externo_nombre?: string | null
+          cliente_externo_doc?: string | null
           facturador_id?: string | null
           fecha_emision?: string
           fecha_vencimiento?: string | null
@@ -1364,7 +1376,9 @@ export interface Database {
           id: string                     // uuid
           tipo: TipoCobro
           referencia_id: string | null   // uuid del pedido/comprobante
-          cliente_id: string             // uuid, references clientes
+          cliente_id: string | null      // nullable para venta directa
+          cliente_externo_nombre: string | null
+          cliente_externo_doc: string | null
           cobrador_id: string | null     // uuid, references profiles
           fecha: string                  // date
           efectivo: number
@@ -1381,7 +1395,9 @@ export interface Database {
           id?: string
           tipo: TipoCobro
           referencia_id?: string | null
-          cliente_id: string
+          cliente_id?: string | null
+          cliente_externo_nombre?: string | null
+          cliente_externo_doc?: string | null
           cobrador_id?: string | null
           fecha?: string
           efectivo?: number
@@ -1398,7 +1414,9 @@ export interface Database {
           id?: string
           tipo?: TipoCobro
           referencia_id?: string | null
-          cliente_id?: string
+          cliente_id?: string | null
+          cliente_externo_nombre?: string | null
+          cliente_externo_doc?: string | null
           cobrador_id?: string | null
           fecha?: string
           efectivo?: number
