@@ -21,6 +21,7 @@ const itemSchema = z.object({
   producto_id: z.string().min(1, 'Seleccione producto'),
   cantidad: z.coerce.number().positive('Debe ser mayor a 0'),
   precio_unitario: z.coerce.number().positive('Debe ser mayor a 0'),
+  total_linea: z.coerce.number().min(0).optional(),
   lote_numero: z.string().optional(),
   lote_fecha_fabricacion: z.string().optional(),
   lote_fecha_vencimiento: z.string().optional(),
@@ -84,7 +85,7 @@ export default function ComprasPage() {
       tipo: 'directa',
       metodo_valorizacion: 'promedio',
       fecha: new Date().toISOString().split('T')[0],
-      items: [{ producto_id: '', cantidad: 1, precio_unitario: 0, lote_numero: '', lote_fecha_fabricacion: '', lote_fecha_vencimiento: '' }],
+      items: [{ producto_id: '', cantidad: 1, precio_unitario: 0, total_linea: 0, lote_numero: '', lote_fecha_fabricacion: '', lote_fecha_vencimiento: '' }],
     },
   })
 
@@ -92,12 +93,48 @@ export default function ComprasPage() {
   const watchItems = watch('items')
 
   const [incluirIgv, setIncluirIgv] = useState(true)
+  const [modoIngreso, setModoIngreso] = useState<'unitario' | 'total'>('unitario')
+
+  // Cargar última preferencia del usuario
+  useEffect(() => {
+    const saved = typeof window !== 'undefined' ? localStorage.getItem('compras_modo_ingreso') : null
+    if (saved === 'total' || saved === 'unitario') setModoIngreso(saved)
+  }, [])
+  useEffect(() => {
+    if (typeof window !== 'undefined') localStorage.setItem('compras_modo_ingreso', modoIngreso)
+  }, [modoIngreso])
+
   const subtotal = watchItems?.reduce(
     (acc, item) => acc + (Number(item.cantidad) || 0) * (Number(item.precio_unitario) || 0),
     0
   ) ?? 0
   const igv = incluirIgv ? subtotal * IGV_RATE : 0
   const totalCompra = subtotal + igv
+
+  // Helpers de cálculo entre modos
+  const calcPUnitDesdeTotal = (totalLinea: number, cantidad: number, igvIncluido: boolean) => {
+    if (cantidad <= 0) return 0
+    const divisor = igvIncluido ? 1 + IGV_RATE : 1
+    return totalLinea / cantidad / divisor
+  }
+  const calcTotalLineaDesdePUnit = (pUnit: number, cantidad: number, igvIncluido: boolean) => {
+    const mult = igvIncluido ? 1 + IGV_RATE : 1
+    return pUnit * cantidad * mult
+  }
+
+  // Cuando cambia el toggle IGV en modo total: mantener los totales línea y recalcular p.unit
+  useEffect(() => {
+    if (modoIngreso !== 'total' || !watchItems) return
+    watchItems.forEach((it, idx) => {
+      const tot = Number(it.total_linea ?? 0)
+      const cant = Number(it.cantidad ?? 0)
+      if (tot > 0 && cant > 0) {
+        const nuevoPUnit = calcPUnitDesdeTotal(tot, cant, incluirIgv)
+        setValue(`items.${idx}.precio_unitario`, nuevoPUnit)
+      }
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [incluirIgv])
 
   const loadData = useCallback(async () => {
     setLoading(true)
@@ -467,11 +504,39 @@ export default function ComprasPage() {
                   type="button"
                   variant="outline"
                   size="sm"
-                  onClick={() => append({ producto_id: '', cantidad: 1, precio_unitario: 0, lote_numero: '', lote_fecha_fabricacion: '', lote_fecha_vencimiento: '' })}
+                  onClick={() => append({ producto_id: '', cantidad: 1, precio_unitario: 0, total_linea: 0, lote_numero: '', lote_fecha_fabricacion: '', lote_fecha_vencimiento: '' })}
                   className="h-7 gap-1 text-xs"
                 >
                   <Plus className="w-3 h-3" /> Agregar
                 </Button>
+              </div>
+
+              {/* Toggle modo de ingreso */}
+              <div className="flex items-center justify-between mb-2 px-3 py-2 bg-blue-50/60 border border-blue-100 rounded-lg">
+                <div>
+                  <p className="text-xs font-medium text-blue-900">Modo de ingreso</p>
+                  <p className="text-[10px] text-blue-700">
+                    {modoIngreso === 'unitario'
+                      ? 'Ingresas el precio unitario · el sistema calcula el total'
+                      : 'Ingresas el total de la línea (con IGV) · el sistema desglosa el unitario'}
+                  </p>
+                </div>
+                <div className="inline-flex rounded-md border border-blue-200 bg-white p-0.5 text-xs">
+                  <button
+                    type="button"
+                    onClick={() => setModoIngreso('unitario')}
+                    className={`px-2.5 py-1 rounded ${modoIngreso === 'unitario' ? 'bg-blue-600 text-white font-semibold' : 'text-blue-700 hover:bg-blue-50'}`}
+                  >
+                    Por unitario
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setModoIngreso('total')}
+                    className={`px-2.5 py-1 rounded ${modoIngreso === 'total' ? 'bg-blue-600 text-white font-semibold' : 'text-blue-700 hover:bg-blue-50'}`}
+                  >
+                    Por total
+                  </button>
+                </div>
               </div>
               <div className="border border-gray-200 rounded-lg overflow-hidden">
                 <div className="divide-y divide-gray-100">
@@ -505,27 +570,64 @@ export default function ComprasPage() {
                           <div className="col-span-2">
                             <Label className="text-[10px] text-gray-500">Cantidad</Label>
                             <Input
-                              {...register(`items.${idx}.cantidad`)}
                               type="number"
                               min={1}
                               step="0.01"
+                              value={watchItems?.[idx]?.cantidad ?? ''}
+                              onChange={(e) => {
+                                const nuevaCant = parseFloat(e.target.value) || 0
+                                setValue(`items.${idx}.cantidad`, nuevaCant)
+                                if (modoIngreso === 'total') {
+                                  const tot = Number(watchItems?.[idx]?.total_linea ?? 0)
+                                  if (tot > 0) {
+                                    setValue(`items.${idx}.precio_unitario`, calcPUnitDesdeTotal(tot, nuevaCant, incluirIgv))
+                                  }
+                                }
+                              }}
                               className="h-8 text-xs mt-1"
                             />
                           </div>
+                          {modoIngreso === 'unitario' ? (
+                            <div className="col-span-2">
+                              <Label className="text-[10px] text-gray-500">P. Unit.</Label>
+                              <Input
+                                type="number"
+                                min={0}
+                                step="0.01"
+                                value={watchItems?.[idx]?.precio_unitario ?? ''}
+                                onChange={(e) => {
+                                  const v = parseFloat(e.target.value) || 0
+                                  setValue(`items.${idx}.precio_unitario`, v)
+                                  setValue(`items.${idx}.total_linea`, calcTotalLineaDesdePUnit(v, cant, incluirIgv))
+                                }}
+                                className="h-8 text-xs mt-1"
+                              />
+                            </div>
+                          ) : (
+                            <div className="col-span-2">
+                              <Label className="text-[10px] text-gray-500">Total línea {incluirIgv ? '(c/IGV)' : ''}</Label>
+                              <Input
+                                type="number"
+                                min={0}
+                                step="0.01"
+                                value={watchItems?.[idx]?.total_linea ?? ''}
+                                onChange={(e) => {
+                                  const tot = parseFloat(e.target.value) || 0
+                                  setValue(`items.${idx}.total_linea`, tot)
+                                  setValue(`items.${idx}.precio_unitario`, calcPUnitDesdeTotal(tot, cant, incluirIgv))
+                                }}
+                                className="h-8 text-xs mt-1 bg-blue-50/50 border-blue-200"
+                              />
+                            </div>
+                          )}
                           <div className="col-span-2">
-                            <Label className="text-[10px] text-gray-500">P. Unit.</Label>
-                            <Input
-                              {...register(`items.${idx}.precio_unitario`)}
-                              type="number"
-                              min={0}
-                              step="0.01"
-                              className="h-8 text-xs mt-1"
-                            />
-                          </div>
-                          <div className="col-span-2">
-                            <Label className="text-[10px] text-gray-500">Subtotal</Label>
+                            <Label className="text-[10px] text-gray-500">
+                              {modoIngreso === 'unitario' ? 'Subtotal' : 'P.Unit (calc.)'}
+                            </Label>
                             <p className="h-8 text-xs mt-1 font-medium text-gray-700 flex items-center">
-                              {formatCurrency(cant * precio)}
+                              {modoIngreso === 'unitario'
+                                ? formatCurrency(cant * precio)
+                                : `${formatCurrency(precio)} c/u`}
                             </p>
                           </div>
                           <div className="col-span-1 pt-5">
