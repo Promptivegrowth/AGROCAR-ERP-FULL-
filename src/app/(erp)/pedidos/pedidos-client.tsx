@@ -5,8 +5,9 @@ import { useRouter } from 'next/navigation'
 import {
   ShoppingCart, Search, Eye, Loader2, ChevronLeft, ChevronRight, MapPin,
   Package, AlertTriangle, User, Calendar, FileText, Truck, CheckCircle,
-  XCircle, Clock,
+  XCircle, Clock, Plus,
 } from 'lucide-react'
+import NuevoPedidoDialog from './nuevo-pedido-dialog'
 import { toast } from 'sonner'
 import { createClient } from '@/lib/supabase/client'
 import { useDebounce } from '@/lib/hooks/use-debounce'
@@ -50,6 +51,7 @@ export default function PedidosClient({ pedidosIniciales }: { pedidosIniciales: 
   const [loadingItems, setLoadingItems] = useState(false)
   const [cancelando, setCancelando] = useState(false)
   const [comprobanteId, setComprobanteId] = useState<string | null>(null)
+  const [nuevoOpen, setNuevoOpen] = useState(false)
 
   const filtrados = useMemo(() => {
     return pedidos.filter((p) => {
@@ -123,12 +125,26 @@ export default function PedidosClient({ pedidosIniciales }: { pedidosIniciales: 
 
   return (
     <div className="space-y-5">
-      <div>
-        <h1 className="text-2xl font-bold text-gray-900">Pedidos</h1>
-        <p className="text-sm text-gray-500 mt-0.5">
-          Estado y trazabilidad de todos los pedidos del sistema
-        </p>
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">Pedidos</h1>
+          <p className="text-sm text-gray-500 mt-0.5">
+            Estado y trazabilidad de todos los pedidos del sistema
+          </p>
+        </div>
+        <Button
+          onClick={() => setNuevoOpen(true)}
+          className="bg-[#FBE600] hover:bg-[#E5D100] text-black font-semibold gap-2 w-full sm:w-auto"
+        >
+          <Plus className="w-4 h-4" /> Nuevo Pedido
+        </Button>
       </div>
+
+      <NuevoPedidoDialog
+        open={nuevoOpen}
+        onOpenChange={setNuevoOpen}
+        onCreated={() => router.refresh()}
+      />
 
       {/* KPIs */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
