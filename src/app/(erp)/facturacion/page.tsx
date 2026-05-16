@@ -30,7 +30,8 @@ export default function FacturacionPage() {
   const [pedidosPendientes, setPedidosPendientes] = useState<any[]>([])
   const [comprobantes, setComprobantes] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
-  const [tipoCambio, setTipoCambio] = useState<number>(3.75)
+  const [tipoCambio, setTipoCambio] = useState<number | null>(null)
+  const [tipoCambioFecha, setTipoCambioFecha] = useState<string | null>(null)
   const [facturarDialog, setFacturarDialog] = useState(false)
   const [pedidoSeleccionado, setPedidoSeleccionado] = useState<any>(null)
   const [tipoComprobante, setTipoComprobante] = useState<string>('factura')
@@ -41,7 +42,6 @@ export default function FacturacionPage() {
 
   const loadData = useCallback(async () => {
     setLoading(true)
-    const today = new Date().toISOString().split('T')[0]
 
     const [{ data: pedidos }, { data: comp }, { data: tc }] = await Promise.all([
       supabase
@@ -60,16 +60,24 @@ export default function FacturacionPage() {
         `)
         .order('fecha_emision', { ascending: false })
         .limit(50),
+      // TC más reciente disponible (si hoy no hay, usa el último día hábil)
       supabase
         .from('tipo_cambio')
-        .select('compra, venta')
-        .eq('fecha', today)
-        .single(),
+        .select('fecha, compra, venta')
+        .order('fecha', { ascending: false })
+        .limit(1)
+        .maybeSingle(),
     ])
 
     setPedidosPendientes(pedidos ?? [])
     setComprobantes(comp ?? [])
-    if (tc) setTipoCambio(tc.venta ?? 3.75)
+    if (tc) {
+      setTipoCambio(Number(tc.venta ?? 0) || null)
+      setTipoCambioFecha(tc.fecha ?? null)
+    } else {
+      setTipoCambio(null)
+      setTipoCambioFecha(null)
+    }
     setLoading(false)
   }, [])
 
@@ -153,9 +161,17 @@ export default function FacturacionPage() {
           <p className="text-sm text-gray-500 mt-0.5">Emisión de comprobantes electrónicos</p>
         </div>
         <div className="flex items-center gap-2">
-          <div className="flex items-center gap-2 bg-blue-50 border border-blue-200 rounded-lg px-3 py-1.5">
+          <div className="flex items-center gap-2 bg-blue-50 border border-blue-200 rounded-lg px-3 py-1.5"
+            title={tipoCambioFecha ? `Tipo de cambio del ${formatDate(tipoCambioFecha)}` : 'Sin tipo de cambio registrado'}>
             <DollarSign className="w-4 h-4 text-blue-500" />
-            <span className="text-sm text-blue-700 font-medium">T/C: S/ {tipoCambio.toFixed(3)}</span>
+            <span className="text-sm text-blue-700 font-medium">
+              T/C: {tipoCambio != null ? `S/ ${tipoCambio.toFixed(3)}` : '—'}
+            </span>
+            {tipoCambioFecha && (
+              <span className="text-[10px] text-blue-500/70 font-mono">
+                {formatDate(tipoCambioFecha)}
+              </span>
+            )}
           </div>
           <Button
             onClick={() => setVentaDirectaOpen(true)}
