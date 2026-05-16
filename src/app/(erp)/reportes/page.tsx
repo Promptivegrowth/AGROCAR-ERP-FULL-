@@ -79,27 +79,52 @@ export default function ReportesPage() {
         }))
     )
 
-    // Ventas por vendedor (mock)
-    const vendItems = vendedores.map((v) => ({
-      nombre: v.full_name?.split(' ')[0] ?? v.full_name,
-      total: Math.random() * 15000 + 3000,
-      pedidos: Math.floor(Math.random() * 30 + 5),
-    }))
+    // Ventas por vendedor (datos reales: comprobantes agrupados por el vendedor del cliente)
+    const ventasMap = new Map<string, { total: number; pedidos: number }>()
+    comprobantes?.forEach((c: any) => {
+      const vId = c.clientes?.vendedor_id
+      if (!vId) return
+      const cur = ventasMap.get(vId) ?? { total: 0, pedidos: 0 }
+      cur.total += Number(c.total ?? 0)
+      cur.pedidos += 1
+      ventasMap.set(vId, cur)
+    })
+    const vendItems = vendedores.map((v) => {
+      const d = ventasMap.get(v.id) ?? { total: 0, pedidos: 0 }
+      return {
+        nombre: v.full_name?.split(' ')[0] ?? v.full_name,
+        total: d.total,
+        pedidos: d.pedidos,
+      }
+    })
     setVentasPorVendedor(vendItems)
 
-    // Cuentas por cobrar
-    const { data: deudas } = await supabase
-      .from('clientes')
-      .select(`id, razon_social, credito_limite, credito_dias`)
-      .eq('estado', 'suspendido')
-      .order('razon_social')
-    setCuentasPorCobrar(
-      (deudas ?? []).map((d) => ({
-        ...d,
-        saldo: Math.random() * d.credito_limite,
-        vencimiento: new Date(Date.now() + Math.random() * 30 * 86400000).toISOString().split('T')[0],
-      }))
-    )
+    // Cuentas por cobrar (real: facturado - cobrado por cliente)
+    const [{ data: clientesActivos }, { data: comprAll }, { data: cobrosAll }] = await Promise.all([
+      supabase.from('clientes').select('id, razon_social, credito_limite, credito_dias').eq('estado', 'activo').order('razon_social'),
+      supabase.from('comprobantes').select('cliente_id, total').neq('estado', 'anulado'),
+      supabase.from('cobros').select('cliente_id, total'),
+    ])
+    const facturadoMap = new Map<string, number>()
+    const cobradoMap = new Map<string, number>()
+    ;(comprAll ?? []).forEach((c: any) => {
+      if (c.cliente_id) facturadoMap.set(c.cliente_id, (facturadoMap.get(c.cliente_id) ?? 0) + Number(c.total ?? 0))
+    })
+    ;(cobrosAll ?? []).forEach((c: any) => {
+      if (c.cliente_id) cobradoMap.set(c.cliente_id, (cobradoMap.get(c.cliente_id) ?? 0) + Number(c.total ?? 0))
+    })
+    const hoy = new Date()
+    const deudas = (clientesActivos ?? [])
+      .map((c: any) => {
+        const fact = facturadoMap.get(c.id) ?? 0
+        const cob = cobradoMap.get(c.id) ?? 0
+        const saldo = Math.max(0, fact - cob)
+        const venc = new Date(hoy)
+        venc.setDate(hoy.getDate() + (c.credito_dias ?? 0))
+        return { ...c, saldo, vencimiento: venc.toISOString().split('T')[0] }
+      })
+      .filter((c: any) => c.saldo > 0)
+    setCuentasPorCobrar(deudas)
 
     // Visitas del período
     const { data: vData } = await supabase
@@ -120,13 +145,16 @@ export default function ReportesPage() {
     })
     setVisitas(Object.entries(visitasPorVendedor).map(([nombre, data]) => ({ nombre, ...data })))
 
-    // Comisiones (estimadas 2%)
-    const comisionData = vendedores.map((v) => ({
-      vendedor: v.full_name,
-      ventas: Math.random() * 20000 + 5000,
-      comision_pct: 2.5,
-      comision: (Math.random() * 20000 + 5000) * 0.025,
-    }))
+    // Comisiones (2.5% sobre ventas reales del vendedor en el período)
+    const comisionData = vendedores.map((v) => {
+      const ventasV = ventasMap.get(v.id)?.total ?? 0
+      return {
+        vendedor: v.full_name,
+        ventas: ventasV,
+        comision_pct: 2.5,
+        comision: ventasV * 0.025,
+      }
+    })
     setComisiones(comisionData)
 
     setLoading(false)
