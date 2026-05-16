@@ -126,7 +126,7 @@ export default function NuevoPedidoDialog({ open, onOpenChange, onCreated }: Pro
         supabase
           .from('profiles')
           .select('id, full_name, role')
-          .in('role', ['vendedor', 'gerente', 'administrador'])
+          .eq('role', 'vendedor')
           .order('full_name'),
         supabase
           .from('productos')

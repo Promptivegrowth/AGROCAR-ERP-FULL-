@@ -313,9 +313,25 @@ export default function VentaDirectaDialog({ open, onOpenChange, onCreated }: Pr
       }))
 
       const { error: itemsError } = await (supabase.from('pedidos_items') as any).insert(itemsToInsert)
-      if (itemsError) throw new Error(itemsError.message)
+      if (itemsError) {
+        // rollback: borrar pedido
+        await (supabase.from('pedidos') as any).delete().eq('id', pedido.id)
+        throw new Error(itemsError.message)
+      }
 
-      // 3. Emitir comprobante
+      // 3. Pasar pedido a 'entregado' ANTES de emitir comprobante.
+      //    Dispara el trigger que descuenta stock + lotes + crea movimiento_stock.
+      //    Si falla aquí, el comprobante aún no existe -> rollback completo.
+      const { error: updErr } = await (supabase.from('pedidos') as any)
+        .update({ estado: 'entregado', updated_at: new Date().toISOString() })
+        .eq('id', pedido.id)
+      if (updErr) {
+        // rollback: borrar pedido (CASCADE borra items)
+        await (supabase.from('pedidos') as any).delete().eq('id', pedido.id)
+        throw new Error('Descontar stock: ' + updErr.message)
+      }
+
+      // 4. Emitir comprobante (después del trigger de stock)
       const numeroComp = Date.now().toString().slice(-8)
       const { error: compError } = await (supabase.from('comprobantes') as any).insert({
         pedido_id: pedido.id,
@@ -334,12 +350,6 @@ export default function VentaDirectaDialog({ open, onOpenChange, onCreated }: Pr
         estado: 'emitido',
       })
       if (compError) throw new Error('Comprobante: ' + compError.message)
-
-      // 4. Pasar pedido a 'entregado' → dispara trigger que descuenta stock + lotes + crea movimiento_stock
-      const { error: updErr } = await (supabase.from('pedidos') as any)
-        .update({ estado: 'entregado', updated_at: new Date().toISOString() })
-        .eq('id', pedido.id)
-      if (updErr) throw new Error('Actualizar pedido: ' + updErr.message)
 
       // 5. Registrar el cobro
       const { error: cobroError } = await (supabase.from('cobros') as any).insert({
