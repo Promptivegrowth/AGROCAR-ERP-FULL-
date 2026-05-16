@@ -41,9 +41,12 @@ type CompraFormData = z.infer<typeof compraSchema>
 const IGV_RATE = 0.18
 const PAGE_SIZE = 15
 
-const ESTADO_CONFIG: Record<string, { label: string; className: string }> = {
-  activo: { label: 'Activo', className: 'bg-green-100 text-green-700' },
-  anulado: { label: 'Anulado', className: 'bg-red-100 text-red-700' },
+const ESTADO_CONFIG: Record<string, { label: string; className: string; desc: string }> = {
+  registrada: { label: 'Registrada',    className: 'bg-gray-100 text-gray-700',     desc: 'Factura ingresada, aún no impacta almacén' },
+  recibida:   { label: 'Recibida',      className: 'bg-blue-100 text-blue-700',     desc: 'Mercadería validada, lista para aplicar' },
+  aplicada:   { label: 'Aplicada',      className: 'bg-green-100 text-green-700',   desc: 'Impactó stock y costos' },
+  anulado:    { label: 'Anulada',       className: 'bg-red-100 text-red-700',       desc: 'Compra cancelada' },
+  activo:     { label: 'Activa (legacy)', className: 'bg-green-100 text-green-700', desc: '' },
 }
 
 type ProductoCatalogo = {
@@ -78,6 +81,12 @@ export default function ComprasPage() {
     metodo_valorizacion: 'promedio' as 'promedio' | 'fifo' | 'directo',
     incluir_igv: true,
   })
+
+  // Validación de recepción (registrada → recibida)
+  const [validarOpen, setValidarOpen] = useState(false)
+  const [validarSaving, setValidarSaving] = useState(false)
+  const [itemsRecepcion, setItemsRecepcion] = useState<Array<{ id: string; producto: string; cantidad: number; cantidad_recibida: number; precio_unitario: number }>>([])
+  const [transicionando, setTransicionando] = useState(false)
 
   const { register, handleSubmit, watch, setValue, control, reset, formState: { errors } } = useForm<CompraFormData>({
     resolver: zodResolver(compraSchema) as any,
@@ -181,7 +190,7 @@ export default function ComprasPage() {
       const { data: userData } = await supabase.auth.getUser()
       const userId = userData?.user?.id ?? null
 
-      // 1. Insertar cabecera en compras
+      // 1. Insertar cabecera en compras (estado='registrada', sin impactar almacén)
       const { data: compra, error } = await (supabase.from('compras') as any).insert({
         proveedor_id: data.proveedor_id,
         numero_factura_proveedor: data.numero_factura,
@@ -192,7 +201,7 @@ export default function ComprasPage() {
         incluir_igv: incluirIgv,
         total: subtotalCalc + igvCalc,
         moneda: 'PEN',
-        estado: 'activo',
+        estado: 'registrada',
         created_by: userId,
       }).select().single()
 
@@ -200,59 +209,25 @@ export default function ComprasPage() {
         throw new Error(error?.message ?? 'No se pudo crear la compra.')
       }
 
-      // 2. Por cada item: si tiene lote/vencimiento, crear lote y obtener lote_id
-      const itemsToInsert: any[] = []
-      for (const item of data.items) {
-        const prod = productos.find((p) => p.id === item.producto_id)
-        let loteId: string | null = null
-
-        if (prod && (prod.tiene_lote || prod.tiene_vencimiento) && item.lote_numero?.trim()) {
-          const { data: lote, error: loteError } = await (supabase.from('lotes') as any).insert({
-            producto_id: item.producto_id,
-            numero_lote: item.lote_numero.trim(),
-            fecha_vencimiento: item.lote_fecha_vencimiento || null,
-            cantidad_inicial: item.cantidad,
-            cantidad_actual: item.cantidad,
-            activo: true,
-          }).select('id').single()
-
-          if (loteError) {
-            // Si el lote ya existe (unique constraint), intentar obtenerlo
-            const { data: existing } = await supabase
-              .from('lotes')
-              .select('id, cantidad_actual')
-              .eq('producto_id', item.producto_id)
-              .eq('numero_lote', item.lote_numero.trim())
-              .maybeSingle()
-            if (existing) {
-              loteId = (existing as any).id
-              // actualizar cantidad_actual
-              await (supabase.from('lotes') as any)
-                .update({ cantidad_actual: Number((existing as any).cantidad_actual ?? 0) + item.cantidad })
-                .eq('id', loteId)
-            } else {
-              throw new Error(`No se pudo registrar el lote: ${loteError.message}`)
-            }
-          } else {
-            loteId = lote?.id ?? null
-          }
-        }
-
-        itemsToInsert.push({
-          compra_id: compra.id,
-          producto_id: item.producto_id,
-          lote_id: loteId,
-          cantidad: item.cantidad,
-          precio_unitario: item.precio_unitario,
-          subtotal: item.cantidad * item.precio_unitario,
-        })
-      }
+      // 2. Insertar items con cantidad facturada + lote_numero como texto
+      //    Los lotes reales se crean al aplicar la compra (función aplicar_compra)
+      const itemsToInsert = data.items.map((item) => ({
+        compra_id: compra.id,
+        producto_id: item.producto_id,
+        lote_id: null,
+        lote_numero: item.lote_numero?.trim() || null,
+        lote_fecha_vencimiento: item.lote_fecha_vencimiento || null,
+        cantidad: item.cantidad,
+        cantidad_recibida: null,
+        precio_unitario: item.precio_unitario,
+        subtotal: item.cantidad * item.precio_unitario,
+      }))
 
       const { error: itemsError } = await (supabase.from('compras_items') as any).insert(itemsToInsert)
       if (itemsError) throw new Error(itemsError.message)
 
       toast.success('Compra registrada', {
-        description: `Factura ${data.numero_factura} · Total ${formatCurrency(subtotalCalc + igvCalc)}`,
+        description: `Factura ${data.numero_factura} · Total ${formatCurrency(subtotalCalc + igvCalc)} · Estado: Registrada (pendiente validación)`,
       })
       setDialogOpen(false)
       setIncluirIgv(true)
@@ -343,6 +318,133 @@ export default function ComprasPage() {
       toast.error('No se pudo guardar', { description: err?.message })
     } finally {
       setEditSaving(false)
+    }
+  }
+
+  // ─── Transiciones de estado ───────────────────────────────────────────
+  const abrirValidacion = async () => {
+    if (!detailCompra) return
+    setItemsRecepcion(
+      detailItems.map((it: any) => ({
+        id: it.id,
+        producto: it.productos?.descripcion?.trim() || it.productos?.nombre || '—',
+        cantidad: Number(it.cantidad),
+        cantidad_recibida: Number(it.cantidad_recibida ?? it.cantidad),
+        precio_unitario: Number(it.precio_unitario),
+      })),
+    )
+    setValidarOpen(true)
+  }
+
+  const confirmarRecepcion = async () => {
+    if (!detailCompra) return
+    setValidarSaving(true)
+    try {
+      // Update cada item con cantidad_recibida
+      for (const it of itemsRecepcion) {
+        const { error } = await (supabase.from('compras_items') as any)
+          .update({ cantidad_recibida: it.cantidad_recibida })
+          .eq('id', it.id)
+        if (error) throw error
+      }
+      // Cambiar estado a recibida
+      const { error: estErr } = await (supabase.from('compras') as any)
+        .update({ estado: 'recibida' })
+        .eq('id', detailCompra.id)
+      if (estErr) throw estErr
+
+      toast.success('Recepción confirmada', {
+        description: 'La compra pasó a estado "Recibida". Ahora puede aplicarse al almacén.',
+      })
+      setValidarOpen(false)
+      await openDetail(detailCompra.id)
+      loadData()
+    } catch (err: any) {
+      toast.error('No se pudo validar recepción', { description: err?.message })
+    } finally {
+      setValidarSaving(false)
+    }
+  }
+
+  const aplicarCompra = async () => {
+    if (!detailCompra) return
+    setTransicionando(true)
+    try {
+      const { data, error } = await (supabase.rpc as any)('aplicar_compra', { p_compra_id: detailCompra.id })
+      if (error) throw error
+      const ncId = data?.[0]?.nota_credito_id
+      const ncTotal = Number(data?.[0]?.nota_credito_total ?? 0)
+      if (ncId && ncTotal > 0) {
+        toast.success('Compra aplicada', {
+          description: `Stock y costos actualizados. Se generó NC de compra por ${formatCurrency(ncTotal)} por diferencias de recepción.`,
+        })
+      } else {
+        toast.success('Compra aplicada', { description: 'Stock, lotes y costo promedio actualizados.' })
+      }
+      await openDetail(detailCompra.id)
+      loadData()
+    } catch (err: any) {
+      toast.error('No se pudo aplicar la compra', { description: err?.message })
+    } finally {
+      setTransicionando(false)
+    }
+  }
+
+  const revertirCompra = async () => {
+    if (!detailCompra) return
+    if (!confirm('¿Revertir esta compra? Se descontará el stock ingresado, los lotes asociados y la NC se eliminará.')) return
+    setTransicionando(true)
+    try {
+      const { error } = await (supabase.rpc as any)('revertir_compra', { p_compra_id: detailCompra.id })
+      if (error) throw error
+      toast.success('Compra revertida', { description: 'Volvió a estado "Registrada" para edición.' })
+      await openDetail(detailCompra.id)
+      loadData()
+    } catch (err: any) {
+      toast.error('No se pudo revertir', { description: err?.message })
+    } finally {
+      setTransicionando(false)
+    }
+  }
+
+  const volverARegistrada = async () => {
+    if (!detailCompra) return
+    setTransicionando(true)
+    try {
+      const { error } = await (supabase.from('compras') as any)
+        .update({ estado: 'registrada' })
+        .eq('id', detailCompra.id)
+      if (error) throw error
+      toast.success('Compra vuelta a registrada', { description: 'Ahora puedes editar los ítems antes de validar la recepción nuevamente.' })
+      await openDetail(detailCompra.id)
+      loadData()
+    } catch (err: any) {
+      toast.error('No se pudo cambiar estado', { description: err?.message })
+    } finally {
+      setTransicionando(false)
+    }
+  }
+
+  const anularCompra = async () => {
+    if (!detailCompra) return
+    if (detailCompra.estado === 'aplicada') {
+      toast.error('Primero revertir', { description: 'Una compra aplicada debe revertirse antes de anular.' })
+      return
+    }
+    if (!confirm('¿Anular esta compra? Esta acción no se puede deshacer.')) return
+    setTransicionando(true)
+    try {
+      const { error } = await (supabase.from('compras') as any)
+        .update({ estado: 'anulado' })
+        .eq('id', detailCompra.id)
+      if (error) throw error
+      toast.success('Compra anulada')
+      await openDetail(detailCompra.id)
+      loadData()
+    } catch (err: any) {
+      toast.error('No se pudo anular', { description: err?.message })
+    } finally {
+      setTransicionando(false)
     }
   }
 
@@ -919,8 +1021,8 @@ export default function ComprasPage() {
                 </div>
               </div>
 
-              {/* Acciones */}
-              <div className="flex justify-end gap-2 pt-3 border-t border-gray-100">
+              {/* Acciones según estado */}
+              <div className="flex flex-wrap justify-end gap-2 pt-3 border-t border-gray-100">
                 {editMode ? (
                   <>
                     <Button variant="outline" onClick={() => setEditMode(false)} disabled={editSaving}>Cancelar</Button>
@@ -932,9 +1034,50 @@ export default function ComprasPage() {
                 ) : (
                   <>
                     <Button variant="outline" onClick={() => setDetailOpen(false)}>Cerrar</Button>
-                    {detailCompra.estado !== 'anulado' && (
-                      <Button onClick={() => setEditMode(true)} className="bg-[#FBE600] hover:bg-[#E5D100] text-black font-semibold gap-2">
+
+                    {/* Anular: disponible en registrada y recibida */}
+                    {(detailCompra.estado === 'registrada' || detailCompra.estado === 'recibida') && (
+                      <Button variant="outline" onClick={anularCompra} disabled={transicionando}
+                        className="text-red-600 border-red-200 hover:bg-red-50 gap-1">
+                        Anular
+                      </Button>
+                    )}
+
+                    {/* Editar cabecera: en registrada y recibida */}
+                    {(detailCompra.estado === 'registrada' || detailCompra.estado === 'recibida') && (
+                      <Button variant="outline" onClick={() => setEditMode(true)}>
                         Editar cabecera
+                      </Button>
+                    )}
+
+                    {/* Validar recepción: solo en registrada */}
+                    {detailCompra.estado === 'registrada' && (
+                      <Button onClick={abrirValidacion} disabled={transicionando}
+                        className="bg-blue-600 hover:bg-blue-700 text-white font-semibold gap-1">
+                        Validar recepción →
+                      </Button>
+                    )}
+
+                    {/* Aplicar al almacén: solo en recibida */}
+                    {detailCompra.estado === 'recibida' && (
+                      <>
+                        <Button variant="outline" onClick={volverARegistrada} disabled={transicionando}>
+                          ← Volver a registrada
+                        </Button>
+                        <Button onClick={aplicarCompra} disabled={transicionando}
+                          className="bg-green-600 hover:bg-green-700 text-white font-semibold gap-1">
+                          {transicionando && <Loader2 className="w-4 h-4 animate-spin" />}
+                          Aplicar al almacén ✓
+                        </Button>
+                      </>
+                    )}
+
+                    {/* Revertir: solo en aplicada */}
+                    {detailCompra.estado === 'aplicada' && (
+                      <Button onClick={revertirCompra} disabled={transicionando}
+                        className="bg-amber-600 hover:bg-amber-700 text-white font-semibold gap-1">
+                        {transicionando && <Loader2 className="w-4 h-4 animate-spin" />}
+                        Revertir aplicación
                       </Button>
                     )}
                   </>
@@ -942,6 +1085,89 @@ export default function ComprasPage() {
               </div>
             </div>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialog Validar Recepción */}
+      <Dialog open={validarOpen} onOpenChange={setValidarOpen}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Package2 className="w-5 h-5 text-blue-600" />
+              Validar recepción de mercadería
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 mt-2">
+            <div className="bg-blue-50 border border-blue-100 rounded-lg p-3 text-xs text-blue-800">
+              Ingresa la cantidad realmente recibida por cada producto. Si recibiste menos
+              de lo facturado, al aplicar la compra se generará automáticamente una
+              <strong> nota de crédito contable</strong> por la diferencia.
+            </div>
+
+            <div className="border border-gray-200 rounded-lg overflow-hidden">
+              <table className="w-full text-sm">
+                <thead className="bg-gray-50 border-b border-gray-100">
+                  <tr>
+                    <th className="text-left py-2 px-3 text-[11px] font-semibold text-gray-500 uppercase">Producto</th>
+                    <th className="text-right py-2 px-2 text-[11px] font-semibold text-gray-500 uppercase">Facturado</th>
+                    <th className="text-right py-2 px-2 text-[11px] font-semibold text-gray-500 uppercase">Recibido</th>
+                    <th className="text-right py-2 px-3 text-[11px] font-semibold text-gray-500 uppercase">Diferencia</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-50">
+                  {itemsRecepcion.map((it, idx) => {
+                    const diff = it.cantidad - it.cantidad_recibida
+                    return (
+                      <tr key={it.id}>
+                        <td className="py-2 px-3 text-sm text-gray-900 max-w-[280px] truncate">{it.producto}</td>
+                        <td className="py-2 px-2 text-right text-gray-700 font-mono">{it.cantidad}</td>
+                        <td className="py-2 px-2">
+                          <Input
+                            type="number"
+                            min={0}
+                            max={it.cantidad}
+                            step="0.01"
+                            value={it.cantidad_recibida}
+                            onChange={(e) => {
+                              const v = Math.max(0, Math.min(it.cantidad, parseFloat(e.target.value) || 0))
+                              setItemsRecepcion((prev) => prev.map((r, i) => i === idx ? { ...r, cantidad_recibida: v } : r))
+                            }}
+                            className="h-8 text-right font-mono w-24 ml-auto"
+                          />
+                        </td>
+                        <td className={`py-2 px-3 text-right font-mono text-sm ${diff > 0 ? 'text-red-600 font-semibold' : 'text-gray-500'}`}>
+                          {diff > 0 ? `-${diff} (NC: ${formatCurrency(diff * it.precio_unitario)})` : '—'}
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Resumen de NC potencial */}
+            {(() => {
+              const totalNC = itemsRecepcion.reduce((acc, it) => acc + Math.max(0, it.cantidad - it.cantidad_recibida) * it.precio_unitario, 0)
+              if (totalNC > 0) {
+                return (
+                  <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-xs text-amber-900">
+                    <strong>Nota de crédito esperada:</strong> {formatCurrency(totalNC)} (subtotal sin IGV).
+                    Se generará automáticamente al aplicar la compra.
+                  </div>
+                )
+              }
+              return null
+            })()}
+
+            <div className="flex justify-end gap-2 pt-3 border-t border-gray-100">
+              <Button variant="outline" onClick={() => setValidarOpen(false)} disabled={validarSaving}>Cancelar</Button>
+              <Button onClick={confirmarRecepcion} disabled={validarSaving}
+                className="bg-blue-600 hover:bg-blue-700 text-white font-semibold gap-2">
+                {validarSaving && <Loader2 className="w-4 h-4 animate-spin" />}
+                Confirmar recepción
+              </Button>
+            </div>
+          </div>
         </DialogContent>
       </Dialog>
     </div>
