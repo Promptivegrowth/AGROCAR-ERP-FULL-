@@ -69,10 +69,15 @@ export default function AlmacenPage() {
           unidades_medida(simbolo, nombre)
         )
       `)
-      .order('updated_at', { ascending: false })
 
     if (error) toast.error('Error al cargar inventario', { description: error.message })
-    setStocks(data ?? [])
+    // Orden alfabético por descripción (nombre comercial) o nombre genérico
+    const ordenado = (data ?? []).slice().sort((a: any, b: any) => {
+      const an = (a.productos?.descripcion?.trim() || a.productos?.nombre || '').toLowerCase()
+      const bn = (b.productos?.descripcion?.trim() || b.productos?.nombre || '').toLowerCase()
+      return an.localeCompare(bn, 'es')
+    })
+    setStocks(ordenado)
     setLoading(false)
   }, [])
 

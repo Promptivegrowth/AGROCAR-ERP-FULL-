@@ -18,6 +18,7 @@ export default function ContabilidadPage() {
   const [tipoCambios, setTipoCambios] = useState<any[]>([])
   const [comprobantes, setComprobantes] = useState<any[]>([])
   const [compras, setCompras] = useState<any[]>([])
+  const [notasCredito, setNotasCredito] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [generando, setGenerando] = useState<string | null>(null)
   const [actualizandoTC, setActualizandoTC] = useState(false)
@@ -33,7 +34,7 @@ export default function ContabilidadPage() {
       new Date(parseInt(mes.split('-')[0]), parseInt(mes.split('-')[1]), 0).toISOString().split('T')[0],
     ]
 
-    const [{ data: tc }, { data: comp }, { data: oc }] = await Promise.all([
+    const [{ data: tc }, { data: comp }, { data: cmp }, { data: nc }] = await Promise.all([
       supabase.from('tipo_cambio').select('*').order('fecha', { ascending: false }).limit(30),
       supabase
         .from('comprobantes')
@@ -42,17 +43,28 @@ export default function ContabilidadPage() {
         .lte('fecha_emision', hasta)
         .neq('estado', 'anulado')
         .order('fecha_emision'),
+      // Solo compras APLICADAS (las que efectivamente impactaron almacén y caja)
       supabase
-        .from('ordenes_compra')
-        .select(`numero, fecha_emision, total, igv, estado, proveedores(razon_social, ruc)`)
+        .from('compras')
+        .select(`id, numero_factura_proveedor, fecha, subtotal, igv, total, estado, proveedores(razon_social, ruc)`)
+        .gte('fecha', desde)
+        .lte('fecha', hasta)
+        .eq('estado', 'aplicada')
+        .order('fecha'),
+      // Notas de crédito de compras emitidas en el período (reducen el monto del libro)
+      (supabase as any)
+        .from('notas_credito_compras')
+        .select(`id, numero, fecha_emision, subtotal, igv, total, estado, compra_id, proveedores(razon_social, ruc), compras(numero_factura_proveedor)`)
         .gte('fecha_emision', desde)
         .lte('fecha_emision', hasta)
+        .eq('estado', 'emitida')
         .order('fecha_emision'),
     ])
 
     setTipoCambios(tc ?? [])
     setComprobantes(comp ?? [])
-    setCompras(oc ?? [])
+    setCompras(cmp ?? [])
+    setNotasCredito(nc ?? [])
     setLoading(false)
   }, [mes])
 
@@ -63,45 +75,63 @@ export default function ContabilidadPage() {
     await new Promise((r) => setTimeout(r, 1200)) // simula procesamiento
 
     const [anio, mesNum] = mes.split('-')
-    const data = tipo === 'ventas' ? comprobantes : compras
 
-    const lines = data.map((item: any, i: number) => {
-      if (tipo === 'ventas') {
-        return [
-          `${anio}${mesNum}`.padEnd(6, '0'),
-          `M${String(i + 1).padStart(10, '0')}`,
-          '01',
-          item.fecha_emision?.replace(/-/g, ''),
-          item.tipo === 'factura' ? '01' : '03',
-          item.serie,
-          item.numero,
-          '',
-          item.clientes?.ruc ?? '',
-          item.clientes?.razon_social ?? '',
-          (item.total - (item.igv ?? 0)).toFixed(2),
-          (item.igv ?? 0).toFixed(2),
-          item.total?.toFixed(2),
-          '1',
-          '1',
-        ].join('|')
-      } else {
-        return [
-          `${anio}${mesNum}`.padEnd(6, '0'),
-          `C${String(i + 1).padStart(10, '0')}`,
-          item.fecha_emision?.replace(/-/g, ''),
-          '01',
-          item.proveedores?.ruc ?? '',
-          item.proveedores?.razon_social ?? '',
-          item.numero ?? '',
-          '',
-          (item.total - (item.igv ?? 0)).toFixed(2),
-          (item.igv ?? 0).toFixed(2),
-          item.total?.toFixed(2),
-          '1',
-          '1',
-        ].join('|')
-      }
-    }).join('\n')
+    let lines = ''
+
+    if (tipo === 'ventas') {
+      lines = comprobantes.map((item: any, i: number) => [
+        `${anio}${mesNum}`.padEnd(6, '0'),
+        `M${String(i + 1).padStart(10, '0')}`,
+        '01',
+        item.fecha_emision?.replace(/-/g, ''),
+        item.tipo === 'factura' ? '01' : '03',
+        item.serie,
+        item.numero,
+        '',
+        item.clientes?.ruc ?? '',
+        item.clientes?.razon_social ?? '',
+        (item.total - (item.igv ?? 0)).toFixed(2),
+        (item.igv ?? 0).toFixed(2),
+        item.total?.toFixed(2),
+        '1',
+        '1',
+      ].join('|')).join('\n')
+    } else {
+      // Libro de compras: incluye facturas (compras aplicadas) y notas de crédito
+      const filasCompras = compras.map((item: any, i: number) => [
+        `${anio}${mesNum}`.padEnd(6, '0'),
+        `C${String(i + 1).padStart(10, '0')}`,
+        item.fecha?.replace(/-/g, ''),
+        '01', // Tipo: Factura
+        item.proveedores?.ruc ?? '',
+        item.proveedores?.razon_social ?? '',
+        item.numero_factura_proveedor ?? '',
+        '',
+        Number(item.subtotal ?? 0).toFixed(2),
+        Number(item.igv ?? 0).toFixed(2),
+        Number(item.total ?? 0).toFixed(2),
+        '1',
+        '1',
+      ].join('|'))
+
+      const filasNC = notasCredito.map((nc: any, i: number) => [
+        `${anio}${mesNum}`.padEnd(6, '0'),
+        `NC${String(i + 1).padStart(9, '0')}`,
+        nc.fecha_emision?.replace(/-/g, ''),
+        '07', // Tipo: Nota de Crédito
+        nc.proveedores?.ruc ?? '',
+        nc.proveedores?.razon_social ?? '',
+        nc.numero ?? '',
+        nc.compras?.numero_factura_proveedor ?? '',
+        (-Number(nc.subtotal ?? 0)).toFixed(2),
+        (-Number(nc.igv ?? 0)).toFixed(2),
+        (-Number(nc.total ?? 0)).toFixed(2),
+        '1',
+        '1',
+      ].join('|'))
+
+      lines = [...filasCompras, ...filasNC].join('\n')
+    }
 
     const blob = new Blob([lines], { type: 'text/plain;charset=utf-8' })
     const url = URL.createObjectURL(blob)
@@ -115,9 +145,10 @@ export default function ContabilidadPage() {
 
     setGenerando(null)
     const nombreArchivo = tipo === 'ventas' ? 'RVIE' : 'RCPE'
+    const cantidad = tipo === 'ventas' ? comprobantes.length : compras.length + notasCredito.length
     setMsg({ text: `Archivo ${nombreArchivo} generado correctamente`, tipo: 'success' })
     toast.success(`Archivo ${nombreArchivo} generado`, {
-      description: `${data.length} registros exportados para el período ${anio}-${mesNum}.`,
+      description: `${cantidad} registros exportados para el período ${anio}-${mesNum}.`,
     })
     setTimeout(() => setMsg(null), 4000)
   }
@@ -231,15 +262,17 @@ export default function ContabilidadPage() {
                       <div>
                         <p className="text-sm font-bold text-gray-800">RCPE — Registro de Compras</p>
                         <p className="text-xs text-gray-500 mt-1">
-                          {compras.length} compras en el período
+                          {compras.length} {compras.length === 1 ? 'compra aplicada' : 'compras aplicadas'}
+                          {notasCredito.length > 0 && ` · ${notasCredito.length} NC`}
+                          {' '}en el período
                         </p>
-                        <p className="text-xs text-gray-400 mt-0.5">Formato TXT para SUNAT / SIRE</p>
+                        <p className="text-xs text-gray-400 mt-0.5">Formato TXT para SUNAT / SIRE · incluye NC de compras</p>
                       </div>
                       <BookOpen className="w-5 h-5 text-blue-600" />
                     </div>
                     <Button
                       onClick={() => generarPLE('compras')}
-                      disabled={generando === 'compras' || compras.length === 0}
+                      disabled={generando === 'compras' || (compras.length === 0 && notasCredito.length === 0)}
                       className="mt-4 bg-blue-600 hover:bg-blue-700 gap-2 w-full"
                     >
                       {generando === 'compras' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}

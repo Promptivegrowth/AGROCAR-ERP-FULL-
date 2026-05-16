@@ -88,6 +88,11 @@ export default function ComprasPage() {
   const [itemsRecepcion, setItemsRecepcion] = useState<Array<{ id: string; producto: string; cantidad: number; cantidad_recibida: number; precio_unitario: number }>>([])
   const [transicionando, setTransicionando] = useState(false)
 
+  // Edición de ítems (solo en estado registrada)
+  const [editItemsMode, setEditItemsMode] = useState(false)
+  const [editItemsSaving, setEditItemsSaving] = useState(false)
+  const [itemsEditables, setItemsEditables] = useState<Array<{ id: string; producto: string; cantidad: number; precio_unitario: number; lote_numero: string; lote_fecha_vencimiento: string }>>([])
+
   const { register, handleSubmit, watch, setValue, control, reset, formState: { errors } } = useForm<CompraFormData>({
     resolver: zodResolver(compraSchema) as any,
     defaultValues: {
@@ -422,6 +427,63 @@ export default function ComprasPage() {
       toast.error('No se pudo cambiar estado', { description: err?.message })
     } finally {
       setTransicionando(false)
+    }
+  }
+
+  const abrirEditItems = () => {
+    if (!detailCompra) return
+    setItemsEditables(
+      detailItems.map((it: any) => ({
+        id: it.id,
+        producto: it.productos?.descripcion?.trim() || it.productos?.nombre || '—',
+        cantidad: Number(it.cantidad),
+        precio_unitario: Number(it.precio_unitario),
+        lote_numero: it.lote_numero ?? '',
+        lote_fecha_vencimiento: it.lote_fecha_vencimiento ?? '',
+      })),
+    )
+    setEditItemsMode(true)
+  }
+
+  const guardarEdicionItems = async () => {
+    if (!detailCompra) return
+    // Validar
+    for (const it of itemsEditables) {
+      if (it.cantidad <= 0) { toast.error('Cantidad inválida', { description: it.producto }); return }
+      if (it.precio_unitario < 0) { toast.error('Precio inválido', { description: it.producto }); return }
+    }
+    setEditItemsSaving(true)
+    try {
+      let subtotalNuevo = 0
+      for (const it of itemsEditables) {
+        const subt = it.cantidad * it.precio_unitario
+        subtotalNuevo += subt
+        const { error } = await (supabase.from('compras_items') as any)
+          .update({
+            cantidad: it.cantidad,
+            precio_unitario: it.precio_unitario,
+            subtotal: subt,
+            lote_numero: it.lote_numero.trim() || null,
+            lote_fecha_vencimiento: it.lote_fecha_vencimiento || null,
+          })
+          .eq('id', it.id)
+        if (error) throw error
+      }
+      const igvNuevo = detailCompra.incluir_igv ? subtotalNuevo * IGV_RATE : 0
+      const totalNuevo = subtotalNuevo + igvNuevo
+      const { error: cErr } = await (supabase.from('compras') as any)
+        .update({ subtotal: subtotalNuevo, igv: igvNuevo, total: totalNuevo })
+        .eq('id', detailCompra.id)
+      if (cErr) throw cErr
+
+      toast.success('Productos actualizados', { description: `Nuevo total: ${formatCurrency(totalNuevo)}` })
+      setEditItemsMode(false)
+      await openDetail(detailCompra.id)
+      loadData()
+    } catch (err: any) {
+      toast.error('No se pudo guardar', { description: err?.message })
+    } finally {
+      setEditItemsSaving(false)
     }
   }
 
@@ -949,43 +1011,134 @@ export default function ComprasPage() {
 
               {/* Items */}
               <div>
-                <Label className="text-xs font-semibold text-gray-700">Productos ({detailItems.length})</Label>
-                <div className="mt-2 border border-gray-200 rounded-lg overflow-hidden">
-                  <table className="w-full text-sm">
-                    <thead className="bg-gray-50 border-b border-gray-100">
-                      <tr>
-                        <th className="text-left py-2 px-3 text-[11px] font-semibold text-gray-500 uppercase">Producto</th>
-                        <th className="text-right py-2 px-3 text-[11px] font-semibold text-gray-500 uppercase">Cant.</th>
-                        <th className="text-right py-2 px-3 text-[11px] font-semibold text-gray-500 uppercase">P. Unit.</th>
-                        <th className="text-right py-2 px-3 text-[11px] font-semibold text-gray-500 uppercase">Subtotal</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-50">
-                      {detailItems.map((it) => {
-                        const prod = it.productos as any
-                        const lote = it.lotes as any
-                        const um = prod?.unidades_medida?.simbolo ?? ''
-                        const nombreProd = prod?.descripcion?.trim() || prod?.nombre || '—'
-                        return (
-                          <tr key={it.id}>
-                            <td className="py-2.5 px-3">
-                              <p className="font-medium text-gray-900">{nombreProd}</p>
-                              {lote && (
-                                <p className="text-[11px] text-amber-700 mt-0.5">
-                                  Lote {lote.numero_lote}
-                                  {lote.fecha_vencimiento && ` · vence ${formatDate(lote.fecha_vencimiento)}`}
-                                </p>
-                              )}
-                            </td>
-                            <td className="py-2.5 px-3 text-right text-gray-700">{Number(it.cantidad).toFixed(2)} {um}</td>
-                            <td className="py-2.5 px-3 text-right text-gray-700">{formatCurrency(it.precio_unitario)}</td>
-                            <td className="py-2.5 px-3 text-right font-medium text-gray-900">{formatCurrency(it.subtotal)}</td>
-                          </tr>
-                        )
-                      })}
-                    </tbody>
-                  </table>
+                <div className="flex items-center justify-between mb-2">
+                  <Label className="text-xs font-semibold text-gray-700">
+                    Productos ({editItemsMode ? itemsEditables.length : detailItems.length})
+                  </Label>
+                  {!editItemsMode && !editMode && detailCompra.estado === 'registrada' && (
+                    <Button variant="outline" size="sm" onClick={abrirEditItems} className="h-7 text-xs">
+                      Editar productos
+                    </Button>
+                  )}
                 </div>
+
+                {editItemsMode ? (
+                  <div className="bg-amber-50/60 border border-amber-200 rounded-lg p-3 space-y-2">
+                    <p className="text-[11px] text-amber-800 font-medium">
+                      Editando cantidades y precios facturados. El stock NO se ve afectado todavía
+                      (la compra sigue en estado registrada).
+                    </p>
+                    <div className="border border-amber-200 rounded overflow-hidden bg-white">
+                      <table className="w-full text-sm">
+                        <thead className="bg-amber-50 border-b border-amber-100">
+                          <tr>
+                            <th className="text-left py-2 px-2 text-[11px] font-semibold text-gray-500 uppercase">Producto</th>
+                            <th className="text-right py-2 px-2 text-[11px] font-semibold text-gray-500 uppercase w-20">Cant.</th>
+                            <th className="text-right py-2 px-2 text-[11px] font-semibold text-gray-500 uppercase w-24">P. Unit.</th>
+                            <th className="text-left py-2 px-2 text-[11px] font-semibold text-gray-500 uppercase w-28">N° Lote</th>
+                            <th className="text-left py-2 px-2 text-[11px] font-semibold text-gray-500 uppercase w-32">Vence</th>
+                            <th className="text-right py-2 px-2 text-[11px] font-semibold text-gray-500 uppercase w-24">Subtotal</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-50">
+                          {itemsEditables.map((it, idx) => (
+                            <tr key={it.id}>
+                              <td className="py-1.5 px-2 text-sm text-gray-900 max-w-[200px] truncate">{it.producto}</td>
+                              <td className="py-1.5 px-2">
+                                <Input type="number" min={0.01} step="0.01" value={it.cantidad}
+                                  onChange={(e) => {
+                                    const v = parseFloat(e.target.value) || 0
+                                    setItemsEditables((p) => p.map((r, i) => i === idx ? { ...r, cantidad: v } : r))
+                                  }}
+                                  className="h-7 text-xs text-right font-mono" />
+                              </td>
+                              <td className="py-1.5 px-2">
+                                <Input type="number" min={0} step="0.01" value={it.precio_unitario}
+                                  onChange={(e) => {
+                                    const v = parseFloat(e.target.value) || 0
+                                    setItemsEditables((p) => p.map((r, i) => i === idx ? { ...r, precio_unitario: v } : r))
+                                  }}
+                                  className="h-7 text-xs text-right font-mono" />
+                              </td>
+                              <td className="py-1.5 px-2">
+                                <Input value={it.lote_numero} placeholder="(sin lote)"
+                                  onChange={(e) => setItemsEditables((p) => p.map((r, i) => i === idx ? { ...r, lote_numero: e.target.value } : r))}
+                                  className="h-7 text-xs font-mono" />
+                              </td>
+                              <td className="py-1.5 px-2">
+                                <Input type="date" value={it.lote_fecha_vencimiento}
+                                  onChange={(e) => setItemsEditables((p) => p.map((r, i) => i === idx ? { ...r, lote_fecha_vencimiento: e.target.value } : r))}
+                                  className="h-7 text-xs" />
+                              </td>
+                              <td className="py-1.5 px-2 text-right font-medium text-sm text-gray-900 font-mono">
+                                {formatCurrency(it.cantidad * it.precio_unitario)}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                    <div className="flex justify-end gap-2 pt-1">
+                      <Button variant="outline" size="sm" onClick={() => setEditItemsMode(false)} disabled={editItemsSaving}>
+                        Cancelar edición
+                      </Button>
+                      <Button size="sm" onClick={guardarEdicionItems} disabled={editItemsSaving}
+                        className="bg-[#FBE600] hover:bg-[#E5D100] text-black font-semibold gap-2">
+                        {editItemsSaving && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                        Guardar productos
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="border border-gray-200 rounded-lg overflow-hidden">
+                    <table className="w-full text-sm">
+                      <thead className="bg-gray-50 border-b border-gray-100">
+                        <tr>
+                          <th className="text-left py-2 px-3 text-[11px] font-semibold text-gray-500 uppercase">Producto</th>
+                          <th className="text-right py-2 px-3 text-[11px] font-semibold text-gray-500 uppercase">Cant.</th>
+                          {detailCompra.estado === 'aplicada' && (
+                            <th className="text-right py-2 px-3 text-[11px] font-semibold text-gray-500 uppercase">Recib.</th>
+                          )}
+                          <th className="text-right py-2 px-3 text-[11px] font-semibold text-gray-500 uppercase">P. Unit.</th>
+                          <th className="text-right py-2 px-3 text-[11px] font-semibold text-gray-500 uppercase">Subtotal</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-50">
+                        {detailItems.map((it) => {
+                          const prod = it.productos as any
+                          const lote = it.lotes as any
+                          const um = prod?.unidades_medida?.simbolo ?? ''
+                          const nombreProd = prod?.descripcion?.trim() || prod?.nombre || '—'
+                          const cantR = it.cantidad_recibida
+                          const diff = cantR != null ? Number(it.cantidad) - Number(cantR) : 0
+                          return (
+                            <tr key={it.id}>
+                              <td className="py-2.5 px-3">
+                                <p className="font-medium text-gray-900">{nombreProd}</p>
+                                {(lote || it.lote_numero) && (
+                                  <p className="text-[11px] text-amber-700 mt-0.5">
+                                    Lote {lote?.numero_lote ?? it.lote_numero}
+                                    {(lote?.fecha_vencimiento || it.lote_fecha_vencimiento) &&
+                                      ` · vence ${formatDate(lote?.fecha_vencimiento ?? it.lote_fecha_vencimiento)}`}
+                                  </p>
+                                )}
+                              </td>
+                              <td className="py-2.5 px-3 text-right text-gray-700">{Number(it.cantidad).toFixed(2)} {um}</td>
+                              {detailCompra.estado === 'aplicada' && (
+                                <td className="py-2.5 px-3 text-right text-gray-700">
+                                  {cantR != null ? Number(cantR).toFixed(2) : '—'}
+                                  {diff > 0 && <span className="text-red-600 text-[10px] ml-1">(-{diff.toFixed(2)})</span>}
+                                </td>
+                              )}
+                              <td className="py-2.5 px-3 text-right text-gray-700">{formatCurrency(it.precio_unitario)}</td>
+                              <td className="py-2.5 px-3 text-right font-medium text-gray-900">{formatCurrency(it.subtotal)}</td>
+                            </tr>
+                          )
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
               </div>
 
               {/* Totales */}

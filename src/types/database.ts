@@ -677,7 +677,7 @@ export interface Database {
           igv: number
           total: number
           moneda: Moneda
-          estado: 'activo' | 'anulado'
+          estado: 'registrada' | 'recibida' | 'aplicada' | 'anulado'
           notas: string | null
           incluir_igv: boolean
           created_at: string
@@ -694,7 +694,7 @@ export interface Database {
           igv?: number
           total?: number
           moneda?: Moneda
-          estado?: 'activo' | 'anulado'
+          estado?: 'registrada' | 'recibida' | 'aplicada' | 'anulado'
           notas?: string | null
           incluir_igv?: boolean
           created_at?: string
@@ -711,7 +711,7 @@ export interface Database {
           igv?: number
           total?: number
           moneda?: Moneda
-          estado?: 'activo' | 'anulado'
+          estado?: 'registrada' | 'recibida' | 'aplicada' | 'anulado'
           notas?: string | null
           incluir_igv?: boolean
           created_by?: string | null
