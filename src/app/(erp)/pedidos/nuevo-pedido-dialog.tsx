@@ -228,12 +228,16 @@ export default function NuevoPedidoDialog({ open, onOpenChange, onCreated }: Pro
   }
 
   // Totales
-  const subtotalBruto = carrito.reduce((acc, s) => acc + s.subtotal, 0)
+  // Los precios de lista YA incluyen IGV. El total final es lo que paga el cliente.
+  // baseImponible (subtotal sin IGV) se desglosa hacia atrás.
+  const subtotalConIgv = carrito.reduce((acc, s) => acc + s.subtotal, 0)
   const descuentoPct = parseFloat(descuento) || 0
-  const descuentoMonto = subtotalBruto * (descuentoPct / 100)
-  const baseImponible = subtotalBruto - descuentoMonto
-  const igvMonto = incluirIgv ? baseImponible * 0.18 : 0
-  const totalFinal = baseImponible + igvMonto
+  const descuentoMonto = subtotalConIgv * (descuentoPct / 100)
+  const totalFinal = subtotalConIgv - descuentoMonto
+  const baseImponible = incluirIgv ? totalFinal / 1.18 : totalFinal
+  const igvMonto = incluirIgv ? totalFinal - baseImponible : 0
+  // Compat: la UI sigue usando subtotalBruto para mostrar el monto con IGV
+  const subtotalBruto = subtotalConIgv
   const requiereAutorizacion = descuentoPct > DESCUENTO_MAX_SIN_AUTH
 
   const puedeGuardar = !!clienteSeleccionado && carrito.length > 0 && !!fechaDespacho
@@ -255,7 +259,7 @@ export default function NuevoPedidoDialog({ open, onOpenChange, onCreated }: Pro
           estado: 'enviado',
           descuento_porcentaje: descuentoPct,
           descuento_monto: descuentoMonto,
-          subtotal: subtotalBruto,
+          subtotal: baseImponible,
           igv: igvMonto,
           incluir_igv: incluirIgv,
           total: totalFinal,
@@ -570,22 +574,26 @@ export default function NuevoPedidoDialog({ open, onOpenChange, onCreated }: Pro
                 </div>
 
                 <div className="bg-gray-50 rounded-lg p-4 space-y-1.5">
-                  <div className="flex justify-between text-sm">
-                    <span className="text-gray-600">Subtotal</span>
-                    <span className="font-medium">{formatCurrency(subtotalBruto)}</span>
+                  <div className="flex justify-between text-sm text-gray-500">
+                    <span>Subtotal (precios c/IGV)</span>
+                    <span className="font-mono">{formatCurrency(subtotalBruto)}</span>
                   </div>
                   {descuentoPct > 0 && (
                     <div className="flex justify-between text-sm text-red-600">
                       <span>Descuento ({descuentoPct}%)</span>
-                      <span>-{formatCurrency(descuentoMonto)}</span>
+                      <span className="font-mono">-{formatCurrency(descuentoMonto)}</span>
                     </div>
                   )}
-                  <div className="flex justify-between text-sm">
-                    <span className="text-gray-600">IGV (18%){!incluirIgv && <span className="text-amber-600 text-xs ml-1">· desactivado</span>}</span>
-                    <span className="font-medium">{formatCurrency(igvMonto)}</span>
+                  <div className="flex justify-between text-xs text-gray-500 pt-1.5 border-t border-gray-200 mt-1">
+                    <span>Base imponible (sin IGV)</span>
+                    <span className="font-mono">{formatCurrency(baseImponible)}</span>
+                  </div>
+                  <div className="flex justify-between text-xs text-gray-500">
+                    <span>IGV (18%){!incluirIgv && <span className="text-amber-600 ml-1">· desactivado</span>}</span>
+                    <span className="font-mono">{formatCurrency(igvMonto)}</span>
                   </div>
                   <div className="flex justify-between text-base font-bold border-t border-gray-200 pt-2 mt-1">
-                    <span>Total</span>
+                    <span>Total a pagar</span>
                     <span className="text-green-600">{formatCurrency(totalFinal)}</span>
                   </div>
                 </div>

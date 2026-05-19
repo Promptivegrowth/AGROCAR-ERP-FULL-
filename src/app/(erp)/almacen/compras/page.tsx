@@ -118,22 +118,26 @@ export default function ComprasPage() {
     if (typeof window !== 'undefined') localStorage.setItem('compras_modo_ingreso', modoIngreso)
   }, [modoIngreso])
 
-  const subtotal = watchItems?.reduce(
+  // Los precios de proveedor/lista YA incluyen IGV. El total es lo que se paga;
+  // el subtotal (base imponible) se desglosa hacia atrás.
+  const totalConIgv = watchItems?.reduce(
     (acc, item) => acc + (Number(item.cantidad) || 0) * (Number(item.precio_unitario) || 0),
     0
   ) ?? 0
-  const igv = incluirIgv ? subtotal * IGV_RATE : 0
-  const totalCompra = subtotal + igv
+  const subtotal = incluirIgv ? totalConIgv / (1 + IGV_RATE) : totalConIgv
+  const igv = incluirIgv ? totalConIgv - subtotal : 0
+  const totalCompra = totalConIgv
 
-  // Helpers de cálculo entre modos
-  const calcPUnitDesdeTotal = (totalLinea: number, cantidad: number, igvIncluido: boolean) => {
+  // Helpers de cálculo entre modos. Precio unitario y total línea ambos
+  // expresados con IGV incluido (la convención del cliente).
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const calcPUnitDesdeTotal = (totalLinea: number, cantidad: number, _igvIncluido: boolean) => {
     if (cantidad <= 0) return 0
-    const divisor = igvIncluido ? 1 + IGV_RATE : 1
-    return totalLinea / cantidad / divisor
+    return totalLinea / cantidad
   }
-  const calcTotalLineaDesdePUnit = (pUnit: number, cantidad: number, igvIncluido: boolean) => {
-    const mult = igvIncluido ? 1 + IGV_RATE : 1
-    return pUnit * cantidad * mult
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const calcTotalLineaDesdePUnit = (pUnit: number, cantidad: number, _igvIncluido: boolean) => {
+    return pUnit * cantidad
   }
 
   // Cuando cambia el toggle IGV en modo total: mantener los totales línea y recalcular p.unit
@@ -186,10 +190,13 @@ export default function ComprasPage() {
 
     setSaving(true)
 
-    const subtotalCalc = data.items.reduce(
+    // Precios c/IGV → desglosar hacia atrás
+    const totalConIgvCalc = data.items.reduce(
       (acc, item) => acc + item.cantidad * item.precio_unitario, 0
     )
-    const igvCalc = incluirIgv ? subtotalCalc * IGV_RATE : 0
+    const subtotalCalc = incluirIgv ? totalConIgvCalc / (1 + IGV_RATE) : totalConIgvCalc
+    const igvCalc = incluirIgv ? totalConIgvCalc - subtotalCalc : 0
+    const totalFinalCalc = totalConIgvCalc
 
     try {
       const { data: userData } = await supabase.auth.getUser()
@@ -204,7 +211,7 @@ export default function ComprasPage() {
         subtotal: subtotalCalc,
         igv: igvCalc,
         incluir_igv: incluirIgv,
-        total: subtotalCalc + igvCalc,
+        total: totalFinalCalc,
         moneda: 'PEN',
         estado: 'registrada',
         created_by: userId,
@@ -298,9 +305,11 @@ export default function ComprasPage() {
     }
     setEditSaving(true)
     try {
-      const subtotalActual = Number(detailCompra.subtotal ?? 0)
-      const igvNuevo = editForm.incluir_igv ? subtotalActual * IGV_RATE : 0
-      const totalNuevo = subtotalActual + igvNuevo
+      // El total (lo que se paga) no cambia al togglar IGV. Solo cambia el desglose.
+      const totalActual = Number(detailCompra.total ?? 0)
+      const subtotalNuevo = editForm.incluir_igv ? totalActual / (1 + IGV_RATE) : totalActual
+      const igvNuevo = editForm.incluir_igv ? totalActual - subtotalNuevo : 0
+      const totalNuevo = totalActual
 
       const { error } = await (supabase.from('compras') as any)
         .update({
@@ -309,6 +318,7 @@ export default function ComprasPage() {
           fecha: editForm.fecha,
           metodo_valorizacion: editForm.metodo_valorizacion,
           incluir_igv: editForm.incluir_igv,
+          subtotal: subtotalNuevo,
           igv: igvNuevo,
           total: totalNuevo,
         })
@@ -454,10 +464,11 @@ export default function ComprasPage() {
     }
     setEditItemsSaving(true)
     try {
-      let subtotalNuevo = 0
+      // precio_unitario YA incluye IGV → totalConIgv es la suma directa
+      let totalConIgvNuevo = 0
       for (const it of itemsEditables) {
         const subt = it.cantidad * it.precio_unitario
-        subtotalNuevo += subt
+        totalConIgvNuevo += subt
         const { error } = await (supabase.from('compras_items') as any)
           .update({
             cantidad: it.cantidad,
@@ -469,8 +480,9 @@ export default function ComprasPage() {
           .eq('id', it.id)
         if (error) throw error
       }
-      const igvNuevo = detailCompra.incluir_igv ? subtotalNuevo * IGV_RATE : 0
-      const totalNuevo = subtotalNuevo + igvNuevo
+      const subtotalNuevo = detailCompra.incluir_igv ? totalConIgvNuevo / (1 + IGV_RATE) : totalConIgvNuevo
+      const igvNuevo = detailCompra.incluir_igv ? totalConIgvNuevo - subtotalNuevo : 0
+      const totalNuevo = totalConIgvNuevo
       const { error: cErr } = await (supabase.from('compras') as any)
         .update({ subtotal: subtotalNuevo, igv: igvNuevo, total: totalNuevo })
         .eq('id', detailCompra.id)

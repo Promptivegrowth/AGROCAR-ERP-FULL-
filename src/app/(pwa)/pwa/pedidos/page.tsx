@@ -247,12 +247,15 @@ export default function PedidosPage() {
     setSeleccionados((prev) => prev.filter((s) => s.producto.id !== productoId))
   }
 
-  const subtotalBruto = seleccionados.reduce((acc, s) => acc + s.subtotal, 0)
+  // Precios de lista incluyen IGV. El total es el monto a pagar; la base
+  // imponible (subtotal sin IGV) se desglosa hacia atrás.
+  const subtotalConIgv = seleccionados.reduce((acc, s) => acc + s.subtotal, 0)
   const descuentoPct = parseFloat(descuento) || 0
-  const descuentoMonto = subtotalBruto * (descuentoPct / 100)
-  const baseImponible = subtotalBruto - descuentoMonto
-  const igvMonto = incluirIgv ? baseImponible * 0.18 : 0
-  const totalFinal = baseImponible + igvMonto
+  const descuentoMonto = subtotalConIgv * (descuentoPct / 100)
+  const totalFinal = subtotalConIgv - descuentoMonto
+  const baseImponible = incluirIgv ? totalFinal / 1.18 : totalFinal
+  const igvMonto = incluirIgv ? totalFinal - baseImponible : 0
+  const subtotalBruto = subtotalConIgv
   const requiereAutorizacion = descuentoPct > DESCUENTO_MAX_SIN_AUTH
   const pedidoMinimo = totalFinal >= MINIMO_PEDIDO || seleccionados.length === 0
 
@@ -276,7 +279,7 @@ export default function PedidosPage() {
           estado: 'enviado',
           descuento_porcentaje: descuentoPct,
           descuento_monto: descuentoMonto,
-          subtotal: subtotalBruto,
+          subtotal: baseImponible,
           igv: igvMonto,
           incluir_igv: incluirIgv,
           total: totalFinal,
@@ -700,21 +703,27 @@ export default function PedidosPage() {
                   </div>
 
                   <div className="bg-gray-50 rounded-xl p-3 space-y-1.5">
-                    <div className="flex justify-between text-sm text-gray-600">
-                      <span>Subtotal</span>
-                      <span>{formatCurrency(subtotalBruto)}</span>
+                    <div className="flex justify-between text-sm text-gray-500">
+                      <span>Subtotal (c/IGV)</span>
+                      <span className="font-mono">{formatCurrency(subtotalBruto)}</span>
                     </div>
                     {descuentoPct > 0 && (
                       <div className="flex justify-between text-sm text-red-600">
                         <span>Descuento ({descuentoPct}%)</span>
-                        <span>-{formatCurrency(descuentoMonto)}</span>
+                        <span className="font-mono">-{formatCurrency(descuentoMonto)}</span>
                       </div>
                     )}
                     {incluirIgv ? (
-                      <div className="flex justify-between text-sm text-gray-600">
-                        <span>IGV (18%)</span>
-                        <span>{formatCurrency(igvMonto)}</span>
-                      </div>
+                      <>
+                        <div className="flex justify-between text-xs text-gray-500 pt-1 border-t border-gray-200 mt-1">
+                          <span>Base imponible</span>
+                          <span className="font-mono">{formatCurrency(baseImponible)}</span>
+                        </div>
+                        <div className="flex justify-between text-xs text-gray-500">
+                          <span>IGV (18%)</span>
+                          <span className="font-mono">{formatCurrency(igvMonto)}</span>
+                        </div>
+                      </>
                     ) : (
                       <div className="flex justify-between text-xs text-amber-700 italic">
                         <span>Sin IGV</span>
@@ -722,7 +731,7 @@ export default function PedidosPage() {
                       </div>
                     )}
                     <div className="flex justify-between font-bold text-gray-900 text-lg border-t border-gray-200 pt-1.5 mt-1.5">
-                      <span>Total</span>
+                      <span>Total a pagar</span>
                       <span className="text-green-700">{formatCurrency(totalFinal)}</span>
                     </div>
                   </div>
