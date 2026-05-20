@@ -208,6 +208,15 @@ export default function VentaDirectaDialog({ open, onOpenChange, onCreated }: Pr
     )
   }
 
+  function setCantidadDirecta(productoId: string, valor: number) {
+    if (!Number.isFinite(valor) || valor <= 0) return
+    setCarrito((prev) =>
+      prev.map((s) => s.producto.id === productoId
+        ? { ...s, cantidad: valor, subtotal: valor * s.producto.precio }
+        : s),
+    )
+  }
+
   function actualizarPrecio(productoId: string, nuevoPrecio: number) {
     setCarrito((prev) =>
       prev.map((s) => s.producto.id === productoId
@@ -574,14 +583,26 @@ export default function VentaDirectaDialog({ open, onOpenChange, onCreated }: Pr
                             <div className="text-[10px] text-gray-400 font-mono">{producto.codigo}</div>
                           </td>
                           <td className="py-2 px-2">
-                            <div className="flex items-center justify-center gap-1.5">
+                            <div className="flex items-center justify-center gap-1">
                               <button type="button" onClick={() => cambiarCantidad(producto.id, -1)}
-                                className="w-6 h-6 rounded bg-gray-200 hover:bg-gray-300 flex items-center justify-center">
+                                className="w-6 h-6 rounded bg-gray-200 hover:bg-gray-300 flex items-center justify-center shrink-0">
                                 <Minus className="w-3 h-3" />
                               </button>
-                              <span className="font-semibold w-8 text-center text-sm">{cantidad}</span>
+                              <Input
+                                type="number"
+                                min={1}
+                                step="1"
+                                value={cantidad}
+                                onChange={(e) => {
+                                  const v = parseFloat(e.target.value)
+                                  if (Number.isFinite(v) && v > 0) setCantidadDirecta(producto.id, v)
+                                }}
+                                onFocus={(e) => e.target.select()}
+                                inputMode="numeric"
+                                className="h-7 w-16 text-center text-xs font-semibold px-1 font-mono"
+                              />
                               <button type="button" onClick={() => cambiarCantidad(producto.id, 1)}
-                                className="w-6 h-6 rounded bg-[#FBE600] hover:bg-[#E5D100] flex items-center justify-center">
+                                className="w-6 h-6 rounded bg-[#FBE600] hover:bg-[#E5D100] flex items-center justify-center shrink-0">
                                 <Plus className="w-3 h-3" />
                               </button>
                             </div>
