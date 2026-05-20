@@ -97,7 +97,17 @@ export default function FacturacionPage() {
     if (!pedidoSeleccionado) return
     setSaving(true)
 
-    const numero = Date.now().toString().slice(-8)
+    // Obtener correlativo atómico desde la BD (serie + número)
+    const { data: corr, error: corrErr } = await (supabase.rpc as any)('siguiente_correlativo', { p_tipo: tipoComprobante })
+    if (corrErr || !corr || corr.length === 0) {
+      setSaving(false)
+      toast.error('Falta configurar numeración', {
+        description: corrErr?.message ?? 'Ve a Configuración → Numeración de Comprobantes.',
+      })
+      return
+    }
+    const serieReal = corr[0].serie as string
+    const numero = corr[0].numero as string
 
     // Respetar incluir_igv del pedido. Si el pedido ya tiene IGV calculado, usarlo directamente.
     const pedSubtotal = Number(pedidoSeleccionado.subtotal ?? 0)
@@ -112,7 +122,7 @@ export default function FacturacionPage() {
       pedido_id: pedidoSeleccionado.id,
       cliente_id: pedidoSeleccionado.cliente_id,
       tipo: tipoComprobante as any,
-      serie,
+      serie: serieReal,
       numero,
       fecha_emision: new Date().toISOString().split('T')[0],
       subtotal: subtotalCalc,
@@ -141,7 +151,7 @@ export default function FacturacionPage() {
       return
     }
 
-    const mensaje = `Comprobante ${serie}-${numero} generado correctamente`
+    const mensaje = `Comprobante ${serieReal}-${numero} generado correctamente`
     setSuccessMsg(mensaje)
     toast.success('Comprobante emitido', { description: mensaje })
     setTimeout(() => setSuccessMsg(''), 4000)

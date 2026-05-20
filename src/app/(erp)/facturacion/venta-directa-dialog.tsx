@@ -332,7 +332,14 @@ export default function VentaDirectaDialog({ open, onOpenChange, onCreated }: Pr
       }
 
       // 4. Emitir comprobante (después del trigger de stock)
-      const numeroComp = Date.now().toString().slice(-8)
+      //    Obtener correlativo atómico de la BD
+      const { data: corr, error: corrErr } = await (supabase.rpc as any)('siguiente_correlativo', { p_tipo: tipoComprobante })
+      if (corrErr || !corr || corr.length === 0) {
+        // Rollback: borrar pedido (CASCADE items + stock ya descontado se queda — el usuario debe revertir manualmente)
+        throw new Error(corrErr?.message ?? 'Falta configurar la numeración. Ve a Configuración → Numeración.')
+      }
+      const serieReal = corr[0].serie as string
+      const numeroComp = corr[0].numero as string
       const { error: compError } = await (supabase.from('comprobantes') as any).insert({
         pedido_id: pedido.id,
         cliente_id: clienteId,
@@ -340,7 +347,7 @@ export default function VentaDirectaDialog({ open, onOpenChange, onCreated }: Pr
         cliente_externo_doc: externoDc,
         facturador_id: userId,
         tipo: tipoComprobante,
-        serie,
+        serie: serieReal,
         numero: numeroComp,
         fecha_emision: new Date().toISOString().split('T')[0],
         subtotal: baseImponible,
@@ -365,7 +372,7 @@ export default function VentaDirectaDialog({ open, onOpenChange, onCreated }: Pr
         plin: parseFloat(pagoPlin) || 0,
         transferencia: parseFloat(pagoTransfer) || 0,
         total: totalPagado,
-        notas: `${serie}-${numeroComp} · ${tipoComprobante}`,
+        notas: `${serieReal}-${numeroComp} · ${tipoComprobante}`,
       })
       // Si falla por tipo no soportado, fallback a 'cobranza'
       if (cobroError && cobroError.message.includes('tipo_cobro')) {
@@ -382,7 +389,7 @@ export default function VentaDirectaDialog({ open, onOpenChange, onCreated }: Pr
           plin: parseFloat(pagoPlin) || 0,
           transferencia: parseFloat(pagoTransfer) || 0,
           total: totalPagado,
-          notas: `Venta directa ${serie}-${numeroComp}`,
+          notas: `Venta directa ${serieReal}-${numeroComp}`,
         })
       } else if (cobroError) {
         // No interrumpir el flujo, solo notificar
@@ -390,7 +397,7 @@ export default function VentaDirectaDialog({ open, onOpenChange, onCreated }: Pr
       }
 
       toast.success('Venta directa registrada', {
-        description: `${serie}-${numeroComp} · ${formatCurrency(totalFinal)}`,
+        description: `${serieReal}-${numeroComp} · ${formatCurrency(totalFinal)}`,
       })
       onCreated()
       onOpenChange(false)

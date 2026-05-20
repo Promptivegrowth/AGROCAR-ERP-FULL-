@@ -243,6 +243,17 @@ export default function PedidosPage() {
     )
   }
 
+  function setCantidadDirecta(productoId: string, valor: number) {
+    if (!Number.isFinite(valor) || valor <= 0) return
+    setSeleccionados((prev) =>
+      prev.map((s) =>
+        s.producto.id === productoId
+          ? { ...s, cantidad: valor, subtotal: valor * s.producto.precio }
+          : s,
+      ),
+    )
+  }
+
   function quitarProducto(productoId: string) {
     setSeleccionados((prev) => prev.filter((s) => s.producto.id !== productoId))
   }
@@ -639,16 +650,28 @@ export default function PedidosPage() {
                           <div className="flex items-center gap-2">
                             <button
                               onClick={() => cambiarCantidad(producto.id, -1)}
-                              className="w-8 h-8 rounded-full bg-gray-200 hover:bg-gray-300 flex items-center justify-center transition-colors"
+                              className="w-9 h-9 rounded-full bg-gray-200 hover:bg-gray-300 flex items-center justify-center transition-colors shrink-0"
                             >
-                              <Minus className="w-3.5 h-3.5" />
+                              <Minus className="w-4 h-4" />
                             </button>
-                            <span className="font-bold text-gray-900 w-8 text-center">{cantidad}</span>
+                            <Input
+                              type="number"
+                              min={1}
+                              step="1"
+                              value={cantidad}
+                              onChange={(e) => {
+                                const v = parseFloat(e.target.value)
+                                if (Number.isFinite(v) && v > 0) setCantidadDirecta(producto.id, v)
+                              }}
+                              onFocus={(e) => e.target.select()}
+                              inputMode="numeric"
+                              className="h-9 w-16 text-center font-bold text-base px-1"
+                            />
                             <button
                               onClick={() => cambiarCantidad(producto.id, 1)}
-                              className="w-8 h-8 rounded-full bg-[#FBE600] hover:bg-[#E5D100] flex items-center justify-center text-black transition-colors"
+                              className="w-9 h-9 rounded-full bg-[#FBE600] hover:bg-[#E5D100] flex items-center justify-center text-black transition-colors shrink-0"
                             >
-                              <Plus className="w-3.5 h-3.5" />
+                              <Plus className="w-4 h-4" />
                             </button>
                           </div>
                           <div className="font-bold text-green-700">{formatCurrency(subtotal)}</div>

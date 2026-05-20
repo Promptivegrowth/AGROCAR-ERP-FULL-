@@ -76,7 +76,7 @@ export default function ConfiguracionPage() {
     const sb = supabase as any
     const [{ data: u }, { data: s }, { data: p }, { data: conf }, { data: zs }, { data: pz }] = await Promise.all([
       supabase.from('profiles').select('id, full_name, email, role, activo, codigo, dni, telefono, zona_id, zonas!profiles_zona_id_fkey(nombre)').order('full_name'),
-      sb.from('series_comprobante').select('*').order('serie'),
+      sb.from('series_correlativos').select('*').order('tipo_comprobante'),
       sb.from('parametros_sistema').select('clave, valor'),
       sb.from('configuracion').select('clave, valor').in('clave', ['almacen_nombre', 'almacen_direccion', 'almacen_lat', 'almacen_lng']),
       sb.from('zonas').select('id, nombre').eq('activo', true).order('nombre'),
@@ -639,32 +639,118 @@ export default function ConfiguracionPage() {
         <TabsContent value="series" className="mt-4">
           <Card className="border-gray-200 shadow-sm">
             <CardHeader className="pb-2">
-              <CardTitle className="text-base font-semibold text-gray-800">Series de Facturación</CardTitle>
+              <CardTitle className="text-base font-semibold text-gray-800">Numeración de Comprobantes</CardTitle>
             </CardHeader>
-            <CardContent className="p-0">
-              <table className="w-full text-sm">
-                <thead className="border-b border-gray-100 bg-gray-50/50">
-                  <tr>
-                    {['Serie', 'Tipo', 'Descripción', 'Correlativo Actual'].map((h) => (
-                      <th key={h} className="text-left py-2.5 px-4 text-xs font-semibold text-gray-500 uppercase tracking-wide">{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-50">
-                  {series.map((s, i) => (
-                    <tr key={i} className="hover:bg-gray-50/50">
-                      <td className="py-3 px-4 font-mono font-bold text-gray-800">{s.serie}</td>
-                      <td className="py-3 px-4 capitalize text-gray-600 text-xs">{s.tipo}</td>
-                      <td className="py-3 px-4 text-gray-600">{s.descripcion}</td>
-                      <td className="py-3 px-4">
-                        <span className="font-mono text-gray-800 font-semibold">
-                          {String(s.correlativo_actual ?? 0).padStart(8, '0')}
-                        </span>
-                      </td>
+            <CardContent className="space-y-4">
+              <div className="bg-blue-50 border border-blue-100 rounded-lg p-3 text-xs text-blue-900 leading-relaxed">
+                <p className="font-semibold mb-1">¿Cómo funciona?</p>
+                <ul className="list-disc pl-4 space-y-0.5">
+                  <li>Cada vez que se emite un comprobante, el sistema incrementa automáticamente el correlativo.</li>
+                  <li>El <strong>&quot;Próximo número&quot;</strong> es el que se asignará a la siguiente factura/boleta que emitas.</li>
+                  <li>Si vienes de otro sistema, en <strong>&quot;Último número emitido&quot;</strong> ingresa el último correlativo que usaste — la próxima emisión será ese número + 1.</li>
+                  <li>El <strong>&quot;Dígitos&quot;</strong> define el padding (8 = SUNAT estándar, formato <code className="font-mono">00000001</code>).</li>
+                </ul>
+              </div>
+
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="border-b border-gray-100 bg-gray-50/50">
+                    <tr>
+                      <th className="text-left py-2.5 px-3 text-xs font-semibold text-gray-500 uppercase">Tipo</th>
+                      <th className="text-left py-2.5 px-3 text-xs font-semibold text-gray-500 uppercase">Serie</th>
+                      <th className="text-left py-2.5 px-3 text-xs font-semibold text-gray-500 uppercase">Último emitido</th>
+                      <th className="text-left py-2.5 px-3 text-xs font-semibold text-gray-500 uppercase">Dígitos</th>
+                      <th className="text-left py-2.5 px-3 text-xs font-semibold text-gray-500 uppercase">Próximo Nº</th>
+                      <th className="text-left py-2.5 px-3 text-xs font-semibold text-gray-500 uppercase">Activo</th>
+                      <th className="py-2.5 px-3"></th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody className="divide-y divide-gray-50">
+                    {series.map((s: any) => {
+                      const tipoLabel: Record<string, string> = {
+                        factura: 'Factura',
+                        boleta: 'Boleta',
+                        nota_credito: 'Nota de Crédito',
+                        nota_pedido_interna: 'Documento Interno',
+                      }
+                      const proximo = (Number(s.correlativo_actual) + 1).toString().padStart(s.padding_digitos ?? 8, '0')
+                      return (
+                        <tr key={s.id} className="hover:bg-gray-50/50">
+                          <td className="py-2 px-3 text-gray-700">{tipoLabel[s.tipo_comprobante] ?? s.tipo_comprobante}</td>
+                          <td className="py-2 px-3">
+                            <Input
+                              value={s.serie}
+                              onChange={(e) => setSeries((prev: any[]) => prev.map((x: any) => x.id === s.id ? { ...x, serie: e.target.value.toUpperCase() } : x))}
+                              className="h-8 font-mono w-20"
+                              maxLength={4}
+                            />
+                          </td>
+                          <td className="py-2 px-3">
+                            <Input
+                              type="number"
+                              min={0}
+                              value={s.correlativo_actual}
+                              onChange={(e) => setSeries((prev: any[]) => prev.map((x: any) => x.id === s.id ? { ...x, correlativo_actual: parseInt(e.target.value) || 0 } : x))}
+                              className="h-8 font-mono w-28"
+                            />
+                          </td>
+                          <td className="py-2 px-3">
+                            <Select
+                              value={String(s.padding_digitos ?? 8)}
+                              onValueChange={(v) => setSeries((prev: any[]) => prev.map((x: any) => x.id === s.id ? { ...x, padding_digitos: parseInt(v) } : x))}
+                            >
+                              <SelectTrigger className="h-8 w-20"><SelectValue /></SelectTrigger>
+                              <SelectContent>
+                                {[4, 5, 6, 7, 8, 9, 10].map((n) => (
+                                  <SelectItem key={n} value={String(n)}>{n}</SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </td>
+                          <td className="py-2 px-3">
+                            <span className="font-mono text-green-700 font-semibold">{s.serie}-{proximo}</span>
+                          </td>
+                          <td className="py-2 px-3">
+                            <Switch
+                              checked={s.activo}
+                              onCheckedChange={(v) => setSeries((prev: any[]) => prev.map((x: any) => x.id === s.id ? { ...x, activo: v } : x))}
+                            />
+                          </td>
+                          <td className="py-2 px-3">
+                            <Button
+                              size="sm"
+                              onClick={async () => {
+                                const { error } = await (supabase as any).from('series_correlativos').update({
+                                  serie: s.serie.toUpperCase().trim(),
+                                  correlativo_actual: s.correlativo_actual,
+                                  padding_digitos: s.padding_digitos,
+                                  activo: s.activo,
+                                }).eq('id', s.id)
+                                if (error) toast.error('No se pudo guardar', { description: error.message })
+                                else {
+                                  toast.success('Serie actualizada', { description: `${s.serie} — próximo: ${proximo}` })
+                                  loadData()
+                                }
+                              }}
+                              className="h-8 bg-[#FBE600] hover:bg-[#E5D100] text-black font-semibold text-xs"
+                            >
+                              Guardar
+                            </Button>
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-xs text-amber-900">
+                <p className="font-semibold mb-0.5">⚠️ Importante</p>
+                <p>
+                  No retrocedas el correlativo si ya hay comprobantes emitidos — generaría duplicados.
+                  Antes de cambiar la serie, asegúrate de que esté autorizada en SUNAT.
+                </p>
+              </div>
             </CardContent>
           </Card>
         </TabsContent>
