@@ -349,7 +349,7 @@ export default function VentaDirectaDialog({ open, onOpenChange, onCreated }: Pr
       }
       const serieReal = corr[0].serie as string
       const numeroComp = corr[0].numero as string
-      const { error: compError } = await (supabase.from('comprobantes') as any).insert({
+      const { data: compInsert, error: compError } = await (supabase.from('comprobantes') as any).insert({
         pedido_id: pedido.id,
         cliente_id: clienteId,
         cliente_externo_nombre: externoNom,
@@ -364,8 +364,24 @@ export default function VentaDirectaDialog({ open, onOpenChange, onCreated }: Pr
         total: totalFinal,
         moneda: 'PEN',
         estado: 'emitido',
-      })
-      if (compError) throw new Error('Comprobante: ' + compError.message)
+      }).select('id').single()
+      if (compError || !compInsert) throw new Error('Comprobante: ' + (compError?.message ?? ''))
+
+      // Snapshot de items en comprobantes_items (inmutable, formato SUNAT)
+      const itemsCompr = carrito.map((s) => ({
+        comprobante_id: compInsert.id,
+        producto_id: s.producto.id,
+        descripcion: s.producto.descripcion?.trim() || s.producto.nombre,
+        cantidad: s.cantidad,
+        precio_unitario: s.producto.precio,
+        subtotal: s.subtotal,
+        igv_porcentaje: incluirIgv ? 18 : 0,
+      }))
+      const { error: compItemsErr } = await (supabase.from('comprobantes_items') as any).insert(itemsCompr)
+      if (compItemsErr) {
+        // No abortamos — el comprobante ya está; solo notificamos
+        toast.warning('Items del comprobante no guardados', { description: compItemsErr.message })
+      }
 
       // 5. Registrar el cobro
       const { error: cobroError } = await (supabase.from('cobros') as any).insert({

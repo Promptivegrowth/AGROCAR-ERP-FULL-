@@ -32,6 +32,7 @@ export default async function ComprobantePage({ params }: { params: Promise<{ id
     .from('comprobantes')
     .select(`
       id, tipo, serie, numero, fecha_emision, subtotal, igv, total, moneda, estado, pedido_id, created_at,
+      cliente_externo_nombre, cliente_externo_doc,
       clientes(id, razon_social, ruc, dni, direccion, telefono),
       profiles!comprobantes_facturador_id_fkey(full_name)
     `)
@@ -43,14 +44,34 @@ export default async function ComprobantePage({ params }: { params: Promise<{ id
   const cliente: any = (comp as any).clientes
   const facturador: any = (comp as any).profiles
 
-  // Items del comprobante
-  const { data: items } = await supabase
+  // Items del comprobante. Snapshot en comprobantes_items; si no hay, fallback al pedido
+  const { data: itemsCompr } = await supabase
     .from('comprobantes_items')
     .select(`
       id, descripcion, cantidad, precio_unitario, subtotal, igv_porcentaje,
       productos(codigo, nombre, descripcion)
     `)
     .eq('comprobante_id', id)
+
+  let items = itemsCompr ?? []
+  if (items.length === 0 && comp.pedido_id) {
+    const { data: itemsPed } = await supabase
+      .from('pedidos_items')
+      .select(`
+        id, cantidad, precio_unitario, subtotal,
+        productos(codigo, nombre, descripcion)
+      `)
+      .eq('pedido_id', comp.pedido_id)
+    items = (itemsPed ?? []).map((it: any) => ({
+      id: it.id,
+      descripcion: it.productos?.descripcion?.trim() || it.productos?.nombre || '—',
+      cantidad: it.cantidad,
+      precio_unitario: it.precio_unitario,
+      subtotal: it.subtotal,
+      igv_porcentaje: 18,
+      productos: it.productos,
+    }))
+  }
 
   // Vendedor desde el pedido asociado
   let vendedorNombre = '—'
@@ -89,11 +110,26 @@ export default async function ComprobantePage({ params }: { params: Promise<{ id
 
   const titulo = TIPO_TITULO[comp.tipo as string] ?? 'COMPROBANTE'
   const correlativo = `${comp.serie}-${pad(comp.numero, 6)}`
+  // Datos del cliente: si no hay registrado, usar el snapshot del consumidor final
+  const externoNombre = (comp as any).cliente_externo_nombre as string | null
+  const externoDoc = (comp as any).cliente_externo_doc as string | null
+  const clienteNombre = cliente?.razon_social ?? externoNombre ?? '—'
+  const clienteDireccion = cliente?.direccion ?? '—'
+  const clienteTelefono = cliente?.telefono ?? '—'
+  // Documento: primero del cliente registrado, sino del externo (RUC si tiene 11 dígitos, DNI si tiene 8)
+  const externoEsRuc = externoDoc && externoDoc.length === 11
+  const externoEsDni = externoDoc && externoDoc.length === 8
   const docCliente = cliente?.ruc
     ? { label: 'RUC', valor: cliente.ruc }
     : cliente?.dni
       ? { label: 'DNI', valor: cliente.dni }
-      : { label: 'DNI', valor: '—' }
+      : externoEsRuc
+        ? { label: 'RUC', valor: externoDoc as string }
+        : externoEsDni
+          ? { label: 'DNI', valor: externoDoc as string }
+          : externoDoc
+            ? { label: 'DOC', valor: externoDoc }
+            : { label: 'DNI', valor: '—' }
 
   const totalLetras = numeroALetras(totalNum)
   const monedaLabel = comp.moneda === 'USD' ? 'DOLARES AMERICANOS' : 'SOLES'
@@ -143,13 +179,13 @@ export default async function ComprobantePage({ params }: { params: Promise<{ id
             <span>{docCliente.label}:</span><span>{docCliente.valor}</span>
           </div>
           <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-            <span>TELEFONO:</span><span>{cliente?.telefono ?? '—'}</span>
+            <span>TELEFONO:</span><span>{clienteTelefono}</span>
           </div>
           <div>
-            <span>NOMBRE: </span><span>{cliente?.razon_social ?? '—'}</span>
+            <span>NOMBRE: </span><span>{clienteNombre}</span>
           </div>
           <div>
-            <span>DIRECCION: </span><span>{cliente?.direccion ?? '—'}</span>
+            <span>DIRECCION: </span><span>{clienteDireccion}</span>
           </div>
         </div>
 

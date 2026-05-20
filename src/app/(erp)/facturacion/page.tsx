@@ -1,7 +1,8 @@
 'use client'
 
 import { useEffect, useState, useCallback } from 'react'
-import { FileText, Loader2, CheckCircle, AlertCircle, DollarSign, Receipt } from 'lucide-react'
+import { FileText, Loader2, CheckCircle, AlertCircle, DollarSign, Receipt, Eye, ExternalLink } from 'lucide-react'
+import Link from 'next/link'
 import VentaDirectaDialog from './venta-directa-dialog'
 import { toast } from 'sonner'
 import { createClient } from '@/lib/supabase/client'
@@ -39,6 +40,8 @@ export default function FacturacionPage() {
   const [saving, setSaving] = useState(false)
   const [successMsg, setSuccessMsg] = useState('')
   const [ventaDirectaOpen, setVentaDirectaOpen] = useState(false)
+  const [comprobanteEmitidoId, setComprobanteEmitidoId] = useState<string | null>(null)
+  const [comprobanteEmitidoLabel, setComprobanteEmitidoLabel] = useState<string>('')
 
   const loadData = useCallback(async () => {
     setLoading(true)
@@ -118,7 +121,7 @@ export default function FacturacionPage() {
     const igvCalc = pedIgv > 0 ? pedIgv : (incluirIgv ? pedTotal * 0.18 / 1.18 : 0)
     const subtotalCalc = pedIgv > 0 ? pedSubtotal : (incluirIgv ? pedTotal - igvCalc : pedTotal)
 
-    const { error: compError } = await supabase.from('comprobantes').insert({
+    const { data: compInsertado, error: compError } = await (supabase.from('comprobantes') as any).insert({
       pedido_id: pedidoSeleccionado.id,
       cliente_id: pedidoSeleccionado.cliente_id,
       tipo: tipoComprobante as any,
@@ -130,12 +133,30 @@ export default function FacturacionPage() {
       total: pedTotal > 0 ? pedTotal : subtotalCalc + igvCalc,
       moneda: 'PEN',
       estado: 'emitido',
-    } as any)
+    }).select('id').single()
 
-    if (compError) {
+    if (compError || !compInsertado) {
       setSaving(false)
-      toast.error('Error al emitir comprobante', { description: compError.message })
+      toast.error('Error al emitir comprobante', { description: compError?.message })
       return
+    }
+
+    // Snapshot de items en comprobantes_items (formato SUNAT, inmutable)
+    const { data: pedidoItems } = await supabase
+      .from('pedidos_items')
+      .select('producto_id, cantidad, precio_unitario, subtotal, productos(nombre, descripcion)')
+      .eq('pedido_id', pedidoSeleccionado.id)
+    if (pedidoItems && pedidoItems.length > 0) {
+      const itemsCompr = pedidoItems.map((it: any) => ({
+        comprobante_id: compInsertado.id,
+        producto_id: it.producto_id,
+        descripcion: it.productos?.descripcion?.trim() || it.productos?.nombre || '—',
+        cantidad: it.cantidad,
+        precio_unitario: it.precio_unitario,
+        subtotal: it.subtotal,
+        igv_porcentaje: incluirIgv ? 18 : 0,
+      }))
+      await (supabase.from('comprobantes_items') as any).insert(itemsCompr)
     }
 
     const { error: pedError } = await supabase
@@ -151,10 +172,13 @@ export default function FacturacionPage() {
       return
     }
 
-    const mensaje = `Comprobante ${serieReal}-${numero} generado correctamente`
+    const label = `${serieReal}-${numero}`
+    const mensaje = `Comprobante ${label} generado correctamente`
     setSuccessMsg(mensaje)
+    setComprobanteEmitidoId(compInsertado?.id ?? null)
+    setComprobanteEmitidoLabel(label)
     toast.success('Comprobante emitido', { description: mensaje })
-    setTimeout(() => setSuccessMsg(''), 4000)
+    setTimeout(() => { setSuccessMsg(''); setComprobanteEmitidoId(null) }, 10000)
     loadData()
   }
 
@@ -199,9 +223,22 @@ export default function FacturacionPage() {
       />
 
       {successMsg && (
-        <div className="flex items-center gap-3 bg-green-50 border border-green-200 rounded-xl px-4 py-3">
-          <CheckCircle className="w-5 h-5 text-green-500 flex-shrink-0" />
-          <p className="text-sm text-green-800 font-medium">{successMsg}</p>
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-green-50 border border-green-200 rounded-xl px-4 py-3">
+          <div className="flex items-center gap-3">
+            <CheckCircle className="w-5 h-5 text-green-500 flex-shrink-0" />
+            <p className="text-sm text-green-800 font-medium">{successMsg}</p>
+          </div>
+          {comprobanteEmitidoId && (
+            <Link
+              href={`/comprobante/${comprobanteEmitidoId}`}
+              target="_blank"
+              className="inline-flex items-center gap-1.5 bg-white border border-green-300 text-green-700 hover:bg-green-100 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors shrink-0"
+            >
+              <Eye className="w-3.5 h-3.5" />
+              Ver {comprobanteEmitidoLabel}
+              <ExternalLink className="w-3 h-3 opacity-60" />
+            </Link>
+          )}
         </div>
       )}
 
@@ -295,7 +332,7 @@ export default function FacturacionPage() {
                   <table className="w-full text-sm">
                     <thead className="border-b border-gray-100 bg-gray-50/50">
                       <tr>
-                        {['Serie-Número', 'Tipo', 'Cliente', 'Fecha', 'Total', 'Estado SUNAT'].map((h) => (
+                        {['Serie-Número', 'Tipo', 'Cliente', 'Fecha', 'Total', 'Estado SUNAT', 'Acciones'].map((h) => (
                           <th key={h} className="text-left py-3 px-4 text-xs font-semibold text-gray-500 uppercase tracking-wide">
                             {h}
                           </th>
@@ -307,8 +344,15 @@ export default function FacturacionPage() {
                         const estadoCfg = ESTADO_SUNAT[c.estado] ?? ESTADO_SUNAT.emitido
                         return (
                           <tr key={c.id} className="hover:bg-gray-50/50 transition-colors">
-                            <td className="py-3 px-4 font-mono text-xs font-semibold text-gray-700">
-                              {c.serie}-{c.numero}
+                            <td className="py-3 px-4 font-mono text-xs font-semibold">
+                              <Link
+                                href={`/comprobante/${c.id}`}
+                                target="_blank"
+                                className="text-green-700 hover:text-green-800 hover:underline"
+                                title="Ver / imprimir comprobante"
+                              >
+                                {c.serie}-{c.numero}
+                              </Link>
                             </td>
                             <td className="py-3 px-4 capitalize text-xs text-gray-600">{c.tipo}</td>
                             <td className="py-3 px-4 text-gray-800">{(c.clientes as any)?.razon_social ?? '—'}</td>
@@ -318,6 +362,18 @@ export default function FacturacionPage() {
                               <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${estadoCfg.className}`}>
                                 {estadoCfg.label}
                               </span>
+                            </td>
+                            <td className="py-3 px-4">
+                              <Link
+                                href={`/comprobante/${c.id}`}
+                                target="_blank"
+                                className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded transition-colors"
+                                title="Ver / imprimir en nueva pestaña"
+                              >
+                                <Eye className="w-3.5 h-3.5" />
+                                Ver
+                                <ExternalLink className="w-3 h-3 opacity-50" />
+                              </Link>
                             </td>
                           </tr>
                         )
