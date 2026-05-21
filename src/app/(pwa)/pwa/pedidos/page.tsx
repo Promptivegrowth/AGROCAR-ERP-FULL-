@@ -53,6 +53,9 @@ export default function PedidosPage() {
   const [descuento, setDescuento] = useState('')
   const [incluirIgv, setIncluirIgv] = useState(true)
   const [loadingEnvio, setLoadingEnvio] = useState(false)
+  const [tipoPago, setTipoPago] = useState<'contado' | 'credito'>('contado')
+  const [direccionesCliente, setDireccionesCliente] = useState<Array<{ id: string; nombre: string; direccion: string; es_principal: boolean }>>([])
+  const [direccionEntregaId, setDireccionEntregaId] = useState<string>('')
   const [mensajeExito, setMensajeExito] = useState<string | null>(null)
   const [mensajeError, setMensajeError] = useState<string | null>(null)
 
@@ -94,7 +97,7 @@ export default function PedidosPage() {
           .order('razon_social'),
         supabase
           .from('productos')
-          .select('id, nombre, descripcion, codigo, activo, tiene_lote, tiene_vencimiento')
+          .select('id, nombre, descripcion, codigo, activo, tiene_lote, tiene_vencimiento, stock(cantidad), unidades_medida(simbolo)')
           .eq('activo', true)
           .order('nombre'),
       ])
@@ -111,8 +114,10 @@ export default function PedidosPage() {
         const mapped = productosData.map((p: any) => ({
           ...p,
           precio: 0,
+          stock_cantidad: Number(p.stock?.[0]?.cantidad ?? p.stock?.cantidad ?? 0),
+          um: p.unidades_medida?.simbolo ?? '',
         }))
-        setProductosDisponibles(mapped as (Producto & { precio: number })[])
+        setProductosDisponibles(mapped as any[])
       }
     }
     init()
@@ -136,21 +141,20 @@ export default function PedidosPage() {
     setShowClienteDropdown(true)
   }, [debouncedClienteSearch, clientes])
 
-  // Filtrar productos
+  // Filtrar productos. Si no hay búsqueda, muestra los primeros 50 al abrir el dropdown.
   useEffect(() => {
-    if (debouncedProductoSearch.length < 2) {
-      setProductosFiltrados([])
-      setShowProductoDropdown(false)
+    const q = debouncedProductoSearch.toLowerCase().trim()
+    if (q.length === 0) {
+      setProductosFiltrados(productosDisponibles.slice(0, 50))
       return
     }
-    const q = debouncedProductoSearch.toLowerCase()
     const filtrados = productosDisponibles.filter(
       (p) =>
         ((p as any).descripcion ?? '').toLowerCase().includes(q) ||
         p.nombre.toLowerCase().includes(q) ||
         (p.codigo ?? '').toLowerCase().includes(q)
     )
-    setProductosFiltrados(filtrados.slice(0, 8))
+    setProductosFiltrados(filtrados.slice(0, 50))
     setShowProductoDropdown(true)
   }, [debouncedProductoSearch, productosDisponibles])
 
@@ -178,7 +182,7 @@ export default function PedidosPage() {
         .eq('cliente_id', cliente.id),
       supabase
         .from('productos')
-        .select('id, nombre, descripcion, codigo, activo')
+        .select('id, nombre, descripcion, codigo, activo, tiene_lote, tiene_vencimiento, stock(cantidad), unidades_medida(simbolo)')
         .eq('activo', true)
         .order('nombre'),
       cliente.lista_precio_id
@@ -209,9 +213,25 @@ export default function PedidosPage() {
       descripcion: p.descripcion ?? null,
       codigo: p.codigo ?? null,
       activo: p.activo ?? true,
+      tiene_lote: !!p.tiene_lote,
+      tiene_vencimiento: !!p.tiene_vencimiento,
+      stock_cantidad: Number(p.stock?.[0]?.cantidad ?? p.stock?.cantidad ?? 0),
+      um: p.unidades_medida?.simbolo ?? '',
       precio: precioMap.get(p.id) ?? 0,
     }))
-    setProductosDisponibles(mapped as (Producto & { precio: number })[])
+    setProductosDisponibles(mapped as any[])
+
+    // Cargar direcciones del cliente
+    const { data: dirs } = await (supabase as any)
+      .from('cliente_direcciones')
+      .select('id, nombre, direccion, es_principal')
+      .eq('cliente_id', cliente.id)
+      .eq('activo', true)
+      .order('es_principal', { ascending: false })
+    const lista = (dirs ?? []) as Array<{ id: string; nombre: string; direccion: string; es_principal: boolean }>
+    setDireccionesCliente(lista)
+    const principal = lista.find((d) => d.es_principal) ?? lista[0]
+    setDireccionEntregaId(principal?.id ?? '')
   }
 
   function agregarProducto(producto: Producto & { precio: number }) {
@@ -280,6 +300,10 @@ export default function PedidosPage() {
       // Generar número de pedido único
       const numero = `P-${Date.now().toString().slice(-8)}`
 
+      // Snapshot textual de dirección elegida
+      const dirEnt = direccionesCliente.find((d) => d.id === direccionEntregaId)
+      const dirEntTexto = dirEnt?.direccion ?? clienteSeleccionado.direccion ?? null
+
       const { data: pedido, error: pedidoError } = await (supabase.from('pedidos') as any)
         .insert({
           numero,
@@ -288,6 +312,9 @@ export default function PedidosPage() {
           fecha_pedido: new Date().toISOString().split('T')[0],
           fecha_despacho: fechaDespacho,
           estado: 'enviado',
+          tipo_pago: tipoPago,
+          direccion_entrega_id: direccionEntregaId || null,
+          direccion_entrega_texto: dirEntTexto,
           descuento_porcentaje: descuentoPct,
           descuento_monto: descuentoMonto,
           subtotal: baseImponible,
@@ -409,6 +436,9 @@ export default function PedidosPage() {
       setFechaDespacho('')
       setDescuento('')
       setDeudaCliente(0)
+      setTipoPago('contado')
+      setDireccionesCliente([])
+      setDireccionEntregaId('')
       setTab('mis-pedidos')
       cargarMisPedidos()
     } catch {
@@ -574,6 +604,38 @@ export default function PedidosPage() {
               </CardContent>
             </Card>
 
+            {/* Dirección de entrega (solo si > 1) */}
+            {clienteSeleccionado && direccionesCliente.length > 1 && (
+              <Card className="border-0 shadow-sm">
+                <CardContent className="p-4">
+                  <h3 className="font-semibold text-gray-800 mb-3">📍 Dirección de entrega</h3>
+                  <div className="space-y-2">
+                    {direccionesCliente.map((d) => (
+                      <button
+                        key={d.id}
+                        type="button"
+                        onClick={() => setDireccionEntregaId(d.id)}
+                        className={`w-full text-left p-3 rounded-xl border-2 transition-colors ${
+                          direccionEntregaId === d.id
+                            ? 'border-green-500 bg-green-50'
+                            : 'border-gray-200 bg-white hover:bg-gray-50'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="font-medium text-sm text-gray-900">
+                            {d.es_principal && <span className="text-amber-500">⭐ </span>}
+                            {d.nombre}
+                          </div>
+                          {direccionEntregaId === d.id && <span className="text-green-600 text-xs">✓ Elegida</span>}
+                        </div>
+                        <div className="text-xs text-gray-600 mt-0.5">{d.direccion}</div>
+                      </button>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
             {/* Fecha de despacho */}
             <Card className="border-0 shadow-sm">
               <CardContent className="p-4">
@@ -585,6 +647,40 @@ export default function PedidosPage() {
                   onChange={(e) => setFechaDespacho(e.target.value)}
                   className="h-12 text-base"
                 />
+              </CardContent>
+            </Card>
+
+            {/* Tipo de pago */}
+            <Card className="border-0 shadow-sm">
+              <CardContent className="p-4">
+                <h3 className="font-semibold text-gray-800 mb-3">💳 Tipo de Pago</h3>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setTipoPago('contado')}
+                    className={`p-3 rounded-xl border-2 transition-colors ${
+                      tipoPago === 'contado'
+                        ? 'border-green-500 bg-green-50 text-green-800 font-semibold'
+                        : 'border-gray-200 bg-white text-gray-600'
+                    }`}
+                  >
+                    💵 Contado
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setTipoPago('credito')}
+                    className={`p-3 rounded-xl border-2 transition-colors ${
+                      tipoPago === 'credito'
+                        ? 'border-amber-500 bg-amber-50 text-amber-800 font-semibold'
+                        : 'border-gray-200 bg-white text-gray-600'
+                    }`}
+                  >
+                    🕒 Crédito
+                    {(clienteSeleccionado as any)?.credito_dias > 0 && (
+                      <div className="text-[10px] font-normal mt-0.5">({(clienteSeleccionado as any).credito_dias} días)</div>
+                    )}
+                  </button>
+                </div>
               </CardContent>
             </Card>
 
@@ -603,23 +699,36 @@ export default function PedidosPage() {
                   />
                   {showProductoDropdown && productosFiltrados.length > 0 && (
                     <div className="absolute top-full left-0 right-0 bg-white border border-gray-200 rounded-xl shadow-lg z-20 mt-1 overflow-hidden">
-                      {productosFiltrados.map((p) => (
-                        <button
-                          key={p.id}
-                          onClick={() => agregarProducto(p)}
-                          className="w-full text-left px-4 py-3 hover:bg-green-50 border-b border-gray-100 last:border-0"
-                        >
-                          <div className="flex items-center justify-between gap-2">
-                            <div className="min-w-0 flex-1">
-                              <div className="font-medium text-gray-900 text-sm truncate">{(p as any).descripcion?.trim() || p.nombre}</div>
-                              <div className="text-[10px] text-gray-400 font-mono">{p.codigo}</div>
+                      {productosFiltrados.map((p) => {
+                        const stockN = Number((p as any).stock_cantidad ?? 0)
+                        const um = (p as any).um ?? ''
+                        return (
+                          <button
+                            key={p.id}
+                            onClick={() => agregarProducto(p)}
+                            className="w-full text-left px-4 py-3 hover:bg-green-50 border-b border-gray-100 last:border-0"
+                          >
+                            <div className="flex items-center justify-between gap-2">
+                              <div className="min-w-0 flex-1">
+                                <div className="font-medium text-gray-900 text-sm truncate">{(p as any).descripcion?.trim() || p.nombre}</div>
+                                <div className="flex items-center gap-2 mt-0.5">
+                                  <span className="text-[10px] text-gray-400 font-mono">{p.codigo}</span>
+                                  <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded ${
+                                    stockN === 0 ? 'bg-gray-100 text-gray-500' :
+                                    stockN <= 10 ? 'bg-red-50 text-red-700' :
+                                    'bg-green-50 text-green-700'
+                                  }`}>
+                                    Stock: {stockN} {um}
+                                  </span>
+                                </div>
+                              </div>
+                              <div className="text-green-700 font-semibold text-sm shrink-0">
+                                {formatCurrency(p.precio)}
+                              </div>
                             </div>
-                            <div className="text-green-700 font-semibold text-sm shrink-0">
-                              {formatCurrency(p.precio)}
-                            </div>
-                          </div>
-                        </button>
-                      ))}
+                          </button>
+                        )
+                      })}
                     </div>
                   )}
                 </div>

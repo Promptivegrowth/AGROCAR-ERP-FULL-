@@ -35,6 +35,15 @@ interface Producto {
   tiene_lote: boolean
   tiene_vencimiento: boolean
   precio: number
+  stock_cantidad: number
+  um: string
+}
+
+interface DireccionCliente {
+  id: string
+  nombre: string
+  direccion: string
+  es_principal: boolean
 }
 
 interface ItemCarrito {
@@ -85,6 +94,11 @@ export default function NuevoPedidoDialog({ open, onOpenChange, onCreated }: Pro
   const [notas, setNotas] = useState('')
   const [guardando, setGuardando] = useState(false)
 
+  // Tipo de pago y direcciones
+  const [tipoPago, setTipoPago] = useState<'contado' | 'credito'>('contado')
+  const [direccionesCliente, setDireccionesCliente] = useState<DireccionCliente[]>([])
+  const [direccionEntregaId, setDireccionEntregaId] = useState<string>('')
+
   // Fecha mínima (mañana)
   const fechaMinima = (() => {
     const d = new Date()
@@ -105,6 +119,9 @@ export default function NuevoPedidoDialog({ open, onOpenChange, onCreated }: Pro
     setDescuento('')
     setIncluirIgv(true)
     setNotas('')
+    setTipoPago('contado')
+    setDireccionesCliente([])
+    setDireccionEntregaId('')
   }, [open])
 
   // Cargar datos base al abrir
@@ -130,7 +147,7 @@ export default function NuevoPedidoDialog({ open, onOpenChange, onCreated }: Pro
           .order('full_name'),
         supabase
           .from('productos')
-          .select('id, codigo, nombre, descripcion, tiene_lote, tiene_vencimiento, activo')
+          .select('id, codigo, nombre, descripcion, tiene_lote, tiene_vencimiento, activo, stock(cantidad), unidades_medida(simbolo)')
           .eq('activo', true)
           .order('nombre'),
       ])
@@ -140,6 +157,8 @@ export default function NuevoPedidoDialog({ open, onOpenChange, onCreated }: Pro
       setProductos((prods ?? []).map((p: any) => ({
         id: p.id, codigo: p.codigo, nombre: p.nombre, descripcion: p.descripcion,
         tiene_lote: !!p.tiene_lote, tiene_vencimiento: !!p.tiene_vencimiento, precio: 0,
+        stock_cantidad: Number(p.stock?.[0]?.cantidad ?? p.stock?.cantidad ?? 0),
+        um: p.unidades_medida?.simbolo ?? '',
       })))
       setLoadingData(false)
     }
@@ -160,22 +179,25 @@ export default function NuevoPedidoDialog({ open, onOpenChange, onCreated }: Pro
 
   // Filtrar productos
   const productosFiltrados = (() => {
-    if (debouncedProducto.length < 2) return []
-    const q = debouncedProducto.toLowerCase()
+    const q = debouncedProducto.toLowerCase().trim()
+    if (q.length === 0) return productos.slice(0, 50)
     return productos.filter((p) =>
       (p.descripcion ?? '').toLowerCase().includes(q) ||
       p.nombre.toLowerCase().includes(q) ||
       (p.codigo ?? '').toLowerCase().includes(q)
-    ).slice(0, 8)
+    ).slice(0, 50)
   })()
 
-  // Al seleccionar cliente, cargar precios de su lista
+  // Al seleccionar cliente, cargar precios de su lista + direcciones de entrega
   async function seleccionarCliente(c: Cliente) {
     setClienteSeleccionado(c)
     setClienteSearch(c.razon_social)
     setShowClienteDropdown(false)
     setCarrito([])
+    setDireccionesCliente([])
+    setDireccionEntregaId('')
 
+    // 1. Precios según lista del cliente
     if (c.lista_precio_id) {
       const { data: items } = await supabase
         .from('lista_precio_items')
@@ -188,6 +210,19 @@ export default function NuevoPedidoDialog({ open, onOpenChange, onCreated }: Pro
     } else {
       setProductos((prev) => prev.map((p) => ({ ...p, precio: 0 })))
     }
+
+    // 2. Direcciones adicionales del cliente (solo se muestra el selector si hay > 1)
+    const { data: dirs } = await (supabase as any)
+      .from('cliente_direcciones')
+      .select('id, nombre, direccion, es_principal')
+      .eq('cliente_id', c.id)
+      .eq('activo', true)
+      .order('es_principal', { ascending: false })
+    const lista = (dirs ?? []) as DireccionCliente[]
+    setDireccionesCliente(lista)
+    // Preseleccionar la principal si existe
+    const principal = lista.find((d) => d.es_principal) ?? lista[0]
+    if (principal) setDireccionEntregaId(principal.id)
   }
 
   function agregarProducto(p: Producto) {
@@ -258,6 +293,10 @@ export default function NuevoPedidoDialog({ open, onOpenChange, onCreated }: Pro
     try {
       const numero = `P-${Date.now().toString().slice(-8)}`
 
+      // Snapshot textual de la dirección elegida
+      const direccionEntrega = direccionesCliente.find((d) => d.id === direccionEntregaId)
+      const direccionEntregaTexto = direccionEntrega?.direccion ?? clienteSeleccionado.direccion ?? null
+
       const { data: pedido, error: pedidoError } = await (supabase.from('pedidos') as any)
         .insert({
           numero,
@@ -266,6 +305,9 @@ export default function NuevoPedidoDialog({ open, onOpenChange, onCreated }: Pro
           fecha_pedido: new Date().toISOString().split('T')[0],
           fecha_despacho: fechaDespacho,
           estado: 'enviado',
+          tipo_pago: tipoPago,
+          direccion_entrega_id: direccionEntregaId || null,
+          direccion_entrega_texto: direccionEntregaTexto,
           descuento_porcentaje: descuentoPct,
           descuento_monto: descuentoMonto,
           subtotal: baseImponible,
@@ -421,16 +463,61 @@ export default function NuevoPedidoDialog({ open, onOpenChange, onCreated }: Pro
               )}
             </div>
 
-            {/* 3. Fecha despacho */}
-            <div className="border-t border-gray-100 pt-4">
-              <Label className="text-sm font-semibold">3. Fecha de despacho *</Label>
-              <Input
-                type="date"
-                min={fechaMinima}
-                value={fechaDespacho}
-                onChange={(e) => setFechaDespacho(e.target.value)}
-                className="mt-1 max-w-xs"
-              />
+            {/* 3. Fecha despacho + Tipo de pago + Dirección */}
+            <div className="border-t border-gray-100 pt-4 space-y-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <Label className="text-sm font-semibold">3. Fecha de despacho *</Label>
+                  <Input
+                    type="date"
+                    min={fechaMinima}
+                    value={fechaDespacho}
+                    onChange={(e) => setFechaDespacho(e.target.value)}
+                    className="mt-1"
+                  />
+                </div>
+                <div>
+                  <Label className="text-sm font-semibold">4. Tipo de pago *</Label>
+                  <div className="inline-flex rounded-md border border-gray-200 bg-white p-0.5 mt-1 text-xs">
+                    <button
+                      type="button"
+                      onClick={() => setTipoPago('contado')}
+                      className={`px-3 py-1.5 rounded ${tipoPago === 'contado' ? 'bg-green-600 text-white font-semibold' : 'text-gray-600 hover:bg-gray-50'}`}
+                    >
+                      💵 Contado
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setTipoPago('credito')}
+                      className={`px-3 py-1.5 rounded ${tipoPago === 'credito' ? 'bg-amber-600 text-white font-semibold' : 'text-gray-600 hover:bg-gray-50'}`}
+                    >
+                      🕒 Crédito {clienteSeleccionado?.['credito_dias' as keyof Cliente] ? `(${(clienteSeleccionado as any).credito_dias} días)` : ''}
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Dirección de entrega: solo se muestra si el cliente tiene > 1 dirección */}
+              {direccionesCliente.length > 1 && (
+                <div>
+                  <Label className="text-sm font-semibold">5. Dirección de entrega *</Label>
+                  <Select value={direccionEntregaId} onValueChange={setDireccionEntregaId}>
+                    <SelectTrigger className="mt-1"><SelectValue placeholder="Seleccionar..." /></SelectTrigger>
+                    <SelectContent>
+                      {direccionesCliente.map((d) => (
+                        <SelectItem key={d.id} value={d.id}>
+                          {d.es_principal ? '⭐ ' : ''}{d.nombre}: {d.direccion}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+              {direccionesCliente.length === 1 && (
+                <p className="text-[11px] text-gray-500">
+                  📍 Entrega a: <span className="font-medium">{direccionesCliente[0].direccion}</span>
+                </p>
+              )}
             </div>
 
             {/* 4. Productos */}
@@ -462,7 +549,16 @@ export default function NuevoPedidoDialog({ open, onOpenChange, onCreated }: Pro
                           <div className="font-medium text-gray-900 text-sm truncate">{p.descripcion?.trim() || p.nombre}</div>
                           <div className="text-[10px] text-gray-400 font-mono">{p.codigo}</div>
                         </div>
-                        <div className="text-green-700 font-semibold text-sm shrink-0">{formatCurrency(p.precio)}</div>
+                        <div className="flex items-center gap-2 shrink-0">
+                          <div className={`text-[10px] font-mono px-1.5 py-0.5 rounded ${
+                            p.stock_cantidad === 0 ? 'bg-gray-100 text-gray-500' :
+                            p.stock_cantidad <= 10 ? 'bg-red-50 text-red-700 border border-red-200' :
+                            'bg-green-50 text-green-700 border border-green-200'
+                          }`}>
+                            Stock: {p.stock_cantidad} {p.um}
+                          </div>
+                          <div className="text-green-700 font-semibold text-sm">{formatCurrency(p.precio)}</div>
+                        </div>
                       </button>
                     ))}
                   </div>
