@@ -5,10 +5,11 @@ import { useForm, useFieldArray } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import {
-  Plus, Loader2, ShoppingCart, ChevronLeft, ChevronRight, X, Package2, Eye, Calendar, FileText, Building2, Receipt,
+  Plus, Loader2, ShoppingCart, ChevronLeft, ChevronRight, X, Package2, Eye, Calendar, FileText, Building2, Receipt, Search,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { createClient } from '@/lib/supabase/client'
+import { useDebounce } from '@/lib/hooks/use-debounce'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -53,6 +54,7 @@ type ProductoCatalogo = {
   id: string
   codigo: string
   nombre: string
+  descripcion: string | null
   tiene_lote: boolean
   tiene_vencimiento: boolean
 }
@@ -93,18 +95,26 @@ export default function ComprasPage() {
   const [editItemsSaving, setEditItemsSaving] = useState(false)
   const [itemsEditables, setItemsEditables] = useState<Array<{ id: string; producto: string; cantidad: number; precio_unitario: number; lote_numero: string; lote_fecha_vencimiento: string }>>([])
 
+  // Buscadores con autocompletado (proveedor + productos por línea)
+  const [proveedorSearch, setProveedorSearch] = useState('')
+  const debouncedProvSearch = useDebounce(proveedorSearch, 200)
+  const [showProveedorDropdown, setShowProveedorDropdown] = useState(false)
+  const [productoSearchByIdx, setProductoSearchByIdx] = useState<Record<number, string>>({})
+  const [showProductoDropdownIdx, setShowProductoDropdownIdx] = useState<number | null>(null)
+
   const { register, handleSubmit, watch, setValue, control, reset, formState: { errors } } = useForm<CompraFormData>({
     resolver: zodResolver(compraSchema) as any,
     defaultValues: {
       tipo: 'directa',
       metodo_valorizacion: 'promedio',
       fecha: new Date().toISOString().split('T')[0],
-      items: [{ producto_id: '', cantidad: 1, precio_unitario: 0, total_linea: 0, lote_numero: '', lote_fecha_fabricacion: '', lote_fecha_vencimiento: '' }],
+      items: [{ producto_id: '', cantidad: 0, precio_unitario: 0, total_linea: 0, lote_numero: '', lote_fecha_fabricacion: '', lote_fecha_vencimiento: '' }],
     },
   })
 
   const { fields, append, remove } = useFieldArray({ control, name: 'items' })
   const watchItems = watch('items')
+  const watchProveedorId = watch('proveedor_id')
 
   const [incluirIgv, setIncluirIgv] = useState(true)
   const [modoIngreso, setModoIngreso] = useState<'unitario' | 'total'>('unitario')
@@ -173,6 +183,16 @@ export default function ComprasPage() {
   }, [page])
 
   useEffect(() => { loadData() }, [loadData])
+
+  // Resetear los buscadores cuando se abre/cierra el modal de Nueva Compra
+  useEffect(() => {
+    if (!dialogOpen) {
+      setProveedorSearch('')
+      setProductoSearchByIdx({})
+      setShowProveedorDropdown(false)
+      setShowProductoDropdownIdx(null)
+    }
+  }, [dialogOpen])
 
   const onSubmit = async (data: CompraFormData) => {
     // Validación previa: lote_numero obligatorio si producto tiene_lote
@@ -621,16 +641,52 @@ export default function ComprasPage() {
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <Label>Proveedor *</Label>
-                <Select onValueChange={(v) => setValue('proveedor_id', v)}>
-                  <SelectTrigger className="mt-1">
-                    <SelectValue placeholder="Seleccionar proveedor..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {proveedores.map((p) => (
-                      <SelectItem key={p.id} value={p.id}>{p.razon_social}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <div className="relative mt-1">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                  <Input
+                    placeholder="Buscar por razón social o RUC..."
+                    value={proveedorSearch}
+                    onChange={(e) => {
+                      setProveedorSearch(e.target.value)
+                      setShowProveedorDropdown(true)
+                      // Si el usuario edita, deseleccionar
+                      if (watchProveedorId) setValue('proveedor_id', '')
+                    }}
+                    onFocus={() => setShowProveedorDropdown(true)}
+                    onBlur={() => setTimeout(() => setShowProveedorDropdown(false), 150)}
+                    className="pl-9"
+                  />
+                  {showProveedorDropdown && (() => {
+                    const q = debouncedProvSearch.toLowerCase().trim()
+                    const lista = q.length >= 1
+                      ? proveedores.filter((p: any) =>
+                          (p.razon_social ?? '').toLowerCase().includes(q) ||
+                          (p.ruc ?? '').toLowerCase().includes(q)
+                        ).slice(0, 8)
+                      : proveedores.slice(0, 8)
+                    if (lista.length === 0) return null
+                    return (
+                      <div className="absolute top-full left-0 right-0 bg-white border border-gray-200 rounded-lg shadow-lg z-30 mt-1 overflow-hidden max-h-64 overflow-y-auto">
+                        {lista.map((p: any) => (
+                          <button
+                            key={p.id}
+                            type="button"
+                            onMouseDown={(e) => {
+                              e.preventDefault()
+                              setValue('proveedor_id', p.id)
+                              setProveedorSearch(p.razon_social)
+                              setShowProveedorDropdown(false)
+                            }}
+                            className="w-full text-left px-3 py-2 hover:bg-green-50 border-b border-gray-100 last:border-0"
+                          >
+                            <div className="font-medium text-gray-900 text-sm truncate">{p.razon_social}</div>
+                            {p.ruc && <div className="text-xs text-gray-500 font-mono">{p.ruc}</div>}
+                          </button>
+                        ))}
+                      </div>
+                    )
+                  })()}
+                </div>
                 {errors.proveedor_id && <p className="text-xs text-red-500 mt-1">{errors.proveedor_id.message}</p>}
               </div>
               <div>
@@ -680,7 +736,7 @@ export default function ComprasPage() {
                   type="button"
                   variant="outline"
                   size="sm"
-                  onClick={() => append({ producto_id: '', cantidad: 1, precio_unitario: 0, total_linea: 0, lote_numero: '', lote_fecha_fabricacion: '', lote_fecha_vencimiento: '' })}
+                  onClick={() => append({ producto_id: '', cantidad: 0, precio_unitario: 0, total_linea: 0, lote_numero: '', lote_fecha_fabricacion: '', lote_fecha_vencimiento: '' })}
                   className="h-7 gap-1 text-xs"
                 >
                   <Plus className="w-3 h-3" /> Agregar
@@ -727,31 +783,70 @@ export default function ComprasPage() {
                         <div className="grid grid-cols-12 gap-2 items-start">
                           <div className="col-span-5">
                             <Label className="text-[10px] text-gray-500">Producto</Label>
-                            <Select onValueChange={(v) => setValue(`items.${idx}.producto_id`, v)}>
-                              <SelectTrigger className="h-8 text-xs mt-1">
-                                <SelectValue placeholder="Seleccionar..." />
-                              </SelectTrigger>
-                              <SelectContent>
-                                {productos.map((p: any) => (
-                                  <SelectItem key={p.id} value={p.id}>
-                                    {p.descripcion?.trim() || p.nombre}
-                                    {(p.tiene_lote || p.tiene_vencimiento) && (
-                                      <span className="ml-1 text-[10px] text-amber-600">· lote</span>
-                                    )}
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
+                            <div className="relative mt-1">
+                              <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-gray-400" />
+                              <Input
+                                type="text"
+                                placeholder={prod ? '' : 'Buscar por nombre o código...'}
+                                value={productoSearchByIdx[idx] ?? (prod ? (prod.descripcion?.trim() || prod.nombre) : '')}
+                                onChange={(e) => {
+                                  setProductoSearchByIdx((prev) => ({ ...prev, [idx]: e.target.value }))
+                                  setShowProductoDropdownIdx(idx)
+                                  if (productoId) setValue(`items.${idx}.producto_id`, '')
+                                }}
+                                onFocus={() => setShowProductoDropdownIdx(idx)}
+                                onBlur={() => setTimeout(() => setShowProductoDropdownIdx((cur) => cur === idx ? null : cur), 150)}
+                                className="h-8 text-xs pl-7"
+                              />
+                              {showProductoDropdownIdx === idx && (() => {
+                                const q = (productoSearchByIdx[idx] ?? '').toLowerCase().trim()
+                                const lista = q.length >= 1
+                                  ? productos.filter((p: any) =>
+                                      ((p as any).descripcion ?? '').toLowerCase().includes(q) ||
+                                      (p.nombre ?? '').toLowerCase().includes(q) ||
+                                      ((p as any).codigo ?? '').toLowerCase().includes(q)
+                                    ).slice(0, 10)
+                                  : productos.slice(0, 10)
+                                if (lista.length === 0) return null
+                                return (
+                                  <div className="absolute top-full left-0 right-0 bg-white border border-gray-200 rounded-lg shadow-lg z-30 mt-1 overflow-hidden max-h-64 overflow-y-auto">
+                                    {lista.map((p: any) => (
+                                      <button
+                                        key={p.id}
+                                        type="button"
+                                        onMouseDown={(e) => {
+                                          e.preventDefault()
+                                          setValue(`items.${idx}.producto_id`, p.id)
+                                          setProductoSearchByIdx((prev) => ({ ...prev, [idx]: p.descripcion?.trim() || p.nombre }))
+                                          setShowProductoDropdownIdx(null)
+                                        }}
+                                        className="w-full text-left px-3 py-1.5 hover:bg-green-50 border-b border-gray-100 last:border-0"
+                                      >
+                                        <div className="text-xs font-medium text-gray-900 truncate">
+                                          {p.descripcion?.trim() || p.nombre}
+                                          {(p.tiene_lote || p.tiene_vencimiento) && (
+                                            <span className="ml-1 text-[10px] text-amber-600">· lote</span>
+                                          )}
+                                        </div>
+                                        {p.codigo && <div className="text-[10px] text-gray-400 font-mono">{p.codigo}</div>}
+                                      </button>
+                                    ))}
+                                  </div>
+                                )
+                              })()}
+                            </div>
                           </div>
                           <div className="col-span-2">
                             <Label className="text-[10px] text-gray-500">Cantidad</Label>
                             <Input
                               type="number"
-                              min={1}
+                              min={0}
                               step="0.01"
-                              value={watchItems?.[idx]?.cantidad ?? ''}
+                              placeholder="0"
+                              value={Number(watchItems?.[idx]?.cantidad ?? 0) > 0 ? watchItems[idx].cantidad : ''}
                               onChange={(e) => {
-                                const nuevaCant = parseFloat(e.target.value) || 0
+                                const val = e.target.value
+                                const nuevaCant = val === '' ? 0 : (parseFloat(val) || 0)
                                 setValue(`items.${idx}.cantidad`, nuevaCant)
                                 if (modoIngreso === 'total') {
                                   const tot = Number(watchItems?.[idx]?.total_linea ?? 0)
@@ -760,6 +855,7 @@ export default function ComprasPage() {
                                   }
                                 }
                               }}
+                              onFocus={(e) => e.target.select()}
                               className="h-8 text-xs mt-1"
                             />
                           </div>
@@ -770,12 +866,15 @@ export default function ComprasPage() {
                                 type="number"
                                 min={0}
                                 step="0.01"
-                                value={watchItems?.[idx]?.precio_unitario ?? ''}
+                                placeholder="0.00"
+                                value={Number(watchItems?.[idx]?.precio_unitario ?? 0) > 0 ? watchItems[idx].precio_unitario : ''}
                                 onChange={(e) => {
-                                  const v = parseFloat(e.target.value) || 0
+                                  const val = e.target.value
+                                  const v = val === '' ? 0 : (parseFloat(val) || 0)
                                   setValue(`items.${idx}.precio_unitario`, v)
                                   setValue(`items.${idx}.total_linea`, calcTotalLineaDesdePUnit(v, cant, incluirIgv))
                                 }}
+                                onFocus={(e) => e.target.select()}
                                 className="h-8 text-xs mt-1"
                               />
                             </div>
@@ -786,12 +885,15 @@ export default function ComprasPage() {
                                 type="number"
                                 min={0}
                                 step="0.01"
-                                value={watchItems?.[idx]?.total_linea ?? ''}
+                                placeholder="0.00"
+                                value={Number(watchItems?.[idx]?.total_linea ?? 0) > 0 ? watchItems[idx].total_linea : ''}
                                 onChange={(e) => {
-                                  const tot = parseFloat(e.target.value) || 0
+                                  const val = e.target.value
+                                  const tot = val === '' ? 0 : (parseFloat(val) || 0)
                                   setValue(`items.${idx}.total_linea`, tot)
                                   setValue(`items.${idx}.precio_unitario`, calcPUnitDesdeTotal(tot, cant, incluirIgv))
                                 }}
+                                onFocus={(e) => e.target.select()}
                                 className="h-8 text-xs mt-1 bg-blue-50/50 border-blue-200"
                               />
                             </div>
