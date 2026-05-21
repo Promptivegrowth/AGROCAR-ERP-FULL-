@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { Search, Plus, Minus, Trash2, AlertCircle, Loader2, Package, User as UserIcon } from 'lucide-react'
+import { Search, Plus, Minus, Trash2, AlertCircle, Loader2, Package, User as UserIcon, ChevronLeft } from 'lucide-react'
 import { toast } from 'sonner'
 import { createClient } from '@/lib/supabase/client'
 import { useDebounce } from '@/lib/hooks/use-debounce'
@@ -168,13 +168,13 @@ export default function NuevoPedidoDialog({ open, onOpenChange, onCreated }: Pro
 
   // Filtrar clientes
   const clientesFiltrados = (() => {
-    if (debouncedCliente.length < 2) return []
-    const q = debouncedCliente.toLowerCase()
+    const q = debouncedCliente.toLowerCase().trim()
+    if (q.length === 0) return clientes.slice(0, 50)
     return clientes.filter((c) =>
       c.razon_social.toLowerCase().includes(q) ||
       (c.ruc ?? '').toLowerCase().includes(q) ||
       (c.dni ?? '').toLowerCase().includes(q)
-    ).slice(0, 8)
+    ).slice(0, 50)
   })()
 
   // Filtrar productos
@@ -383,19 +383,38 @@ export default function NuevoPedidoDialog({ open, onOpenChange, onCreated }: Pro
             {/* 1. Cliente */}
             <div>
               <Label className="text-sm font-semibold">1. Cliente *</Label>
-              <div className="relative mt-1">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                <Input
-                  placeholder="Buscar por razón social, RUC o DNI..."
-                  value={clienteSearch}
-                  onChange={(e) => {
-                    setClienteSearch(e.target.value)
-                    setShowClienteDropdown(true)
-                    if (clienteSeleccionado) setClienteSeleccionado(null)
+              <div className="relative mt-1 flex gap-1">
+                <div className="relative flex-1">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                  <Input
+                    placeholder="Buscar por razón social, RUC o DNI..."
+                    value={clienteSearch}
+                    onChange={(e) => {
+                      setClienteSearch(e.target.value)
+                      setShowClienteDropdown(true)
+                      if (clienteSeleccionado) setClienteSeleccionado(null)
+                    }}
+                    onFocus={() => setShowClienteDropdown(true)}
+                    className="pl-9"
+                  />
+                </div>
+                <button
+                  type="button"
+                  title="Ver todos los clientes"
+                  onMouseDown={(e) => {
+                    e.preventDefault()
+                    if (showClienteDropdown) {
+                      setShowClienteDropdown(false)
+                    } else {
+                      setClienteSearch('')
+                      if (clienteSeleccionado) setClienteSeleccionado(null)
+                      setShowClienteDropdown(true)
+                    }
                   }}
-                  onFocus={() => setShowClienteDropdown(true)}
-                  className="pl-9"
-                />
+                  className="h-10 w-10 flex items-center justify-center rounded-md border border-gray-200 bg-white hover:bg-gray-50 shrink-0"
+                >
+                  <ChevronLeft className={`w-4 h-4 text-gray-500 transition-transform ${showClienteDropdown ? 'rotate-90' : '-rotate-90'}`} />
+                </button>
                 {showClienteDropdown && clientesFiltrados.length > 0 && (
                   <div className="absolute top-full left-0 right-0 bg-white border border-gray-200 rounded-lg shadow-lg z-30 mt-1 overflow-hidden max-h-72 overflow-y-auto">
                     {clientesFiltrados.map((c) => (
@@ -514,9 +533,23 @@ export default function NuevoPedidoDialog({ open, onOpenChange, onCreated }: Pro
                 </div>
               )}
               {direccionesCliente.length === 1 && (
-                <p className="text-[11px] text-gray-500">
-                  📍 Entrega a: <span className="font-medium">{direccionesCliente[0].direccion}</span>
-                </p>
+                <div className="bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
+                  <p className="text-[11px] text-gray-500">📍 Entrega a:</p>
+                  <p className="text-sm font-medium text-gray-900">{direccionesCliente[0].direccion}</p>
+                </div>
+              )}
+              {/* Cliente sin direcciones adicionales: usar la dirección principal del cliente */}
+              {direccionesCliente.length === 0 && clienteSeleccionado?.direccion && (
+                <div className="bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
+                  <p className="text-[11px] text-gray-500">📍 Entrega a (dirección del cliente):</p>
+                  <p className="text-sm font-medium text-gray-900">{clienteSeleccionado.direccion}</p>
+                </div>
+              )}
+              {direccionesCliente.length === 0 && !clienteSeleccionado?.direccion && clienteSeleccionado && (
+                <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
+                  <p className="text-xs text-amber-800">Este cliente no tiene dirección registrada. Agrega una en Maestros → Clientes.</p>
+                </div>
               )}
             </div>
 
@@ -577,6 +610,7 @@ export default function NuevoPedidoDialog({ open, onOpenChange, onCreated }: Pro
                     <thead className="bg-gray-50 border-b border-gray-100">
                       <tr>
                         <th className="text-left py-2 px-3 text-[11px] font-semibold text-gray-500 uppercase">Producto</th>
+                        <th className="text-center py-2 px-2 text-[11px] font-semibold text-gray-500 uppercase">Stock</th>
                         <th className="text-center py-2 px-2 text-[11px] font-semibold text-gray-500 uppercase">Cantidad</th>
                         <th className="text-right py-2 px-2 text-[11px] font-semibold text-gray-500 uppercase">P. Unit.</th>
                         <th className="text-right py-2 px-3 text-[11px] font-semibold text-gray-500 uppercase">Subtotal</th>
@@ -584,13 +618,29 @@ export default function NuevoPedidoDialog({ open, onOpenChange, onCreated }: Pro
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-50">
-                      {carrito.map(({ producto, cantidad, subtotal }) => (
-                        <tr key={producto.id}>
+                      {carrito.map(({ producto, cantidad, subtotal }) => {
+                        const stockN = Number(producto.stock_cantidad ?? 0)
+                        const um = producto.um ?? ''
+                        const supera = cantidad > stockN
+                        return (
+                        <tr key={producto.id} className={supera ? 'bg-red-50/50' : ''}>
                           <td className="py-2 px-3">
-                            <div className="font-medium text-gray-900 text-sm truncate max-w-[280px]">
+                            <div className="font-medium text-gray-900 text-sm truncate max-w-[260px]">
                               {producto.descripcion?.trim() || producto.nombre}
                             </div>
                             <div className="text-[10px] text-gray-400 font-mono">{producto.codigo}</div>
+                          </td>
+                          <td className="py-2 px-2 text-center">
+                            <span className={`inline-block text-[10px] font-mono px-1.5 py-0.5 rounded ${
+                              stockN === 0 ? 'bg-gray-100 text-gray-500' :
+                              stockN <= 10 ? 'bg-red-50 text-red-700 border border-red-200' :
+                              'bg-green-50 text-green-700 border border-green-200'
+                            }`} title={`Stock actual: ${stockN} ${um}`}>
+                              {stockN} {um}
+                            </span>
+                            {supera && (
+                              <div className="text-[9px] text-red-600 font-semibold mt-0.5">⚠️ supera stock</div>
+                            )}
                           </td>
                           <td className="py-2 px-2">
                             <div className="flex items-center justify-center gap-1">
@@ -634,7 +684,8 @@ export default function NuevoPedidoDialog({ open, onOpenChange, onCreated }: Pro
                             </button>
                           </td>
                         </tr>
-                      ))}
+                        )
+                      })}
                     </tbody>
                   </table>
                 </div>

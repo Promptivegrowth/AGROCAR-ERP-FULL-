@@ -741,12 +741,28 @@ export default function PedidosPage() {
                   </div>
                 ) : (
                   <div className="space-y-2">
-                    {seleccionados.map(({ producto, cantidad, subtotal }) => (
-                      <div key={producto.id} className="bg-gray-50 rounded-xl p-3">
+                    {seleccionados.map(({ producto, cantidad, subtotal }) => {
+                      const stockN = Number((producto as any).stock_cantidad ?? 0)
+                      const umP = (producto as any).um ?? ''
+                      const supera = cantidad > stockN
+                      return (
+                      <div key={producto.id} className={`rounded-xl p-3 ${supera ? 'bg-red-50 border border-red-200' : 'bg-gray-50'}`}>
                         <div className="flex items-start justify-between mb-2">
                           <div className="flex-1 min-w-0">
                             <div className="font-medium text-gray-900 text-sm truncate">{(producto as any).descripcion?.trim() || producto.nombre}</div>
-                            <div className="text-xs text-gray-500">{formatCurrency(producto.precio)} c/u</div>
+                            <div className="flex items-center gap-2 mt-0.5">
+                              <span className="text-xs text-gray-500">{formatCurrency(producto.precio)} c/u</span>
+                              <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded ${
+                                stockN === 0 ? 'bg-gray-200 text-gray-500' :
+                                stockN <= 10 ? 'bg-red-100 text-red-700' :
+                                'bg-green-100 text-green-700'
+                              }`}>
+                                Stock: {stockN} {umP}
+                              </span>
+                            </div>
+                            {supera && (
+                              <div className="text-[10px] text-red-700 font-semibold mt-1">⚠️ La cantidad supera el stock disponible</div>
+                            )}
                           </div>
                           <button
                             onClick={() => quitarProducto(producto.id)}
@@ -786,7 +802,8 @@ export default function PedidosPage() {
                           <div className="font-bold text-green-700">{formatCurrency(subtotal)}</div>
                         </div>
                       </div>
-                    ))}
+                      )
+                    })}
                   </div>
                 )}
               </CardContent>

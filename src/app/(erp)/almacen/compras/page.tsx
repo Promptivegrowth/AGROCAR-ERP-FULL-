@@ -807,9 +807,10 @@ export default function ComprasPage() {
                               <button
                                 type="button"
                                 title="Ver todos los productos"
-                                onClick={() => {
+                                onMouseDown={(e) => {
+                                  e.preventDefault()
                                   setProductoSearchByIdx((prev) => ({ ...prev, [idx]: '' }))
-                                  setShowProductoDropdownIdx(showProductoDropdownIdx === idx ? null : idx)
+                                  setShowProductoDropdownIdx((cur) => cur === idx ? null : idx)
                                 }}
                                 className="h-8 w-8 flex items-center justify-center rounded border border-gray-200 bg-white hover:bg-gray-50 shrink-0"
                               >
