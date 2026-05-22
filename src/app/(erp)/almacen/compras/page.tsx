@@ -117,18 +117,28 @@ export default function ComprasPage() {
     setDropdownPos({ top: finalTop, left: rect.left, width: rect.width })
   }
 
-  // Re-calcular en scroll/resize usando el ref guardado por idx
+  // Re-calcular en scroll/resize + click-outside global para cerrar
   useEffect(() => {
     if (showProductoDropdownIdx === null) { setDropdownPos(null); return }
     const onScrollOrResize = () => {
       const el = productoInputRefs.current[showProductoDropdownIdx as number]
       calcularDropdownPosDesdeEl(el)
     }
+    const onClickOutside = (e: MouseEvent) => {
+      const target = e.target as HTMLElement | null
+      if (!target) return
+      // Si el click es dentro del dropdown portal o dentro de cualquier prod-row, no cerrar
+      if (target.closest('[data-prod-dropdown]')) return
+      if (target.closest('[data-prod-row]')) return
+      setShowProductoDropdownIdx(null)
+    }
     window.addEventListener('scroll', onScrollOrResize, true)
     window.addEventListener('resize', onScrollOrResize)
+    document.addEventListener('mousedown', onClickOutside)
     return () => {
       window.removeEventListener('scroll', onScrollOrResize, true)
       window.removeEventListener('resize', onScrollOrResize)
+      document.removeEventListener('mousedown', onClickOutside)
     }
   }, [showProductoDropdownIdx])
 
@@ -837,7 +847,6 @@ export default function ComprasPage() {
                                     calcularDropdownPosDesdeEl(container)
                                     setShowProductoDropdownIdx(idx)
                                   }}
-                                  onBlur={() => setTimeout(() => setShowProductoDropdownIdx((cur) => cur === idx ? null : cur), 200)}
                                   className="h-8 text-xs pl-7"
                                 />
                               </div>
@@ -1478,6 +1487,7 @@ export default function ComprasPage() {
           if (lista.length === 0) return null
           return (
             <div
+              data-prod-dropdown
               style={{
                 position: 'fixed',
                 top: dropdownPos.top,
