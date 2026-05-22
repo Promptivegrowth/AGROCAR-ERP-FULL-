@@ -105,33 +105,32 @@ export default function ComprasPage() {
   const [dropdownPos, setDropdownPos] = useState<{ top: number; left: number; width: number } | null>(null)
   const productoInputRefs = useRef<Record<number, HTMLDivElement | null>>({})
 
-  // Helper para calcular la posición de un dropdown a partir del ref del input.
-  // Devuelve true si pudo posicionarlo.
-  const calcularDropdownPos = useCallback((idx: number): boolean => {
-    const el = productoInputRefs.current[idx]
-    if (!el) return false
+  // Calcula posición del dropdown a partir de un elemento (típicamente el contenedor del input)
+  const calcularDropdownPosDesdeEl = (el: HTMLElement | null) => {
+    if (!el) return
     const rect = el.getBoundingClientRect()
     const maxHeight = 288
     const spaceBelow = window.innerHeight - rect.bottom
-    // Si no cabe abajo y sí arriba, abrir hacia arriba
     const finalTop = spaceBelow < maxHeight && rect.top > maxHeight
       ? Math.max(8, rect.top - maxHeight - 4)
       : rect.bottom + 4
     setDropdownPos({ top: finalTop, left: rect.left, width: rect.width })
-    return true
-  }, [])
+  }
 
-  // Re-calcular posición en scroll/resize cuando está abierto
+  // Re-calcular en scroll/resize usando el ref guardado por idx
   useEffect(() => {
     if (showProductoDropdownIdx === null) { setDropdownPos(null); return }
-    const onScrollOrResize = () => calcularDropdownPos(showProductoDropdownIdx as number)
+    const onScrollOrResize = () => {
+      const el = productoInputRefs.current[showProductoDropdownIdx as number]
+      calcularDropdownPosDesdeEl(el)
+    }
     window.addEventListener('scroll', onScrollOrResize, true)
     window.addEventListener('resize', onScrollOrResize)
     return () => {
       window.removeEventListener('scroll', onScrollOrResize, true)
       window.removeEventListener('resize', onScrollOrResize)
     }
-  }, [showProductoDropdownIdx, calcularDropdownPos])
+  }, [showProductoDropdownIdx])
 
   const { register, handleSubmit, watch, setValue, control, reset, formState: { errors } } = useForm<CompraFormData>({
     resolver: zodResolver(compraSchema) as any,
@@ -219,14 +218,12 @@ export default function ComprasPage() {
 
   useEffect(() => { loadData() }, [loadData])
 
-  // Resetear los buscadores cuando se abre/cierra el modal de Nueva Compra
+  // Resetear los buscadores cada vez que el modal abre o cierra
   useEffect(() => {
-    if (!dialogOpen) {
-      setProveedorSearch('')
-      setProductoSearchByIdx({})
-      setShowProveedorDropdown(false)
-      setShowProductoDropdownIdx(null)
-    }
+    setProveedorSearch('')
+    setProductoSearchByIdx({})
+    setShowProveedorDropdown(false)
+    setShowProductoDropdownIdx(null)
   }, [dialogOpen])
 
   const onSubmit = async (data: CompraFormData) => {
@@ -684,11 +681,10 @@ export default function ComprasPage() {
                     onChange={(e) => {
                       setProveedorSearch(e.target.value)
                       setShowProveedorDropdown(true)
-                      // Si el usuario edita, deseleccionar
                       if (watchProveedorId) setValue('proveedor_id', '')
                     }}
-                    onFocus={() => setShowProveedorDropdown(true)}
-                    onBlur={() => setTimeout(() => setShowProveedorDropdown(false), 150)}
+                    onClick={() => setShowProveedorDropdown(true)}
+                    onBlur={() => setTimeout(() => setShowProveedorDropdown(false), 200)}
                     className="pl-9"
                   />
                   {showProveedorDropdown && (() => {
@@ -820,6 +816,7 @@ export default function ComprasPage() {
                             <Label className="text-[10px] text-gray-500">Producto</Label>
                             <div
                               ref={(el) => { productoInputRefs.current[idx] = el }}
+                              data-prod-row
                               className="relative mt-1 flex gap-1"
                             >
                               <div className="relative flex-1">
@@ -829,16 +826,18 @@ export default function ComprasPage() {
                                   placeholder={prod ? '' : 'Buscar por nombre o código...'}
                                   value={productoSearchByIdx[idx] ?? (prod ? (prod.descripcion?.trim() || prod.nombre) : '')}
                                   onChange={(e) => {
+                                    const container = (e.currentTarget as HTMLElement).closest('[data-prod-row]') as HTMLElement | null
                                     setProductoSearchByIdx((prev) => ({ ...prev, [idx]: e.target.value }))
-                                    calcularDropdownPos(idx)
+                                    calcularDropdownPosDesdeEl(container)
                                     setShowProductoDropdownIdx(idx)
                                     if (productoId) setValue(`items.${idx}.producto_id`, '')
                                   }}
-                                  onFocus={() => {
-                                    calcularDropdownPos(idx)
+                                  onClick={(e) => {
+                                    const container = (e.currentTarget as HTMLElement).closest('[data-prod-row]') as HTMLElement | null
+                                    calcularDropdownPosDesdeEl(container)
                                     setShowProductoDropdownIdx(idx)
                                   }}
-                                  onBlur={() => setTimeout(() => setShowProductoDropdownIdx((cur) => cur === idx ? null : cur), 150)}
+                                  onBlur={() => setTimeout(() => setShowProductoDropdownIdx((cur) => cur === idx ? null : cur), 200)}
                                   className="h-8 text-xs pl-7"
                                 />
                               </div>
@@ -847,11 +846,12 @@ export default function ComprasPage() {
                                 title="Ver todos los productos"
                                 onMouseDown={(e) => {
                                   e.preventDefault()
+                                  const container = (e.currentTarget as HTMLElement).closest('[data-prod-row]') as HTMLElement | null
                                   if (showProductoDropdownIdx === idx) {
                                     setShowProductoDropdownIdx(null)
                                   } else {
                                     setProductoSearchByIdx((prev) => ({ ...prev, [idx]: '' }))
-                                    calcularDropdownPos(idx)
+                                    calcularDropdownPosDesdeEl(container)
                                     setShowProductoDropdownIdx(idx)
                                   }
                                 }}
