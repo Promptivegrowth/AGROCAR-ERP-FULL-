@@ -105,23 +105,33 @@ export default function ComprasPage() {
   const [dropdownPos, setDropdownPos] = useState<{ top: number; left: number; width: number } | null>(null)
   const productoInputRefs = useRef<Record<number, HTMLDivElement | null>>({})
 
-  // Calcular posición del dropdown cuando se abre + re-calcular en scroll/resize
+  // Helper para calcular la posición de un dropdown a partir del ref del input.
+  // Devuelve true si pudo posicionarlo.
+  const calcularDropdownPos = useCallback((idx: number): boolean => {
+    const el = productoInputRefs.current[idx]
+    if (!el) return false
+    const rect = el.getBoundingClientRect()
+    const maxHeight = 288
+    const spaceBelow = window.innerHeight - rect.bottom
+    // Si no cabe abajo y sí arriba, abrir hacia arriba
+    const finalTop = spaceBelow < maxHeight && rect.top > maxHeight
+      ? Math.max(8, rect.top - maxHeight - 4)
+      : rect.bottom + 4
+    setDropdownPos({ top: finalTop, left: rect.left, width: rect.width })
+    return true
+  }, [])
+
+  // Re-calcular posición en scroll/resize cuando está abierto
   useEffect(() => {
     if (showProductoDropdownIdx === null) { setDropdownPos(null); return }
-    const updatePos = () => {
-      const el = productoInputRefs.current[showProductoDropdownIdx]
-      if (!el) return
-      const rect = el.getBoundingClientRect()
-      setDropdownPos({ top: rect.bottom + 4, left: rect.left, width: rect.width })
-    }
-    updatePos()
-    window.addEventListener('scroll', updatePos, true)
-    window.addEventListener('resize', updatePos)
+    const onScrollOrResize = () => calcularDropdownPos(showProductoDropdownIdx as number)
+    window.addEventListener('scroll', onScrollOrResize, true)
+    window.addEventListener('resize', onScrollOrResize)
     return () => {
-      window.removeEventListener('scroll', updatePos, true)
-      window.removeEventListener('resize', updatePos)
+      window.removeEventListener('scroll', onScrollOrResize, true)
+      window.removeEventListener('resize', onScrollOrResize)
     }
-  }, [showProductoDropdownIdx])
+  }, [showProductoDropdownIdx, calcularDropdownPos])
 
   const { register, handleSubmit, watch, setValue, control, reset, formState: { errors } } = useForm<CompraFormData>({
     resolver: zodResolver(compraSchema) as any,
@@ -820,10 +830,14 @@ export default function ComprasPage() {
                                   value={productoSearchByIdx[idx] ?? (prod ? (prod.descripcion?.trim() || prod.nombre) : '')}
                                   onChange={(e) => {
                                     setProductoSearchByIdx((prev) => ({ ...prev, [idx]: e.target.value }))
+                                    calcularDropdownPos(idx)
                                     setShowProductoDropdownIdx(idx)
                                     if (productoId) setValue(`items.${idx}.producto_id`, '')
                                   }}
-                                  onFocus={() => setShowProductoDropdownIdx(idx)}
+                                  onFocus={() => {
+                                    calcularDropdownPos(idx)
+                                    setShowProductoDropdownIdx(idx)
+                                  }}
                                   onBlur={() => setTimeout(() => setShowProductoDropdownIdx((cur) => cur === idx ? null : cur), 150)}
                                   className="h-8 text-xs pl-7"
                                 />
@@ -833,8 +847,13 @@ export default function ComprasPage() {
                                 title="Ver todos los productos"
                                 onMouseDown={(e) => {
                                   e.preventDefault()
-                                  setProductoSearchByIdx((prev) => ({ ...prev, [idx]: '' }))
-                                  setShowProductoDropdownIdx((cur) => cur === idx ? null : idx)
+                                  if (showProductoDropdownIdx === idx) {
+                                    setShowProductoDropdownIdx(null)
+                                  } else {
+                                    setProductoSearchByIdx((prev) => ({ ...prev, [idx]: '' }))
+                                    calcularDropdownPos(idx)
+                                    setShowProductoDropdownIdx(idx)
+                                  }
                                 }}
                                 className="h-8 w-8 flex items-center justify-center rounded border border-gray-200 bg-white hover:bg-gray-50 shrink-0"
                               >
