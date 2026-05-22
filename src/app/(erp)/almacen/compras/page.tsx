@@ -1,7 +1,6 @@
 'use client'
 
-import { useEffect, useState, useCallback, useRef } from 'react'
-import { createPortal } from 'react-dom'
+import { useEffect, useState, useCallback } from 'react'
 import { useForm, useFieldArray } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
@@ -102,45 +101,6 @@ export default function ComprasPage() {
   const [showProveedorDropdown, setShowProveedorDropdown] = useState(false)
   const [productoSearchByIdx, setProductoSearchByIdx] = useState<Record<number, string>>({})
   const [showProductoDropdownIdx, setShowProductoDropdownIdx] = useState<number | null>(null)
-  const [dropdownPos, setDropdownPos] = useState<{ top: number; left: number; width: number } | null>(null)
-  const productoInputRefs = useRef<Record<number, HTMLDivElement | null>>({})
-
-  // Calcula posición del dropdown a partir de un elemento (típicamente el contenedor del input)
-  const calcularDropdownPosDesdeEl = (el: HTMLElement | null) => {
-    if (!el) return
-    const rect = el.getBoundingClientRect()
-    const maxHeight = 288
-    const spaceBelow = window.innerHeight - rect.bottom
-    const finalTop = spaceBelow < maxHeight && rect.top > maxHeight
-      ? Math.max(8, rect.top - maxHeight - 4)
-      : rect.bottom + 4
-    setDropdownPos({ top: finalTop, left: rect.left, width: rect.width })
-  }
-
-  // Re-calcular en scroll/resize + click-outside global para cerrar
-  useEffect(() => {
-    if (showProductoDropdownIdx === null) { setDropdownPos(null); return }
-    const onScrollOrResize = () => {
-      const el = productoInputRefs.current[showProductoDropdownIdx as number]
-      calcularDropdownPosDesdeEl(el)
-    }
-    const onClickOutside = (e: MouseEvent) => {
-      const target = e.target as HTMLElement | null
-      if (!target) return
-      // Si el click es dentro del dropdown portal o dentro de cualquier prod-row, no cerrar
-      if (target.closest('[data-prod-dropdown]')) return
-      if (target.closest('[data-prod-row]')) return
-      setShowProductoDropdownIdx(null)
-    }
-    window.addEventListener('scroll', onScrollOrResize, true)
-    window.addEventListener('resize', onScrollOrResize)
-    document.addEventListener('mousedown', onClickOutside)
-    return () => {
-      window.removeEventListener('scroll', onScrollOrResize, true)
-      window.removeEventListener('resize', onScrollOrResize)
-      document.removeEventListener('mousedown', onClickOutside)
-    }
-  }, [showProductoDropdownIdx])
 
   const { register, handleSubmit, watch, setValue, control, reset, formState: { errors } } = useForm<CompraFormData>({
     resolver: zodResolver(compraSchema) as any,
@@ -811,8 +771,8 @@ export default function ComprasPage() {
                   </button>
                 </div>
               </div>
-              <div className="border border-gray-200 rounded-lg">
-                <div className="divide-y divide-gray-100">
+              <div className="border border-gray-200 rounded-lg overflow-visible">
+                <div className="divide-y divide-gray-100 overflow-visible">
                   {fields.map((field, idx) => {
                     const cant = Number(watchItems?.[idx]?.cantidad) || 0
                     const precio = Number(watchItems?.[idx]?.precio_unitario) || 0
@@ -824,50 +784,74 @@ export default function ComprasPage() {
                         <div className="grid grid-cols-12 gap-2 items-start">
                           <div className="col-span-5">
                             <Label className="text-[10px] text-gray-500">Producto</Label>
-                            <div
-                              ref={(el) => { productoInputRefs.current[idx] = el }}
-                              data-prod-row
-                              className="relative mt-1 flex gap-1"
-                            >
-                              <div className="relative flex-1">
-                                <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-gray-400" />
-                                <Input
-                                  type="text"
-                                  placeholder={prod ? '' : 'Buscar por nombre o código...'}
-                                  value={productoSearchByIdx[idx] ?? (prod ? (prod.descripcion?.trim() || prod.nombre) : '')}
-                                  onChange={(e) => {
-                                    const container = (e.currentTarget as HTMLElement).closest('[data-prod-row]') as HTMLElement | null
-                                    setProductoSearchByIdx((prev) => ({ ...prev, [idx]: e.target.value }))
-                                    calcularDropdownPosDesdeEl(container)
-                                    setShowProductoDropdownIdx(idx)
-                                    if (productoId) setValue(`items.${idx}.producto_id`, '')
-                                  }}
-                                  onClick={(e) => {
-                                    const container = (e.currentTarget as HTMLElement).closest('[data-prod-row]') as HTMLElement | null
-                                    calcularDropdownPosDesdeEl(container)
-                                    setShowProductoDropdownIdx(idx)
-                                  }}
-                                  className="h-8 text-xs pl-7"
-                                />
-                              </div>
-                              <button
-                                type="button"
-                                title="Ver todos los productos"
-                                onMouseDown={(e) => {
-                                  e.preventDefault()
-                                  const container = (e.currentTarget as HTMLElement).closest('[data-prod-row]') as HTMLElement | null
-                                  if (showProductoDropdownIdx === idx) {
-                                    setShowProductoDropdownIdx(null)
-                                  } else {
-                                    setProductoSearchByIdx((prev) => ({ ...prev, [idx]: '' }))
-                                    calcularDropdownPosDesdeEl(container)
-                                    setShowProductoDropdownIdx(idx)
-                                  }
+                            <div className="relative mt-1">
+                              <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-gray-400 z-10" />
+                              <Input
+                                type="text"
+                                placeholder={prod ? '' : 'Buscar por nombre o código...'}
+                                value={productoSearchByIdx[idx] ?? (prod ? (prod.descripcion?.trim() || prod.nombre) : '')}
+                                onChange={(e) => {
+                                  setProductoSearchByIdx((prev) => ({ ...prev, [idx]: e.target.value }))
+                                  setShowProductoDropdownIdx(idx)
+                                  if (productoId) setValue(`items.${idx}.producto_id`, '')
                                 }}
-                                className="h-8 w-8 flex items-center justify-center rounded border border-gray-200 bg-white hover:bg-gray-50 shrink-0"
-                              >
-                                <ChevronLeft className={`w-3.5 h-3.5 text-gray-500 transition-transform ${showProductoDropdownIdx === idx ? 'rotate-90' : '-rotate-90'}`} />
-                              </button>
+                                onClick={() => setShowProductoDropdownIdx(idx)}
+                                onBlur={() => setTimeout(() => setShowProductoDropdownIdx((cur) => cur === idx ? null : cur), 200)}
+                                className="h-8 text-xs pl-7"
+                              />
+                              {showProductoDropdownIdx === idx && (() => {
+                                const q = (productoSearchByIdx[idx] ?? '').toLowerCase().trim()
+                                const lista = q.length >= 1
+                                  ? productos.filter((p: any) =>
+                                      ((p as any).descripcion ?? '').toLowerCase().includes(q) ||
+                                      (p.nombre ?? '').toLowerCase().includes(q) ||
+                                      ((p as any).codigo ?? '').toLowerCase().includes(q)
+                                    )
+                                  : productos
+                                if (lista.length === 0) return null
+                                return (
+                                  <div className="absolute top-full left-0 right-0 bg-white border border-gray-200 rounded-lg shadow-xl z-50 mt-1 max-h-72 overflow-y-auto">
+                                    {lista.slice(0, 50).map((p: any) => {
+                                      const stockN = Number(p.stock_cantidad ?? 0)
+                                      return (
+                                        <button
+                                          key={p.id}
+                                          type="button"
+                                          onMouseDown={(e) => {
+                                            e.preventDefault()
+                                            setValue(`items.${idx}.producto_id`, p.id)
+                                            setProductoSearchByIdx((prev) => ({ ...prev, [idx]: p.descripcion?.trim() || p.nombre }))
+                                            setShowProductoDropdownIdx(null)
+                                          }}
+                                          className="w-full text-left px-3 py-1.5 hover:bg-green-50 border-b border-gray-100 last:border-0 flex items-center justify-between gap-2"
+                                        >
+                                          <div className="min-w-0 flex-1">
+                                            <div className="text-xs font-medium text-gray-900 truncate">
+                                              {p.descripcion?.trim() || p.nombre}
+                                              {(p.tiene_lote || p.tiene_vencimiento) && (
+                                                <span className="ml-1 text-[10px] text-amber-600">· lote</span>
+                                              )}
+                                            </div>
+                                            {p.codigo && <div className="text-[10px] text-gray-400 font-mono">{p.codigo}</div>}
+                                          </div>
+                                          <div className={`shrink-0 text-[10px] font-mono px-1.5 py-0.5 rounded ${
+                                            stockN === 0 ? 'bg-gray-100 text-gray-500' :
+                                            stockN <= 10 ? 'bg-red-50 text-red-700 border border-red-200' :
+                                            'bg-green-50 text-green-700 border border-green-200'
+                                          }`}>
+                                            Stock: {stockN} {p.um}
+                                          </div>
+                                        </button>
+                                      )
+                                    })}
+                                    {lista.length > 50 && (
+                                      <div className="px-3 py-1.5 text-[10px] text-gray-400 text-center bg-gray-50">
+                                        Mostrando 50 de {lista.length}. Refina la búsqueda.
+                                      </div>
+                                    )}
+                                  </div>
+                                )
+                              })()}
                             </div>
                           </div>
                           <div className="col-span-2">
@@ -1472,74 +1456,6 @@ export default function ComprasPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Portal del dropdown de productos: posicionado fixed al input para evitar clipping por contenedores con overflow */}
-      {showProductoDropdownIdx !== null && dropdownPos && typeof window !== 'undefined' && createPortal(
-        (() => {
-          const idx = showProductoDropdownIdx
-          const q = (productoSearchByIdx[idx] ?? '').toLowerCase().trim()
-          const lista = q.length >= 1
-            ? productos.filter((p: any) =>
-                ((p as any).descripcion ?? '').toLowerCase().includes(q) ||
-                (p.nombre ?? '').toLowerCase().includes(q) ||
-                ((p as any).codigo ?? '').toLowerCase().includes(q)
-              )
-            : productos
-          if (lista.length === 0) return null
-          return (
-            <div
-              data-prod-dropdown
-              style={{
-                position: 'fixed',
-                top: dropdownPos.top,
-                left: dropdownPos.left,
-                width: dropdownPos.width,
-                zIndex: 100,
-              }}
-              className="bg-white border border-gray-200 rounded-lg shadow-xl overflow-hidden max-h-72 overflow-y-auto"
-            >
-              {lista.slice(0, 50).map((p: any) => {
-                const stockN = Number(p.stock_cantidad ?? 0)
-                return (
-                  <button
-                    key={p.id}
-                    type="button"
-                    onMouseDown={(e) => {
-                      e.preventDefault()
-                      setValue(`items.${idx}.producto_id`, p.id)
-                      setProductoSearchByIdx((prev) => ({ ...prev, [idx]: p.descripcion?.trim() || p.nombre }))
-                      setShowProductoDropdownIdx(null)
-                    }}
-                    className="w-full text-left px-3 py-1.5 hover:bg-green-50 border-b border-gray-100 last:border-0 flex items-center justify-between gap-2"
-                  >
-                    <div className="min-w-0 flex-1">
-                      <div className="text-xs font-medium text-gray-900 truncate">
-                        {p.descripcion?.trim() || p.nombre}
-                        {(p.tiene_lote || p.tiene_vencimiento) && (
-                          <span className="ml-1 text-[10px] text-amber-600">· lote</span>
-                        )}
-                      </div>
-                      {p.codigo && <div className="text-[10px] text-gray-400 font-mono">{p.codigo}</div>}
-                    </div>
-                    <div className={`shrink-0 text-[10px] font-mono px-1.5 py-0.5 rounded ${
-                      stockN === 0 ? 'bg-gray-100 text-gray-500' :
-                      stockN <= 10 ? 'bg-red-50 text-red-700 border border-red-200' :
-                      'bg-green-50 text-green-700 border border-green-200'
-                    }`}>
-                      Stock: {stockN} {p.um}
-                    </div>
-                  </button>
-                )
-              })}
-              {lista.length > 50 && (
-                <div className="px-3 py-1.5 text-[10px] text-gray-400 text-center bg-gray-50">
-                  Mostrando 50 de {lista.length}. Refina la búsqueda.
-                </div>
-              )}
-            </div>
-          )
-        })(),
-        document.body
-      )}
     </div>
   )
 }
