@@ -42,6 +42,8 @@ export default function FacturacionPage() {
   const [ventaDirectaOpen, setVentaDirectaOpen] = useState(false)
   const [comprobanteEmitidoId, setComprobanteEmitidoId] = useState<string | null>(null)
   const [comprobanteEmitidoLabel, setComprobanteEmitidoLabel] = useState<string>('')
+  const [emisionLoteActiva, setEmisionLoteActiva] = useState<string | null>(null)
+  const [progresoLote, setProgresoLote] = useState<{ actual: number; total: number; exitosos: number; fallos: number } | null>(null)
 
   const loadData = useCallback(async () => {
     setLoading(true)
@@ -94,6 +96,117 @@ export default function FacturacionPage() {
     setTipoComprobante(tipo)
     setSerie(serieDeTipoComprobante(tipo))
     setFacturarDialog(true)
+  }
+
+  // Determinar tipo de comprobante de un pedido (regla SUNAT + preferencia del cliente)
+  const tipoPedido = (pedido: any): 'factura' | 'boleta' | 'nota_pedido_interna' => {
+    const cli = pedido.clientes ?? {}
+    const t = cli.tipo_comprobante_preferido ?? tipoComprobanteSugerido(cli)
+    if (t === 'factura') return 'factura'
+    if (t === 'nota_pedido_interna') return 'nota_pedido_interna'
+    return 'boleta'
+  }
+
+  // Función reutilizable: emite UN comprobante para UN pedido. Retorna el id+label o lanza error.
+  const emitirComprobantePedido = async (pedido: any, tipo: 'factura' | 'boleta' | 'nota_pedido_interna') => {
+    // 1) Obtener correlativo
+    const { data: corr, error: corrErr } = await (supabase.rpc as any)('siguiente_correlativo', { p_tipo: tipo })
+    if (corrErr || !corr || corr.length === 0) {
+      throw new Error(corrErr?.message ?? 'Falta configurar la numeración.')
+    }
+    const serieReal = corr[0].serie as string
+    const numero = corr[0].numero as string
+
+    // 2) Calcular totales (respetar incluir_igv del pedido)
+    const pedSubtotal = Number(pedido.subtotal ?? 0)
+    const pedIgv = Number(pedido.igv ?? 0)
+    const pedTotal = Number(pedido.total ?? 0)
+    const incluirIgv = pedido.incluir_igv !== false
+    const igvCalc = pedIgv > 0 ? pedIgv : (incluirIgv ? pedTotal * 0.18 / 1.18 : 0)
+    const subtotalCalc = pedIgv > 0 ? pedSubtotal : (incluirIgv ? pedTotal - igvCalc : pedTotal)
+
+    // 3) Insertar comprobante
+    const { data: compIns, error: compErr } = await (supabase.from('comprobantes') as any).insert({
+      pedido_id: pedido.id,
+      cliente_id: pedido.cliente_id,
+      tipo,
+      serie: serieReal,
+      numero,
+      fecha_emision: new Date().toISOString().split('T')[0],
+      subtotal: subtotalCalc,
+      igv: igvCalc,
+      total: pedTotal > 0 ? pedTotal : subtotalCalc + igvCalc,
+      moneda: 'PEN',
+      estado: 'emitido',
+    }).select('id').single()
+    if (compErr || !compIns) throw new Error(compErr?.message ?? 'Error al insertar comprobante')
+
+    // 4) Snapshot de items
+    const { data: pedidoItems } = await supabase
+      .from('pedidos_items')
+      .select('producto_id, cantidad, precio_unitario, subtotal, productos(nombre, descripcion)')
+      .eq('pedido_id', pedido.id)
+    if (pedidoItems && pedidoItems.length > 0) {
+      const itemsCompr = pedidoItems.map((it: any) => ({
+        comprobante_id: compIns.id,
+        producto_id: it.producto_id,
+        descripcion: it.productos?.descripcion?.trim() || it.productos?.nombre || '—',
+        cantidad: it.cantidad,
+        precio_unitario: it.precio_unitario,
+        subtotal: it.subtotal,
+        igv_porcentaje: incluirIgv ? 18 : 0,
+      }))
+      await (supabase.from('comprobantes_items') as any).insert(itemsCompr)
+    }
+
+    // 5) Actualizar pedido a facturado
+    const { error: pedErr } = await supabase
+      .from('pedidos')
+      .update({ estado: 'facturado', updated_at: new Date().toISOString() })
+      .eq('id', pedido.id)
+    if (pedErr) throw new Error(pedErr.message)
+
+    return { id: compIns.id, label: `${serieReal}-${numero}` }
+  }
+
+  // Emisión MASIVA por tipo
+  const emitirLote = async (tipo: 'factura' | 'boleta' | 'nota_pedido_interna') => {
+    const pedidosDelTipo = pedidosPendientes.filter((p) => tipoPedido(p) === tipo)
+    if (pedidosDelTipo.length === 0) return
+
+    const tipoLabel = tipo === 'factura' ? 'facturas' : tipo === 'boleta' ? 'boletas' : 'documentos internos'
+    if (!confirm(`¿Emitir ${pedidosDelTipo.length} ${tipoLabel} en lote? El correlativo se asignará automáticamente a cada una.`)) return
+
+    setEmisionLoteActiva(tipo)
+    setProgresoLote({ actual: 0, total: pedidosDelTipo.length, exitosos: 0, fallos: 0 })
+
+    let exitosos = 0
+    let fallos = 0
+    const errores: string[] = []
+
+    for (let i = 0; i < pedidosDelTipo.length; i++) {
+      const p = pedidosDelTipo[i]
+      try {
+        await emitirComprobantePedido(p, tipo)
+        exitosos++
+      } catch (err: any) {
+        fallos++
+        errores.push(`${p.numero}: ${err?.message ?? 'desconocido'}`)
+      }
+      setProgresoLote({ actual: i + 1, total: pedidosDelTipo.length, exitosos, fallos })
+    }
+
+    setEmisionLoteActiva(null)
+    if (fallos === 0) {
+      toast.success(`${exitosos} ${tipoLabel} emitidos correctamente`)
+    } else {
+      toast.warning(`Lote terminado: ${exitosos} emitidos, ${fallos} con error`, {
+        description: errores.slice(0, 3).join(' · ') + (errores.length > 3 ? ` y ${errores.length - 3} más` : ''),
+        duration: 8000,
+      })
+    }
+    setTimeout(() => setProgresoLote(null), 5000)
+    loadData()
   }
 
   const confirmarFacturacion = async () => {
@@ -257,7 +370,66 @@ export default function FacturacionPage() {
           </TabsTrigger>
         </TabsList>
 
-        <TabsContent value="pendientes" className="mt-4">
+        <TabsContent value="pendientes" className="mt-4 space-y-4">
+          {/* Botones de emisión masiva por tipo */}
+          {(() => {
+            const facturas = pedidosPendientes.filter((p) => tipoPedido(p) === 'factura')
+            const boletas = pedidosPendientes.filter((p) => tipoPedido(p) === 'boleta')
+            const internos = pedidosPendientes.filter((p) => tipoPedido(p) === 'nota_pedido_interna')
+            if (pedidosPendientes.length === 0) return null
+
+            return (
+              <Card className="border-blue-200 bg-blue-50/40 shadow-sm">
+                <CardContent className="p-4">
+                  <div className="flex items-start justify-between gap-3 flex-wrap">
+                    <div>
+                      <h3 className="text-sm font-bold text-blue-900">📦 Emisión masiva por tipo</h3>
+                      <p className="text-xs text-blue-700 mt-0.5">
+                        Procesa todos los pedidos del tipo seleccionado en lote. El correlativo se asigna automáticamente y de forma secuencial a cada uno.
+                      </p>
+                    </div>
+                    {progresoLote && (
+                      <div className="text-xs text-blue-800 bg-white border border-blue-200 rounded px-3 py-1.5">
+                        <strong>{progresoLote.actual}</strong> / {progresoLote.total} ·
+                        ✅ {progresoLote.exitosos} ·
+                        {progresoLote.fallos > 0 && <span className="text-red-600"> ❌ {progresoLote.fallos}</span>}
+                      </div>
+                    )}
+                  </div>
+                  <div className="flex flex-wrap gap-2 mt-3">
+                    <Button
+                      onClick={() => emitirLote('factura')}
+                      disabled={facturas.length === 0 || !!emisionLoteActiva}
+                      className="bg-purple-600 hover:bg-purple-700 text-white font-semibold gap-2"
+                      size="sm"
+                    >
+                      {emisionLoteActiva === 'factura' ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileText className="w-4 h-4" />}
+                      Emitir {facturas.length} {facturas.length === 1 ? 'factura' : 'facturas'}
+                    </Button>
+                    <Button
+                      onClick={() => emitirLote('boleta')}
+                      disabled={boletas.length === 0 || !!emisionLoteActiva}
+                      className="bg-green-600 hover:bg-green-700 text-white font-semibold gap-2"
+                      size="sm"
+                    >
+                      {emisionLoteActiva === 'boleta' ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileText className="w-4 h-4" />}
+                      Emitir {boletas.length} {boletas.length === 1 ? 'boleta' : 'boletas'}
+                    </Button>
+                    <Button
+                      onClick={() => emitirLote('nota_pedido_interna')}
+                      disabled={internos.length === 0 || !!emisionLoteActiva}
+                      className="bg-gray-600 hover:bg-gray-700 text-white font-semibold gap-2"
+                      size="sm"
+                    >
+                      {emisionLoteActiva === 'nota_pedido_interna' ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileText className="w-4 h-4" />}
+                      Emitir {internos.length} {internos.length === 1 ? 'doc. interno' : 'docs. internos'}
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            )
+          })()}
+
           <Card className="border-gray-200 shadow-sm">
             <CardHeader className="pb-2">
               <CardTitle className="text-base font-semibold text-gray-800">
@@ -279,7 +451,7 @@ export default function FacturacionPage() {
                   <table className="w-full text-sm">
                     <thead className="border-b border-gray-100 bg-gray-50/50">
                       <tr>
-                        {['Pedido', 'Cliente', 'RUC / DNI', 'Fecha', 'Total', 'Acción'].map((h) => (
+                        {['Pedido', 'Tipo', 'Cliente', 'RUC / DNI', 'Fecha', 'Total', 'Acción'].map((h) => (
                           <th key={h} className="text-left py-3 px-4 text-xs font-semibold text-gray-500 uppercase tracking-wide">
                             {h}
                           </th>
@@ -287,9 +459,21 @@ export default function FacturacionPage() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-50">
-                      {pedidosPendientes.map((pedido) => (
+                      {pedidosPendientes.map((pedido) => {
+                        const t = tipoPedido(pedido)
+                        const tipoCfg = t === 'factura'
+                          ? { label: 'Factura', cls: 'bg-purple-50 text-purple-700 border-purple-200' }
+                          : t === 'boleta'
+                            ? { label: 'Boleta', cls: 'bg-green-50 text-green-700 border-green-200' }
+                            : { label: 'Doc. Interno', cls: 'bg-gray-100 text-gray-700 border-gray-200' }
+                        return (
                         <tr key={pedido.id} className="hover:bg-gray-50/50 transition-colors">
                           <td className="py-3 px-4 font-mono text-xs text-gray-600">{pedido.numero}</td>
+                          <td className="py-3 px-4">
+                            <span className={`inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium border ${tipoCfg.cls}`}>
+                              {tipoCfg.label}
+                            </span>
+                          </td>
                           <td className="py-3 px-4 font-medium text-gray-900">{pedido.clientes?.razon_social ?? '—'}</td>
                           <td className="py-3 px-4 text-gray-500 font-mono text-xs">
                             {pedido.clientes?.ruc ?? pedido.clientes?.dni ?? '—'}
@@ -306,7 +490,8 @@ export default function FacturacionPage() {
                             </Button>
                           </td>
                         </tr>
-                      ))}
+                        )
+                      })}
                     </tbody>
                   </table>
                 </div>
