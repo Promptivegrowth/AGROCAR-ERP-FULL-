@@ -74,6 +74,7 @@ export default function ClientesPage() {
   const [clientes, setClientes] = useState<ClienteConDeuda[]>([])
   const [filtrados, setFiltrados] = useState<ClienteConDeuda[]>([])
   const [soloHoy, setSoloHoy] = useState(false)
+  const [soloMiZona, setSoloMiZona] = useState(true)
   const [search, setSearch] = useState('')
   const debouncedSearch = useDebounce(search, 300)
   const [loading, setLoading] = useState(true)
@@ -171,9 +172,8 @@ export default function ClientesPage() {
       }
       setUserId(user.id)
 
-      // Filtro por zonas asignadas (modelo nuevo): vendedor ve clientes de sus
-      // zonas asignadas en profile_zonas. Si no tiene zonas, fallback a
-      // clientes.vendedor_id legacy. Repartidor ve todos.
+      // Cargamos TODOS los clientes para que el vendedor pueda buscar cualquiera.
+      // Marcamos los que NO son de sus zonas como 'fuera de zona' para distinguir.
       const { data: prof } = await supabase
         .from('profiles')
         .select('role')
@@ -183,14 +183,7 @@ export default function ClientesPage() {
       const { getClientesIdsVisiblesParaPwa } = await import('@/lib/zonas-vendedor')
       const visibilidad = await getClientesIdsVisiblesParaPwa(supabase, user.id, role)
 
-      let clientesQuery = supabase.from('clientes').select('*').order('razon_social')
-      if (visibilidad.filtrar) {
-        if (visibilidad.zonasAsignadas.length > 0) {
-          clientesQuery = clientesQuery.in('zona_id', visibilidad.zonasAsignadas)
-        } else if (visibilidad.usarFallbackVendedor) {
-          clientesQuery = clientesQuery.eq('vendedor_id', user.id)
-        }
-      }
+      const clientesQuery = supabase.from('clientes').select('*').order('razon_social')
 
       const [clientesRes, zonasRes] = await Promise.all([
         clientesQuery,
@@ -225,13 +218,31 @@ export default function ClientesPage() {
         })
       }
 
+      // Determinar qué clientes son 'de mis zonas' (propios) vs fuera de zona
+      let esPropio = (_c: any) => true
+      if (visibilidad.filtrar) {
+        if (visibilidad.zonasAsignadas.length > 0) {
+          const zSet = new Set(visibilidad.zonasAsignadas)
+          esPropio = (c: any) => !!(c.zona_id && zSet.has(c.zona_id))
+        } else if (visibilidad.usarFallbackVendedor) {
+          esPropio = (c: any) => c.vendedor_id === user.id
+        }
+      }
+
       const clientesConDeuda: ClienteConDeuda[] = clientesData.map((c) => {
         const facturado = facturadoPorCliente[c.id] ?? 0
         const cobrado = cobradoPorCliente[c.id] ?? 0
         return {
           ...c,
           deuda_pendiente: Math.max(0, facturado - cobrado),
-        }
+          _fuera_de_zona: !esPropio(c),
+        } as any
+      })
+
+      // Ordenar: propios primero, luego fuera de zona, todos alfabéticamente
+      clientesConDeuda.sort((a: any, b: any) => {
+        if (a._fuera_de_zona !== b._fuera_de_zona) return a._fuera_de_zona ? 1 : -1
+        return a.razon_social.localeCompare(b.razon_social)
       })
 
       setClientes(clientesConDeuda)
@@ -247,6 +258,12 @@ export default function ClientesPage() {
 
   useEffect(() => {
     let base = clientes
+    // Si soloMiZona está activo, ocultar los de fuera de zona — pero SOLO si
+    // el usuario no está buscando. Al buscar, mostramos todos para que pueda
+    // encontrar cualquier cliente.
+    if (soloMiZona && !debouncedSearch.trim()) {
+      base = base.filter((c) => !(c as any)._fuera_de_zona)
+    }
     if (soloHoy) {
       base = base.filter((c) => clienteVisitaHoy((c as any).dias_visita))
     }
@@ -264,7 +281,7 @@ export default function ClientesPage() {
           (c.telefono ?? '').includes(q)
       )
     )
-  }, [debouncedSearch, clientes, soloHoy])
+  }, [debouncedSearch, clientes, soloHoy, soloMiZona])
 
   async function verDetalle(cliente: ClienteConDeuda) {
     setLoadingDetalle(true)
@@ -617,19 +634,33 @@ export default function ClientesPage() {
             </div>
           ) : (
             <div className="space-y-2">
-              <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center justify-between mb-3 gap-2 flex-wrap">
                 <p className="text-xs text-gray-500">{filtrados.length} clientes</p>
-                <button
-                  type="button"
-                  onClick={() => setSoloHoy(!soloHoy)}
-                  className={`text-xs font-semibold px-3 py-1.5 rounded-full border transition-colors ${
-                    soloHoy
-                      ? 'bg-yellow-200 text-yellow-900 border-yellow-300'
-                      : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'
-                  }`}
-                >
-                  {soloHoy ? '📅 Solo Hoy' : '📅 Filtrar Hoy'}
-                </button>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setSoloMiZona(!soloMiZona)}
+                    className={`text-xs font-semibold px-3 py-1.5 rounded-full border transition-colors ${
+                      soloMiZona
+                        ? 'bg-green-100 text-green-800 border-green-300'
+                        : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'
+                    }`}
+                    title="Si lo desactivas, ves todos los clientes activos del sistema"
+                  >
+                    {soloMiZona ? '🗺 Solo mi zona' : '🌐 Todos'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSoloHoy(!soloHoy)}
+                    className={`text-xs font-semibold px-3 py-1.5 rounded-full border transition-colors ${
+                      soloHoy
+                        ? 'bg-yellow-200 text-yellow-900 border-yellow-300'
+                        : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'
+                    }`}
+                  >
+                    {soloHoy ? '📅 Solo Hoy' : '📅 Filtrar Hoy'}
+                  </button>
+                </div>
               </div>
               {filtrados.map((cliente) => {
                 const tocaHoy = clienteVisitaHoy((cliente as any).dias_visita)
@@ -650,6 +681,11 @@ export default function ClientesPage() {
                             {tocaHoy && (
                               <span className="shrink-0 text-[10px] font-bold px-1.5 py-0.5 rounded bg-yellow-200 text-yellow-900">
                                 📅 HOY
+                              </span>
+                            )}
+                            {(cliente as any)._fuera_de_zona && (
+                              <span className="shrink-0 text-[10px] font-medium px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 border border-amber-200">
+                                Fuera de zona
                               </span>
                             )}
                           </div>

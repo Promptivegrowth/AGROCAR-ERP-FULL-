@@ -107,20 +107,28 @@ export default function PedidosPage() {
       if (profile) setUserRole(role)
 
       if (clientesData) {
-        // Filtro por zonas asignadas: vendedor ve clientes cuya zona_id está
-        // en sus zonas asignadas (profile_zonas). Fallback al vendedor_id
-        // legacy si no tiene zonas. Repartidor + admin ven todos.
-        let lista = clientesData
+        // Mostrar TODOS los clientes activos al vendedor. Los de SUS zonas
+        // van primero (default visible); los demás aparecen al buscar.
+        // Esto permite tomar pedidos de cualquier cliente si pasa por ahí.
+        let lista: any[] = clientesData
         if (role === 'vendedor') {
           const { getClientesIdsVisiblesParaPwa } = await import('@/lib/zonas-vendedor')
           const vis = await getClientesIdsVisiblesParaPwa(supabase, user.id, role)
+          let propiosSet: Set<string> | null = null
           if (vis.filtrar) {
             if (vis.zonasAsignadas.length > 0) {
               const zSet = new Set(vis.zonasAsignadas)
-              lista = clientesData.filter((c: any) => c.zona_id && zSet.has(c.zona_id))
+              propiosSet = new Set(clientesData.filter((c: any) => c.zona_id && zSet.has(c.zona_id)).map((c: any) => c.id))
             } else if (vis.usarFallbackVendedor) {
-              lista = clientesData.filter((c: any) => c.vendedor_id === user.id)
+              propiosSet = new Set(clientesData.filter((c: any) => c.vendedor_id === user.id).map((c: any) => c.id))
             }
+          }
+          if (propiosSet) {
+            const propiosArr = clientesData.filter((c: any) => propiosSet!.has(c.id))
+            const restoArr = clientesData
+              .filter((c: any) => !propiosSet!.has(c.id))
+              .map((c: any) => ({ ...c, _fuera_de_zona: true }))
+            lista = [...propiosArr, ...restoArr]
           }
         }
         setClientes(lista)
@@ -564,26 +572,36 @@ export default function PedidosPage() {
                   />
                   {showClienteDropdown && clientesFiltrados.length > 0 && (
                     <div className="absolute top-full left-0 right-0 bg-white border border-gray-200 rounded-xl shadow-lg z-20 mt-1 overflow-hidden">
-                      {clientesFiltrados.map((c) => (
-                        <button
-                          key={c.id}
-                          onClick={() => seleccionarCliente(c)}
-                          className="w-full text-left px-4 py-3 hover:bg-green-50 border-b border-gray-100 last:border-0"
-                        >
-                          <div className="flex items-center gap-2">
-                            <div className="font-medium text-gray-900 text-sm flex-1 min-w-0 truncate">{c.razon_social}</div>
-                            {clienteVisitaHoy((c as any).dias_visita) && (
-                              <span className="shrink-0 inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-bold bg-yellow-200 text-yellow-900">
-                                📅 HOY
-                              </span>
-                            )}
-                          </div>
-                          <div className="text-xs text-gray-500">
-                            {c.ruc ? `RUC ${c.ruc}` : c.dni ? `DNI ${c.dni}` : 'Sin doc.'}
-                            {c.direccion ? ` · ${c.direccion}` : ''}
-                          </div>
-                        </button>
-                      ))}
+                      {clientesFiltrados.map((c) => {
+                        const fueraZona = (c as any)._fuera_de_zona === true
+                        return (
+                          <button
+                            key={c.id}
+                            onClick={() => seleccionarCliente(c)}
+                            className={`w-full text-left px-4 py-3 border-b border-gray-100 last:border-0 ${
+                              fueraZona ? 'hover:bg-amber-50 bg-amber-50/30' : 'hover:bg-green-50'
+                            }`}
+                          >
+                            <div className="flex items-center gap-2">
+                              <div className="font-medium text-gray-900 text-sm flex-1 min-w-0 truncate">{c.razon_social}</div>
+                              {clienteVisitaHoy((c as any).dias_visita) && (
+                                <span className="shrink-0 inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-bold bg-yellow-200 text-yellow-900">
+                                  📅 HOY
+                                </span>
+                              )}
+                              {fueraZona && (
+                                <span className="shrink-0 inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-medium bg-amber-100 text-amber-800 border border-amber-200">
+                                  Fuera de zona
+                                </span>
+                              )}
+                            </div>
+                            <div className="text-xs text-gray-500">
+                              {c.ruc ? `RUC ${c.ruc}` : c.dni ? `DNI ${c.dni}` : 'Sin doc.'}
+                              {c.direccion ? ` · ${c.direccion}` : ''}
+                            </div>
+                          </button>
+                        )
+                      })}
                     </div>
                   )}
                 </div>
