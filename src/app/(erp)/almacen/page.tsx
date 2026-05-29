@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import Link from 'next/link'
 import { toast } from 'sonner'
-import { AlertTriangle, Package, TrendingDown, TrendingUp, Eye, Loader2, Search, History, Sliders, Boxes } from 'lucide-react'
+import { AlertTriangle, Package, TrendingDown, TrendingUp, Eye, Loader2, Search, History, Sliders, Boxes, FileDown } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { useDebounce } from '@/lib/hooks/use-debounce'
 import { formatCurrency, formatDate, formatDatetime } from '@/lib/utils'
@@ -291,6 +291,86 @@ export default function AlmacenPage() {
     0,
   )
 
+  const [exportando, setExportando] = useState(false)
+
+  async function exportarExcel() {
+    setExportando(true)
+    try {
+      const { generarExcelInventario, descargarBlob } = await import('@/lib/export/inventario-excel')
+
+      // Cargar config de empresa y almacén
+      const { data: confRows } = await (supabase as any)
+        .from('configuracion')
+        .select('clave, valor')
+        .in('clave', ['empresa_razon_social', 'empresa_ruc', 'empresa_direccion', 'almacen_nombre', 'almacen_direccion'])
+      const conf: Record<string, string> = {}
+      ;(confRows ?? []).forEach((r: any) => { conf[r.clave] = r.valor })
+
+      const { data: { user } } = await supabase.auth.getUser()
+      let generadoPor = 'Sistema'
+      if (user) {
+        const { data: prof } = await supabase.from('profiles').select('full_name').eq('id', user.id).single()
+        generadoPor = (prof as any)?.full_name ?? user.email ?? 'Sistema'
+      }
+
+      const rows = stocksFiltrados.map((s: any) => {
+        const prod = s.productos as any
+        const stockFisico = Number(s.cantidad ?? 0)
+        const stockReservado = Number(s.cantidad_reservada ?? 0)
+        const stockDisponible = Math.max(0, stockFisico - stockReservado)
+        const costo = Number(s.costo_promedio ?? 0)
+        const min = prod?.stock_minimo
+        const max = prod?.stock_maximo
+        let alerta: 'bajo' | 'sobre' | 'ok' | 'sin' = 'ok'
+        if (stockFisico === 0) alerta = 'sin'
+        else if (min != null && stockFisico < Number(min)) alerta = 'bajo'
+        else if (max != null && stockFisico > Number(max)) alerta = 'sobre'
+
+        return {
+          codigo: prod?.codigo ?? '—',
+          nombre: prod?.nombre ?? '—',
+          descripcion: prod?.descripcion ?? null,
+          familia: prod?.familias?.nombre ?? null,
+          unidad: prod?.unidades_medida?.simbolo ?? null,
+          stock_fisico: stockFisico,
+          stock_reservado: stockReservado,
+          stock_disponible: stockDisponible,
+          stock_minimo: min != null ? Number(min) : null,
+          stock_maximo: max != null ? Number(max) : null,
+          costo_promedio: costo,
+          valor_total: stockFisico * costo,
+          alerta,
+          ultima_actualizacion: s.updated_at,
+        }
+      })
+
+      const fecha = new Date().toLocaleDateString('es-PE', { day: '2-digit', month: 'long', year: 'numeric' })
+      const blob = await generarExcelInventario({
+        empresa: {
+          razon_social: conf.empresa_razon_social ?? 'AGROCAR S.R.L.',
+          ruc: conf.empresa_ruc ?? '20XXXXXXXXX',
+          direccion: conf.empresa_direccion ?? '',
+        },
+        almacen: {
+          nombre: conf.almacen_nombre ?? 'AGROCAR - Almacén Central',
+          direccion: conf.almacen_direccion ?? '',
+        },
+        fecha,
+        generadoPor,
+        rows,
+        filtros: { familia: null, estado: null, busqueda: debouncedSearch || null },
+      })
+
+      const nombreFecha = new Date().toISOString().slice(0, 10).replace(/-/g, '')
+      descargarBlob(blob, `Inventario_AGROCAR_${nombreFecha}.xlsx`)
+      toast.success('Inventario exportado', { description: `${rows.length} productos descargados.` })
+    } catch (err: any) {
+      toast.error('No se pudo exportar', { description: err?.message ?? 'Intenta nuevamente.' })
+    } finally {
+      setExportando(false)
+    }
+  }
+
   return (
     <div className="space-y-5">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
@@ -298,7 +378,16 @@ export default function AlmacenPage() {
           <h1 className="text-2xl font-bold text-gray-900">Almacén e Inventario</h1>
           <p className="text-sm text-gray-500 mt-0.5">Stock actual de productos</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
+          <Button
+            onClick={exportarExcel}
+            disabled={exportando || stocks.length === 0}
+            className="bg-green-600 hover:bg-green-700 text-white font-semibold gap-2"
+            size="sm"
+          >
+            {exportando ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileDown className="w-4 h-4" />}
+            Exportar Excel
+          </Button>
           <Link
             href="/almacen/compras"
             className="inline-flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors shadow-sm"
