@@ -44,3 +44,6 @@ next-env.d.ts
 
 # Backups locales
 /backup-pre-limpieza-*
+
+# Claude config con secretos
+.claude/settings.json
