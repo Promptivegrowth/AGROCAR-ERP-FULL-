@@ -1,7 +1,6 @@
 'use client'
 
-import { useMemo, useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { useMemo, useState, useEffect, useCallback, useRef } from 'react'
 import {
   Wallet, Lock, Unlock, TrendingUp, TrendingDown, DollarSign, Clock, Users,
   Banknote, Smartphone, Building2, FileDown, Loader2, Plus, ChevronDown, ChevronUp,
@@ -128,13 +127,14 @@ export default function CajaClient({
   movimientosIniciales: MovimientoCaja[]
   historialInicial: SesionHistorial[]
 }) {
-  const router = useRouter()
   const supabase = createClient()
 
-  const [sesion] = useState<CajaSesionData | null>(sesionInicial)
-  const [cobros] = useState<CobroDia[]>(cobrosIniciales)
-  const [movimientos] = useState<MovimientoCaja[]>(movimientosIniciales)
-  const [historial] = useState<SesionHistorial[]>(historialInicial)
+  const [sesion, setSesion] = useState<CajaSesionData | null>(sesionInicial)
+  const [cobros, setCobros] = useState<CobroDia[]>(cobrosIniciales)
+  const [movimientos, setMovimientos] = useState<MovimientoCaja[]>(movimientosIniciales)
+  const [historial, setHistorial] = useState<SesionHistorial[]>(historialInicial)
+  const [recargando, setRecargando] = useState(false)
+  const [ultimaActualizacion, setUltimaActualizacion] = useState<Date>(new Date())
 
   const [saving, setSaving] = useState(false)
   const [abrirOpen, setAbrirOpen] = useState(false)
@@ -142,6 +142,152 @@ export default function CajaClient({
   const [egresoOpen, setEgresoOpen] = useState(false)
   const [historialOpen, setHistorialOpen] = useState(false)
   const [cobradorSeleccionado, setCobradorSeleccionado] = useState<string | null>(null)
+
+  // ─── Recarga manual y en tiempo real ─────────────────────────────────────
+  // Ref para evitar saturar el endpoint cuando llegan eventos seguidos
+  const reloadTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const reloadAll = useCallback(async (silencioso = false) => {
+    if (!silencioso) setRecargando(true)
+    try {
+      // 1) Sesión abierta
+      const { data: sesRaw } = await supabase
+        .from('caja_sesiones')
+        .select(`id, cajero_id, fecha_apertura, fecha_cierre, saldo_inicial, saldo_final, estado, created_at,
+                 profiles!caja_sesiones_cajero_id_fkey(full_name)`)
+        .eq('estado', 'abierta')
+        .order('fecha_apertura', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+
+      const nuevaSesion: CajaSesionData | null = sesRaw
+        ? {
+            id: sesRaw.id,
+            cajero_id: sesRaw.cajero_id,
+            cajero_nombre: (sesRaw.profiles as any)?.full_name ?? null,
+            fecha_apertura: sesRaw.fecha_apertura,
+            fecha_cierre: sesRaw.fecha_cierre,
+            saldo_inicial: Number(sesRaw.saldo_inicial ?? 0),
+            saldo_final: sesRaw.saldo_final !== null ? Number(sesRaw.saldo_final) : null,
+            estado: sesRaw.estado,
+          }
+        : null
+      setSesion(nuevaSesion)
+
+      // 2) Cobros del día
+      const { data: cobrosRaw } = await supabase
+        .from('cobros')
+        .select(`id, cliente_id, cobrador_id, fecha, efectivo, yape, plin, transferencia, total, tipo, notas, created_at,
+                 cliente_externo_nombre,
+                 clientes(razon_social, telefono),
+                 profiles!cobros_cobrador_id_fkey(full_name, role)`)
+        .eq('fecha', today)
+        .order('created_at', { ascending: false })
+
+      setCobros(
+        (cobrosRaw ?? []).map((c: any) => ({
+          id: c.id,
+          cliente_id: c.cliente_id,
+          cliente_nombre: c.clientes?.razon_social ?? c.cliente_externo_nombre ?? '—',
+          cliente_telefono: c.clientes?.telefono ?? null,
+          cobrador_id: c.cobrador_id,
+          cobrador_nombre: c.profiles?.full_name ?? 'Sin asignar',
+          cobrador_rol: c.profiles?.role ?? null,
+          fecha: c.fecha,
+          efectivo: Number(c.efectivo ?? 0),
+          yape: Number(c.yape ?? 0),
+          plin: Number(c.plin ?? 0),
+          transferencia: Number(c.transferencia ?? 0),
+          total: Number(c.total ?? 0),
+          notas: c.notas ?? null,
+          created_at: c.created_at,
+        })),
+      )
+
+      // 3) Movimientos de la sesión actual
+      if (nuevaSesion?.id) {
+        const { data: movRaw } = await supabase
+          .from('caja_movimientos')
+          .select('id, sesion_id, tipo, categoria, descripcion, monto, created_at, cobrador_id')
+          .eq('sesion_id', nuevaSesion.id)
+          .order('created_at', { ascending: false })
+        setMovimientos(
+          (movRaw ?? []).map((m: any) => ({
+            id: m.id,
+            sesion_id: m.sesion_id,
+            tipo: m.tipo,
+            categoria: m.categoria,
+            descripcion: m.descripcion,
+            monto: Number(m.monto ?? 0),
+            created_at: m.created_at,
+            cobrador_id: m.cobrador_id,
+          })),
+        )
+      } else {
+        setMovimientos([])
+      }
+
+      // 4) Historial: últimas 30 sesiones cerradas
+      const { data: histRaw } = await supabase
+        .from('caja_sesiones')
+        .select(`id, cajero_id, fecha_apertura, fecha_cierre, saldo_inicial, saldo_final, estado, created_at,
+                 profiles!caja_sesiones_cajero_id_fkey(full_name)`)
+        .eq('estado', 'cerrada')
+        .order('fecha_cierre', { ascending: false })
+        .limit(30)
+      setHistorial(
+        (histRaw ?? []).map((s: any) => ({
+          id: s.id,
+          cajero_nombre: s.profiles?.full_name ?? '—',
+          fecha_apertura: s.fecha_apertura,
+          fecha_cierre: s.fecha_cierre,
+          saldo_inicial: Number(s.saldo_inicial ?? 0),
+          saldo_final: s.saldo_final !== null ? Number(s.saldo_final) : null,
+        })),
+      )
+
+      setUltimaActualizacion(new Date())
+    } finally {
+      if (!silencioso) setRecargando(false)
+    }
+  }, [supabase, today])
+
+  // Recarga diferida (debounce) para eventos realtime múltiples
+  const reloadDebounced = useCallback(() => {
+    if (reloadTimerRef.current) clearTimeout(reloadTimerRef.current)
+    reloadTimerRef.current = setTimeout(() => {
+      void reloadAll(true)
+    }, 400)
+  }, [reloadAll])
+
+  // Suscripción a cambios en tiempo real
+  useEffect(() => {
+    const channel = supabase
+      .channel('caja-realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'cobros' }, () => {
+        reloadDebounced()
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'caja_sesiones' }, () => {
+        reloadDebounced()
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'caja_movimientos' }, () => {
+        reloadDebounced()
+      })
+      .subscribe()
+
+    return () => {
+      if (reloadTimerRef.current) clearTimeout(reloadTimerRef.current)
+      void supabase.removeChannel(channel)
+    }
+  }, [supabase, reloadDebounced])
+
+  // Fallback: refresco cada 30s por si el realtime se cae (red mala, túneles, etc.)
+  useEffect(() => {
+    const id = setInterval(() => {
+      void reloadAll(true)
+    }, 30_000)
+    return () => clearInterval(id)
+  }, [reloadAll])
 
   // Formularios
   const [formApertura, setFormApertura] = useState({ monto: '', notas: '' })
@@ -311,7 +457,7 @@ export default function CajaClient({
     })
     setAbrirOpen(false)
     setFormApertura({ monto: '', notas: '' })
-    router.refresh()
+    await reloadAll()
   }
 
   const cerrarCaja = async () => {
@@ -343,7 +489,7 @@ export default function CajaClient({
     })
     setCerrarOpen(false)
     setFormCierre({ monto: '', notas: '' })
-    router.refresh()
+    await reloadAll()
   }
 
   const registrarEgreso = async () => {
@@ -397,7 +543,7 @@ export default function CajaClient({
     })
     setEgresoOpen(false)
     setFormEgreso({ categoria: 'gasto_operativo', monto: '', descripcion: '' })
-    router.refresh()
+    await reloadAll()
   }
 
   const abrirBoleta = (cobroId: string) => {
@@ -421,6 +567,29 @@ export default function CajaClient({
           <p className="text-sm text-gray-500 mt-0.5">
             Centro financiero — {formatDate(today)}
           </p>
+        </div>
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-1.5 text-xs text-gray-500">
+            <span className="relative flex h-2 w-2">
+              <span className="absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75 animate-ping" />
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500" />
+            </span>
+            <span>En vivo · actualizado {formatHora(ultimaActualizacion.toISOString())}</span>
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => reloadAll(false)}
+            disabled={recargando}
+            className="gap-2"
+          >
+            {recargando ? (
+              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            ) : (
+              <Clock className="w-3.5 h-3.5" />
+            )}
+            Actualizar
+          </Button>
         </div>
       </div>
 

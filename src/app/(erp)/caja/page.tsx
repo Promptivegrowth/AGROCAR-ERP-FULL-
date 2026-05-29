@@ -44,6 +44,7 @@ async function getCajaData() {
     .from('cobros')
     .select(`
       id, cliente_id, cobrador_id, fecha, efectivo, yape, plin, transferencia, total, tipo, notas, created_at,
+      cliente_externo_nombre,
       clientes(razon_social, telefono),
       profiles!cobros_cobrador_id_fkey(full_name, role)
     `)
@@ -53,7 +54,7 @@ async function getCajaData() {
   const cobros: CobroDia[] = (cobrosRaw ?? []).map((c: any) => ({
     id: c.id,
     cliente_id: c.cliente_id,
-    cliente_nombre: c.clientes?.razon_social ?? '—',
+    cliente_nombre: c.clientes?.razon_social ?? c.cliente_externo_nombre ?? '—',
     cliente_telefono: c.clientes?.telefono ?? null,
     cobrador_id: c.cobrador_id,
     cobrador_nombre: c.profiles?.full_name ?? 'Sin asignar',
