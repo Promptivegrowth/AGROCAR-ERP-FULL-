@@ -14,7 +14,9 @@ async function getInitialData() {
       .from('pedidos')
       .select(`
         id, numero, total, cliente_id, vendedor_id,
+        direccion_entrega_id, direccion_entrega_texto,
         clientes!inner(id, razon_social, ruc, dni, tipo_comprobante_preferido, direccion, telefono, latitud, longitud, zona_id, distrito, zonas(id, nombre)),
+        cliente_direcciones!pedidos_direccion_entrega_id_fkey(id, nombre, direccion, latitud, longitud, zona_id, zonas(id, nombre)),
         profiles!pedidos_vendedor_id_fkey(id, full_name),
         pedidos_items(id, cantidad, productos(peso_kg))
       `)
@@ -56,6 +58,14 @@ async function getInitialData() {
       peso += pk * Number(it.cantidad ?? 0)
     }
     const cli = p.clientes ?? {}
+    // Si el pedido tiene una dirección de entrega específica (sucursal),
+    // usar sus coordenadas en lugar de las del cliente principal.
+    const dirEntrega = p.cliente_direcciones ?? null
+    const direccionFinal = dirEntrega?.direccion ?? p.direccion_entrega_texto ?? cli.direccion ?? null
+    const latFinal = dirEntrega?.latitud ?? cli.latitud
+    const lngFinal = dirEntrega?.longitud ?? cli.longitud
+    const zonaIdFinal = dirEntrega?.zona_id ?? cli.zona_id ?? null
+    const zonaNombreFinal = dirEntrega?.zonas?.nombre ?? cli.zonas?.nombre ?? null
     return {
       id: p.id,
       numero: p.numero,
@@ -64,12 +74,12 @@ async function getInitialData() {
       cliente_ruc: cli.ruc ?? null,
       cliente_dni: cli.dni ?? null,
       cliente_tipo_comprobante: cli.tipo_comprobante_preferido ?? null,
-      cliente_direccion: cli.direccion ?? null,
+      cliente_direccion: direccionFinal,
       cliente_telefono: cli.telefono ?? null,
-      cliente_lat: cli.latitud != null ? Number(cli.latitud) : null,
-      cliente_lng: cli.longitud != null ? Number(cli.longitud) : null,
-      zona_id: cli.zona_id ?? null,
-      zona_nombre: cli.zonas?.nombre ?? null,
+      cliente_lat: latFinal != null ? Number(latFinal) : null,
+      cliente_lng: lngFinal != null ? Number(lngFinal) : null,
+      zona_id: zonaIdFinal,
+      zona_nombre: zonaNombreFinal,
       distrito: cli.distrito ?? null,
       vendedor_id: p.vendedor_id,
       vendedor_nombre: p.profiles?.full_name ?? null,

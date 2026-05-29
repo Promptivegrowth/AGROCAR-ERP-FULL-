@@ -151,20 +151,39 @@ export default function ZonasPage() {
     setDetailOpen(true)
     setDetailLoading(true)
     setDetailClientes([])
-    // Traer clientes con sus direcciones (las extra de cliente_direcciones + la principal)
+
+    // 1) Clientes cuya zona principal es esta
     const { data: cs } = await (supabase as any)
       .from('clientes')
-      .select('id, razon_social, ruc, dni, telefono, direccion, latitud, longitud, dias_visita, estado')
+      .select('id, razon_social, ruc, dni, telefono, direccion, latitud, longitud, dias_visita, estado, zona_id')
       .eq('zona_id', z.id)
       .eq('estado', 'activo')
       .order('razon_social')
-    // Traer direcciones extra de los clientes
-    const ids = (cs ?? []).map((c: any) => c.id)
+
+    // 2) Direcciones cuyo zona_id override apunta a esta zona (sucursal en otra zona)
+    const { data: dirsDeEstaZona } = await (supabase as any)
+      .from('cliente_direcciones')
+      .select('cliente_id, nombre, direccion, latitud, longitud, es_principal, zona_id, clientes(id, razon_social, ruc, dni, telefono, direccion, latitud, longitud, dias_visita, zona_id)')
+      .eq('zona_id', z.id)
+      .eq('activo', true)
+
+    // Merge: clientes primarios + clientes que tienen al menos una sucursal en esta zona
+    const idsPrimarios = new Set((cs ?? []).map((c: any) => c.id))
+    const externos: any[] = []
+    ;(dirsDeEstaZona ?? []).forEach((d: any) => {
+      const cli = d.clientes
+      if (cli && !idsPrimarios.has(cli.id)) {
+        externos.push({ ...cli, _direccion_sucursal: { nombre: d.nombre, direccion: d.direccion, latitud: d.latitud, longitud: d.longitud } })
+      }
+    })
+
+    // Traer TODAS las direcciones extra de todos los clientes
+    const ids = [...(cs ?? []).map((c: any) => c.id), ...externos.map((c: any) => c.id)]
     let direccionesMap: Record<string, any[]> = {}
     if (ids.length > 0) {
       const { data: dirs } = await (supabase as any)
         .from('cliente_direcciones')
-        .select('cliente_id, nombre, direccion, latitud, longitud, es_principal')
+        .select('cliente_id, nombre, direccion, latitud, longitud, es_principal, zona_id')
         .in('cliente_id', ids)
         .eq('activo', true)
       ;(dirs ?? []).forEach((d: any) => {
@@ -172,10 +191,10 @@ export default function ZonasPage() {
         direccionesMap[d.cliente_id].push(d)
       })
     }
-    const enriquecidos = (cs ?? []).map((c: any) => ({
-      ...c,
-      direcciones_extra: direccionesMap[c.id] ?? [],
-    }))
+    const enriquecidos = [
+      ...(cs ?? []).map((c: any) => ({ ...c, direcciones_extra: direccionesMap[c.id] ?? [], _es_externo: false })),
+      ...externos.map((c: any) => ({ ...c, direcciones_extra: direccionesMap[c.id] ?? [], _es_externo: true })),
+    ]
     setDetailClientes(enriquecidos)
     setDetailLoading(false)
   }

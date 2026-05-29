@@ -171,16 +171,26 @@ export default function ClientesPage() {
       }
       setUserId(user.id)
 
-      // Determinar rol para saber si filtrar por vendedor o mostrar todos
+      // Filtro por zonas asignadas (modelo nuevo): vendedor ve clientes de sus
+      // zonas asignadas en profile_zonas. Si no tiene zonas, fallback a
+      // clientes.vendedor_id legacy. Repartidor ve todos.
       const { data: prof } = await supabase
         .from('profiles')
         .select('role')
         .eq('id', user.id)
         .single()
-      const esRepartidor = (prof as any)?.role === 'repartidor'
+      const role = (prof as any)?.role
+      const { getClientesIdsVisiblesParaPwa } = await import('@/lib/zonas-vendedor')
+      const visibilidad = await getClientesIdsVisiblesParaPwa(supabase, user.id, role)
 
       let clientesQuery = supabase.from('clientes').select('*').order('razon_social')
-      if (!esRepartidor) clientesQuery = clientesQuery.eq('vendedor_id', user.id)
+      if (visibilidad.filtrar) {
+        if (visibilidad.zonasAsignadas.length > 0) {
+          clientesQuery = clientesQuery.in('zona_id', visibilidad.zonasAsignadas)
+        } else if (visibilidad.usarFallbackVendedor) {
+          clientesQuery = clientesQuery.eq('vendedor_id', user.id)
+        }
+      }
 
       const [clientesRes, zonasRes] = await Promise.all([
         clientesQuery,

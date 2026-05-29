@@ -67,6 +67,7 @@ type DireccionExtra = {
   latitud: number | null
   longitud: number | null
   es_principal: boolean
+  zona_id?: string | null  // Override opcional; si null hereda clientes.zona_id
 }
 
 const ESTADO_CONFIG: Record<EstadoCliente, { label: string; className: string }> = {
@@ -330,6 +331,7 @@ export default function ClientesPage() {
         ubigeo: d.ubigeo,
       },
       latitud: d.latitud, longitud: d.longitud, es_principal: false,
+      zona_id: d.zona_id ?? null,
     })))
 
     // Cargar datos de proveedor si existe
@@ -505,6 +507,7 @@ export default function ClientesPage() {
           longitud: d.longitud,
           es_principal: false,
           activo: true,
+          zona_id: d.zona_id ?? null,
         }))
         await (supabase as any).from('cliente_direcciones').insert(inserts)
       }
@@ -1100,6 +1103,7 @@ export default function ClientesPage() {
                     nombre: '', direccion: '',
                     ubigeo_value: UBIGEO_EMPTY,
                     latitud: null, longitud: null, es_principal: false,
+                    zona_id: null,
                   }})}
                   className="gap-1 text-xs h-8"
                 >
@@ -1244,6 +1248,27 @@ export default function ClientesPage() {
                   })}
                   layout="stacked"
                 />
+              </div>
+              <div>
+                <Label>Zona (opcional)</Label>
+                <Select
+                  value={direccionDialog.data.zona_id ?? '__hereda__'}
+                  onValueChange={(v) => setDireccionDialog({
+                    ...direccionDialog,
+                    data: { ...direccionDialog.data, zona_id: v === '__hereda__' ? null : v },
+                  })}
+                >
+                  <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__hereda__">📍 Hereda del cliente</SelectItem>
+                    {zonas.map((z) => (
+                      <SelectItem key={z.id} value={z.id}>{z.nombre}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-[11px] text-gray-400 mt-1">
+                  Útil si esta sucursal está en otra zona distinta a la del cliente principal.
+                </p>
               </div>
               <div className="flex justify-end gap-2 pt-2 border-t border-gray-100">
                 <Button type="button" variant="outline" onClick={() => setDireccionDialog(null)}>Cancelar</Button>

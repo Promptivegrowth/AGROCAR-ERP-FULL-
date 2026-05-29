@@ -107,11 +107,22 @@ export default function PedidosPage() {
       if (profile) setUserRole(role)
 
       if (clientesData) {
-        // Vendedor solo ve SUS clientes (filtro frontend).
-        // Repartidor + roles administrativos ven todos.
-        const lista = role === 'vendedor'
-          ? clientesData.filter((c: any) => c.vendedor_id === user.id)
-          : clientesData
+        // Filtro por zonas asignadas: vendedor ve clientes cuya zona_id está
+        // en sus zonas asignadas (profile_zonas). Fallback al vendedor_id
+        // legacy si no tiene zonas. Repartidor + admin ven todos.
+        let lista = clientesData
+        if (role === 'vendedor') {
+          const { getClientesIdsVisiblesParaPwa } = await import('@/lib/zonas-vendedor')
+          const vis = await getClientesIdsVisiblesParaPwa(supabase, user.id, role)
+          if (vis.filtrar) {
+            if (vis.zonasAsignadas.length > 0) {
+              const zSet = new Set(vis.zonasAsignadas)
+              lista = clientesData.filter((c: any) => c.zona_id && zSet.has(c.zona_id))
+            } else if (vis.usarFallbackVendedor) {
+              lista = clientesData.filter((c: any) => c.vendedor_id === user.id)
+            }
+          }
+        }
         setClientes(lista)
       }
 
