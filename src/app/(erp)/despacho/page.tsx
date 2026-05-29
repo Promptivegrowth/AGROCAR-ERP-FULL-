@@ -9,7 +9,7 @@ export const dynamic = 'force-dynamic'
 async function getInitialData() {
   const supabase = await createClient()
 
-  const [{ data: pedidosRaw }, { data: vehiculosRaw }, { data: vcRaw }, { data: confRaw }, { data: flotaRaw }] = await Promise.all([
+  const [{ data: pedidosRaw }, { data: vehiculosRaw }, { data: vcRaw }, { data: confRaw }, { data: flotaRaw }, { data: plantillasRaw }] = await Promise.all([
     (supabase as any)
       .from('pedidos')
       .select(`
@@ -39,6 +39,9 @@ async function getInitialData() {
       .from('v_flota_en_vivo')
       .select('id, placa, numero, estado, pedidos_entregados, total_pedidos')
       .in('estado', ['en_ruta', 'preparacion']),
+    (supabase as any)
+      .from('vehiculos_zonas_habituales')
+      .select('vehiculo_id, zona_id, dias_semana'),
   ])
 
   const vcByVehiculo: Record<string, { id: string; nombre: string }> = {}
@@ -114,11 +117,25 @@ async function getInitialData() {
     enPreparacion: (flotaRaw ?? []).filter((f: any) => f.estado === 'preparacion'),
   }
 
-  return { pedidos, vehiculos, almacen, flota }
+  // Plantillas del día actual (zona → vehiculo)
+  // Día de la semana en Lima (UTC-5): los servidores corren en UTC, hay que ajustar.
+  const ahoraLima = new Date(Date.now() - 5 * 60 * 60 * 1000)
+  const diaSemanaMap = ['dom', 'lun', 'mar', 'mie', 'jue', 'vie', 'sab']
+  const diaActual = diaSemanaMap[ahoraLima.getUTCDay()]
+  // Mapa: zona_id -> vehiculo_id (primer match gana; si una zona está en dos plantillas el mismo día, se queda con el primero)
+  const plantillaDelDia: Record<string, string> = {}
+  ;(plantillasRaw ?? []).forEach((p: any) => {
+    const dias: string[] = p.dias_semana ?? []
+    if (dias.includes(diaActual) && !plantillaDelDia[p.zona_id]) {
+      plantillaDelDia[p.zona_id] = p.vehiculo_id
+    }
+  })
+
+  return { pedidos, vehiculos, almacen, flota, plantillaDelDia, diaActual }
 }
 
 export default async function DespachoPage() {
-  const { pedidos, vehiculos, almacen, flota } = await getInitialData()
+  const { pedidos, vehiculos, almacen, flota, plantillaDelDia, diaActual } = await getInitialData()
   const total = flota.enRuta.length + flota.enPreparacion.length
   return (
     <div className="space-y-3">
@@ -153,7 +170,13 @@ export default async function DespachoPage() {
           <span className="text-xs font-medium text-gray-700">Ver flota →</span>
         </Link>
       )}
-      <DespachoClient pedidosIniciales={pedidos} vehiculos={vehiculos} almacen={almacen} />
+      <DespachoClient
+        pedidosIniciales={pedidos}
+        vehiculos={vehiculos}
+        almacen={almacen}
+        plantillaDelDia={plantillaDelDia}
+        diaActual={diaActual}
+      />
     </div>
   )
 }

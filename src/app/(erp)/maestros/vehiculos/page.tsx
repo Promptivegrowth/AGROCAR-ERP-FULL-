@@ -7,8 +7,9 @@ import { z } from 'zod'
 import {
   Plus, Edit, ToggleLeft, ToggleRight, Loader2, Truck, Eye,
   Search, ChevronLeft, ChevronRight, Sparkles, Trash2, IdCard,
-  Wrench, AlertCircle, CheckCircle2, Clock,
+  Wrench, AlertCircle, CheckCircle2, Clock, Calendar,
 } from 'lucide-react'
+import PlantillaDialog from './plantilla-dialog'
 import { toast } from 'sonner'
 import { createClient } from '@/lib/supabase/client'
 import { useDebounce } from '@/lib/hooks/use-debounce'
@@ -61,6 +62,8 @@ export default function VehiculosPage() {
   const [search, setSearch] = useState('')
   const debouncedSearch = useDebounce(search, 300)
   const [dialogOpen, setDialogOpen] = useState(false)
+  const [plantillaOpen, setPlantillaOpen] = useState(false)
+  const [plantillaVehiculo, setPlantillaVehiculo] = useState<{ id: string; placa: string } | null>(null)
   const [detailOpen, setDetailOpen] = useState(false)
   const [selected, setSelected] = useState<any>(null)
   const [editingVehiculo, setEditingVehiculo] = useState<any>(null)
@@ -281,6 +284,15 @@ export default function VehiculosPage() {
                         <Button variant="outline" size="sm" onClick={() => openEdit(v)} className="h-7 text-xs gap-1">
                           <Edit className="w-3.5 h-3.5" /> Editar
                         </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => { setPlantillaVehiculo({ id: v.id, placa: v.placa }); setPlantillaOpen(true) }}
+                          className="h-7 text-xs gap-1"
+                          title="Plantilla de ruta"
+                        >
+                          <Calendar className="w-3.5 h-3.5 text-amber-600" /> Plantilla
+                        </Button>
                         <Button variant="outline" size="sm" onClick={() => toggleActivo(v)} className="h-7 text-xs gap-1">
                           {v.activo ? <ToggleRight className="w-3.5 h-3.5 text-green-600" /> : <ToggleLeft className="w-3.5 h-3.5 text-gray-400" />}
                         </Button>
@@ -332,6 +344,15 @@ export default function VehiculosPage() {
                               </Button>
                               <Button variant="ghost" size="sm" onClick={() => openEdit(v)} className="h-7 w-7 p-0" title="Editar">
                                 <Edit className="w-3.5 h-3.5 text-gray-500" />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => { setPlantillaVehiculo({ id: v.id, placa: v.placa }); setPlantillaOpen(true) }}
+                                className="h-7 w-7 p-0"
+                                title="Plantilla de ruta (zonas habituales por día)"
+                              >
+                                <Calendar className="w-3.5 h-3.5 text-amber-600" />
                               </Button>
                               <Button variant="ghost" size="sm" onClick={() => toggleActivo(v)} className="h-7 w-7 p-0" title={v.activo ? 'Desactivar' : 'Activar'}>
                                 {v.activo ? <ToggleRight className="w-4 h-4 text-green-600" /> : <ToggleLeft className="w-4 h-4 text-gray-400" />}
@@ -429,6 +450,14 @@ export default function VehiculosPage() {
           </form>
         </DialogContent>
       </Dialog>
+
+      {/* Dialog Plantilla de ruta */}
+      <PlantillaDialog
+        vehiculoId={plantillaVehiculo?.id ?? null}
+        vehiculoPlaca={plantillaVehiculo?.placa ?? ''}
+        open={plantillaOpen}
+        onOpenChange={setPlantillaOpen}
+      />
 
       {/* Dialog Detalle con Tabs */}
       <Dialog open={detailOpen} onOpenChange={setDetailOpen}>
@@ -1315,3 +1344,4 @@ function PagarMultaDialog({
     </Dialog>
   )
 }
+

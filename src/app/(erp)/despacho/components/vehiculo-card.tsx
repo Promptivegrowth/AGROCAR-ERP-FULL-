@@ -2,7 +2,7 @@
 
 import { useDroppable } from '@dnd-kit/core'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Truck, AlertCircle, Check, FileText, User, MapPin } from 'lucide-react'
+import { Truck, AlertCircle, Check, FileText, User, MapPin, Sparkles } from 'lucide-react'
 import CamionSVG from '@/components/camion-svg'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -17,9 +17,10 @@ type Props = {
   onConsolidar: () => void
   onPedidoClick: (pedido: PedidoListo) => void
   consolidando: boolean
+  preAsignadosIds?: Set<string>
 }
 
-export default function VehiculoCard({ vehiculo, pedidos, onRemovePedido, onConsolidar, onPedidoClick, consolidando }: Props) {
+export default function VehiculoCard({ vehiculo, pedidos, onRemovePedido, onConsolidar, onPedidoClick, consolidando, preAsignadosIds }: Props) {
   const { isOver, setNodeRef } = useDroppable({
     id: `vehiculo-${vehiculo.id}`,
     data: { vehiculoId: vehiculo.id },
@@ -146,6 +147,14 @@ export default function VehiculoCard({ vehiculo, pedidos, onRemovePedido, onCons
                   color={color}
                   onClick={() => onPedidoClick(p)}
                 />
+                {preAsignadosIds?.has(p.id) && (
+                  <span
+                    className="absolute top-1 left-1 inline-flex items-center gap-0.5 px-1 py-0.5 rounded-full bg-amber-400 text-black text-[8px] font-bold uppercase tracking-wide pointer-events-none"
+                    title="Pre-asignado automáticamente por plantilla del día"
+                  >
+                    <Sparkles className="w-2 h-2" /> Auto
+                  </span>
+                )}
                 <button
                   type="button"
                   onClick={(e) => {
