@@ -78,6 +78,16 @@ interface LeafletMapInnerProps {
   pickedPosition?: [number, number] | null
   onPick?: (lat: number, lng: number) => void
   fitBounds?: boolean
+  flyTo?: { lat: number; lng: number; zoom?: number; key?: string | number } | null
+}
+
+function FlyTo({ target }: { target?: { lat: number; lng: number; zoom?: number; key?: string | number } | null }) {
+  const map = useMap()
+  useEffect(() => {
+    if (!target) return
+    map.flyTo([target.lat, target.lng], target.zoom ?? 17, { duration: 0.8 })
+  }, [target?.lat, target?.lng, target?.zoom, target?.key, map, target])
+  return null
 }
 
 function LocationPicker({ onPick }: { onPick: (lat: number, lng: number) => void }) {
@@ -115,6 +125,7 @@ export default function LeafletMapInner({
   pickedPosition = null,
   onPick,
   fitBounds = true,
+  flyTo = null,
 }: LeafletMapInnerProps) {
   return (
     <div style={{ height, width: '100%' }} className="rounded-xl overflow-hidden">
@@ -192,7 +203,8 @@ export default function LeafletMapInner({
           </Marker>
         )}
         {pickable && onPick && <LocationPicker onPick={onPick} />}
-        {fitBounds && <FitBounds markers={markers} pickedPosition={pickedPosition} />}
+        {fitBounds && !flyTo && <FitBounds markers={markers} pickedPosition={pickedPosition} />}
+        <FlyTo target={flyTo} />
       </MapContainer>
     </div>
   )

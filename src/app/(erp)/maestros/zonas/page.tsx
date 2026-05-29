@@ -57,6 +57,11 @@ export default function ZonasPage() {
   const [diasVisita, setDiasVisita] = useState<DiaSemana[]>([])
   const [detailClientes, setDetailClientes] = useState<any[]>([])
   const [detailLoading, setDetailLoading] = useState(false)
+  const [mapFlyTo, setMapFlyTo] = useState<{ lat: number; lng: number; zoom: number; key: number } | null>(null)
+  // Para el editor: lista completa de clientes y cuáles están asignados
+  const [todosClientes, setTodosClientes] = useState<any[]>([])
+  const [clientesAsignados, setClientesAsignados] = useState<Set<string>>(new Set())
+  const [clienteSearch, setClienteSearch] = useState('')
 
   // Cantidad de clientes por zona
   const [clientesPorZona, setClientesPorZona] = useState<Record<string, number>>({})
@@ -99,7 +104,7 @@ export default function ZonasPage() {
     loadClientesPorZona()
   }, [loadZonas, loadClientesPorZona])
 
-  const openCreate = () => {
+  const openCreate = async () => {
     setEditingZona(null)
     setActivoVal(true)
     setUbigeoVal(UBIGEO_EMPTY)
@@ -108,6 +113,15 @@ export default function ZonasPage() {
     setColorHex('#2563eb')
     setClientesEnZona([])
     setDiasVisita(['lun', 'mar', 'mie', 'jue', 'vie'])
+    setClientesAsignados(new Set())
+    setClienteSearch('')
+    // Cargar todos los clientes para poder asignarlos a la nueva zona
+    const { data: all } = await (supabase as any)
+      .from('clientes')
+      .select('id, razon_social, ruc, dni, direccion, zona_id, latitud, longitud')
+      .eq('estado', 'activo')
+      .order('razon_social')
+    setTodosClientes(all ?? [])
     reset({ activo: true, nombre: '', descripcion: '', referencias: '', radio_km: 1.5, color_hex: '#2563eb' })
     setDialogOpen(true)
   }
@@ -136,13 +150,16 @@ export default function ZonasPage() {
       radio_km: Number(zona.radio_km ?? 1.5),
       color_hex: zona.color_hex ?? '#2563eb',
     })
-    // Cargar clientes asignados a esta zona para el preview
-    const { data: cs } = await (supabase as any)
+    // Cargar TODOS los clientes activos y marcar los asignados a esta zona
+    const { data: all } = await (supabase as any)
       .from('clientes')
-      .select('id, razon_social, latitud, longitud')
-      .eq('zona_id', zona.id)
+      .select('id, razon_social, ruc, dni, direccion, zona_id, latitud, longitud')
       .eq('estado', 'activo')
-    setClientesEnZona(cs ?? [])
+      .order('razon_social')
+    setTodosClientes(all ?? [])
+    setClientesAsignados(new Set((all ?? []).filter((c: any) => c.zona_id === zona.id).map((c: any) => c.id)))
+    setClientesEnZona((all ?? []).filter((c: any) => c.zona_id === zona.id))
+    setClienteSearch('')
     setDialogOpen(true)
   }
 
@@ -218,20 +235,45 @@ export default function ZonasPage() {
         dias_visita: diasVisita,
       }
 
+      let zonaId: string | null = editingZona?.id ?? null
       if (editingZona) {
         const { error } = await (supabase.from('zonas') as any)
           .update(payload)
           .eq('id', editingZona.id)
         if (error) throw error
-        toast.success('Zona actualizada', { description: `${data.nombre} se guardó correctamente.` })
       } else {
-        const { error } = await (supabase.from('zonas') as any).insert(payload)
-        if (error) throw error
-        toast.success('Zona creada', { description: `${data.nombre} se registró correctamente.` })
+        const { data: nueva, error } = await (supabase.from('zonas') as any).insert(payload).select('id').single()
+        if (error || !nueva) throw error ?? new Error('No se pudo crear la zona')
+        zonaId = nueva.id
       }
+
+      // Sincronizar clientes asignados ↔ desasignados
+      if (zonaId) {
+        const yaAsignados = new Set(todosClientes.filter((c: any) => c.zona_id === zonaId).map((c: any) => c.id))
+        const aAsignar: string[] = []
+        const aQuitar: string[] = []
+        todosClientes.forEach((c: any) => {
+          const debeEstar = clientesAsignados.has(c.id)
+          const estaba = yaAsignados.has(c.id)
+          if (debeEstar && !estaba) aAsignar.push(c.id)
+          else if (!debeEstar && estaba) aQuitar.push(c.id)
+        })
+        if (aAsignar.length > 0) {
+          await (supabase.from('clientes') as any).update({ zona_id: zonaId }).in('id', aAsignar)
+        }
+        if (aQuitar.length > 0) {
+          await (supabase.from('clientes') as any).update({ zona_id: null }).in('id', aQuitar)
+        }
+      }
+
+      const accion = editingZona ? 'actualizada' : 'creada'
+      toast.success(`Zona ${accion}`, {
+        description: `${data.nombre} · ${clientesAsignados.size} ${clientesAsignados.size === 1 ? 'cliente asignado' : 'clientes asignados'}`,
+      })
 
       setDialogOpen(false)
       loadZonas()
+      loadClientesPorZona()
     } catch (err: any) {
       toast.error('No se pudo guardar', { description: err?.message ?? 'Intenta nuevamente.' })
     } finally {
@@ -445,66 +487,158 @@ export default function ZonasPage() {
               </p>
             </div>
 
-            {/* Cobertura geográfica */}
+            {/* Clientes asignados a la zona */}
             <div className="border-t border-gray-100 pt-3">
-              <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center justify-between mb-2 gap-2 flex-wrap">
                 <div>
                   <Label className="flex items-center gap-1.5">
-                    <MapPin className="w-4 h-4 text-gray-500" />
-                    Cobertura geográfica
+                    <Users className="w-4 h-4 text-gray-500" />
+                    Clientes asignados
                   </Label>
-                  <p className="text-[11px] text-gray-400">Haz clic en el mapa para fijar el centro. Ajusta el radio para cubrir la zona.</p>
-                </div>
-                {centro && (
-                  <button type="button" onClick={() => setCentro(null)} className="text-xs text-red-600 hover:underline">Quitar</button>
-                )}
-              </div>
-
-              <div className="grid grid-cols-3 gap-2 mb-2">
-                <div className="col-span-2">
-                  <Label className="text-[11px] text-gray-500">Radio: {radioKm.toFixed(1)} km</Label>
-                  <input
-                    type="range"
-                    min={0.2}
-                    max={10}
-                    step={0.1}
-                    value={radioKm}
-                    onChange={(e) => setRadioKm(Number(e.target.value))}
-                    className="w-full accent-yellow-400 mt-1"
-                  />
-                  <input type="hidden" {...register('radio_km')} value={radioKm} />
-                </div>
-                <div className="text-center bg-blue-50 rounded-lg p-2">
-                  <p className="text-[10px] text-blue-700 font-semibold uppercase">Clientes dentro</p>
-                  <p className="text-lg font-bold text-blue-900">
-                    {centro ? contarClientesDentro(centro, radioKm, clientesEnZona) : '—'}
+                  <p className="text-[11px] text-gray-400">
+                    Marca los clientes que pertenecen a esta zona. Un cliente solo puede estar en una zona principal a la vez.
                   </p>
                 </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-semibold text-green-700 bg-green-50 border border-green-200 rounded-full px-3 py-1">
+                    {clientesAsignados.size} de {todosClientes.length}
+                  </span>
+                </div>
               </div>
 
-              <LeafletMap
-                height="280px"
-                pickable
-                pickedPosition={centro}
-                onPick={(lat, lng) => setCentro([lat, lng])}
-                fitBounds={!!centro}
-                markers={[
-                  ...(centro ? [{ id: 'centro', lat: centro[0], lng: centro[1], label: 'Centro', color: colorHex, initials: '⊕' } as MapMarker] : []),
-                  ...clientesEnZona
-                    .filter((c) => c.latitud != null && c.longitud != null)
-                    .map((c) => ({
-                      id: c.id, lat: Number(c.latitud), lng: Number(c.longitud),
-                      label: c.razon_social,
-                      color: centro && distanciaKmSimple(centro, [Number(c.latitud), Number(c.longitud)]) <= radioKm ? '#16a34a' : '#9ca3af',
-                    } as MapMarker)),
-                ]}
-                polylines={centro ? [{
-                  id: 'radio',
-                  positions: generarCirculo(centro, radioKm),
-                  color: colorHex,
-                  dashed: true,
-                }] : []}
-              />
+              <div className="relative">
+                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
+                <Input
+                  value={clienteSearch}
+                  onChange={(e) => setClienteSearch(e.target.value)}
+                  placeholder="Buscar cliente por nombre, RUC o DNI..."
+                  className="pl-8 h-8 text-xs"
+                />
+              </div>
+
+              <div className="flex items-center gap-2 mt-2 mb-2 text-[11px]">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const q = clienteSearch.toLowerCase().trim()
+                    const visibles = todosClientes
+                      .filter((c: any) => {
+                        if (!q) return true
+                        return c.razon_social.toLowerCase().includes(q) ||
+                          (c.ruc ?? '').toLowerCase().includes(q) ||
+                          (c.dni ?? '').toLowerCase().includes(q)
+                      })
+                      .map((c: any) => c.id)
+                    setClientesAsignados((prev) => {
+                      const next = new Set(prev)
+                      visibles.forEach((id) => next.add(id))
+                      return next
+                    })
+                  }}
+                  className="text-blue-600 hover:underline"
+                >
+                  Seleccionar visibles
+                </button>
+                <span className="text-gray-300">·</span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const q = clienteSearch.toLowerCase().trim()
+                    const visibles = todosClientes
+                      .filter((c: any) => {
+                        if (!q) return true
+                        return c.razon_social.toLowerCase().includes(q) ||
+                          (c.ruc ?? '').toLowerCase().includes(q) ||
+                          (c.dni ?? '').toLowerCase().includes(q)
+                      })
+                      .map((c: any) => c.id)
+                    setClientesAsignados((prev) => {
+                      const next = new Set(prev)
+                      visibles.forEach((id) => next.delete(id))
+                      return next
+                    })
+                  }}
+                  className="text-gray-500 hover:underline"
+                >
+                  Limpiar visibles
+                </button>
+              </div>
+
+              <div className="border border-gray-200 rounded-lg max-h-72 overflow-y-auto divide-y divide-gray-100">
+                {(() => {
+                  const q = clienteSearch.toLowerCase().trim()
+                  const filtrados = todosClientes.filter((c: any) => {
+                    if (!q) return true
+                    return c.razon_social.toLowerCase().includes(q) ||
+                      (c.ruc ?? '').toLowerCase().includes(q) ||
+                      (c.dni ?? '').toLowerCase().includes(q)
+                  })
+                  if (filtrados.length === 0) {
+                    return <div className="p-4 text-center text-xs text-gray-400 italic">Sin clientes</div>
+                  }
+                  // Asignados primero
+                  filtrados.sort((a: any, b: any) => {
+                    const aSel = clientesAsignados.has(a.id) ? 0 : 1
+                    const bSel = clientesAsignados.has(b.id) ? 0 : 1
+                    if (aSel !== bSel) return aSel - bSel
+                    return a.razon_social.localeCompare(b.razon_social)
+                  })
+                  return filtrados.slice(0, 200).map((c: any) => {
+                    const seleccionado = clientesAsignados.has(c.id)
+                    const enOtraZona = c.zona_id && c.zona_id !== editingZona?.id
+                    return (
+                      <label
+                        key={c.id}
+                        className={`flex items-start gap-2 px-3 py-2 cursor-pointer ${seleccionado ? 'bg-green-50/50' : 'hover:bg-gray-50/50'}`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={seleccionado}
+                          onChange={() => {
+                            setClientesAsignados((prev) => {
+                              const next = new Set(prev)
+                              if (next.has(c.id)) next.delete(c.id); else next.add(c.id)
+                              return next
+                            })
+                          }}
+                          className="mt-1 accent-green-600"
+                        />
+                        <div className="min-w-0 flex-1">
+                          <p className="text-xs font-medium text-gray-900 truncate">
+                            {c.razon_social}
+                            {enOtraZona && !seleccionado && (
+                              <span className="ml-2 text-[10px] text-amber-700 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5">
+                                Ya está en otra zona
+                              </span>
+                            )}
+                          </p>
+                          <p className="text-[10px] text-gray-500 font-mono">
+                            {c.ruc ? `RUC ${c.ruc}` : c.dni ? `DNI ${c.dni}` : 'Sin doc.'}
+                            {c.direccion && <span className="ml-2 text-gray-400">{c.direccion}</span>}
+                          </p>
+                        </div>
+                      </label>
+                    )
+                  })
+                })()}
+                {(() => {
+                  const q = clienteSearch.toLowerCase().trim()
+                  const totalFiltrados = todosClientes.filter((c: any) => {
+                    if (!q) return true
+                    return c.razon_social.toLowerCase().includes(q) ||
+                      (c.ruc ?? '').toLowerCase().includes(q) ||
+                      (c.dni ?? '').toLowerCase().includes(q)
+                  }).length
+                  if (totalFiltrados > 200) {
+                    return (
+                      <div className="px-3 py-2 text-[10px] text-gray-400 text-center bg-gray-50">
+                        Mostrando 200 de {totalFiltrados}. Refina la búsqueda.
+                      </div>
+                    )
+                  }
+                  return null
+                })()}
+              </div>
             </div>
 
             {/* Días de visita */}
@@ -571,7 +705,7 @@ export default function ZonasPage() {
       </Dialog>
 
       {/* Dialog Detalle */}
-      <Dialog open={detailOpen} onOpenChange={setDetailOpen}>
+      <Dialog open={detailOpen} onOpenChange={(o) => { setDetailOpen(o); if (!o) setMapFlyTo(null) }}>
         <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Detalle de la Zona</DialogTitle>
@@ -645,12 +779,24 @@ export default function ZonasPage() {
                 ]
 
                 return (
-                  <div className="h-72 border border-gray-200 rounded-lg overflow-hidden">
+                  <div className="h-80 border border-gray-200 rounded-lg overflow-hidden relative">
                     <LeafletMap
                       center={centroAuto}
                       zoom={13}
                       markers={markers}
+                      flyTo={mapFlyTo}
                     />
+                    {/* Leyenda */}
+                    <div className="absolute bottom-2 left-2 bg-white/95 border border-gray-200 rounded shadow-sm px-2 py-1 text-[10px] z-[1000]">
+                      <div className="flex items-center gap-1 mb-0.5">
+                        <span className="w-2 h-2 rounded-full" style={{ background: selected.color_hex ?? '#2563eb' }} />
+                        <span>Dirección principal</span>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <span className="w-2 h-2 rounded-full bg-gray-400" />
+                        <span>Sucursal/extra</span>
+                      </div>
+                    </div>
                   </div>
                 )
               })()}
@@ -669,11 +815,29 @@ export default function ZonasPage() {
                     {detailClientes.map((c: any) => {
                       const diasEfectivos = (c.dias_visita && c.dias_visita.length > 0) ? c.dias_visita : (selected.dias_visita ?? [])
                       const heredado = !c.dias_visita || c.dias_visita.length === 0
+                      const tieneCoords = c.latitud != null && c.longitud != null
+                      const tieneCoordExtra = (c.direcciones_extra ?? []).some((d: any) => d.latitud != null && d.longitud != null)
+                      const clickeable = tieneCoords || tieneCoordExtra
                       return (
-                        <div key={c.id} className="p-3 hover:bg-gray-50/50">
+                        <div
+                          key={c.id}
+                          className={`p-3 transition-colors ${clickeable ? 'hover:bg-blue-50 cursor-pointer' : 'hover:bg-gray-50/50'}`}
+                          onClick={() => {
+                            if (tieneCoords) {
+                              setMapFlyTo({ lat: Number(c.latitud), lng: Number(c.longitud), zoom: 17, key: Date.now() })
+                            } else if (tieneCoordExtra) {
+                              const d = (c.direcciones_extra ?? []).find((d: any) => d.latitud != null && d.longitud != null)
+                              if (d) setMapFlyTo({ lat: Number(d.latitud), lng: Number(d.longitud), zoom: 17, key: Date.now() })
+                            }
+                          }}
+                          title={clickeable ? 'Click para centrar en el mapa' : 'Sin coordenadas registradas'}
+                        >
                           <div className="flex items-start justify-between gap-2">
                             <div className="min-w-0 flex-1">
-                              <p className="font-medium text-gray-900 text-sm truncate">{c.razon_social}</p>
+                              <p className="font-medium text-gray-900 text-sm truncate flex items-center gap-1.5">
+                                {clickeable && <span className="text-blue-500 text-xs">📍</span>}
+                                {c.razon_social}
+                              </p>
                               <p className="text-[11px] text-gray-500 font-mono">
                                 {c.ruc ? `RUC ${c.ruc}` : c.dni ? `DNI ${c.dni}` : 'Sin doc.'}
                               </p>
@@ -684,10 +848,20 @@ export default function ZonasPage() {
                                 </p>
                               )}
                               {(c.direcciones_extra ?? []).map((d: any) => (
-                                <p key={d.nombre} className="text-xs text-gray-500 mt-0.5 flex items-start gap-1 ml-4">
+                                <button
+                                  key={d.nombre}
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    if (d.latitud != null && d.longitud != null) {
+                                      setMapFlyTo({ lat: Number(d.latitud), lng: Number(d.longitud), zoom: 17, key: Date.now() })
+                                    }
+                                  }}
+                                  className="text-xs text-gray-500 mt-0.5 flex items-start gap-1 ml-4 text-left hover:text-blue-700"
+                                >
                                   <span className="text-[10px] text-gray-400">↳</span>
                                   <span><span className="font-medium">{d.nombre}:</span> {d.direccion}</span>
-                                </p>
+                                </button>
                               ))}
                             </div>
                             <div className="flex flex-col items-end gap-1 shrink-0">
@@ -697,6 +871,7 @@ export default function ZonasPage() {
                                 📅 {labelDias(diasEfectivos)}
                               </span>
                               {!heredado && <span className="text-[10px] text-amber-600">Personalizados</span>}
+                              {!clickeable && <span className="text-[9px] text-gray-400 italic">sin GPS</span>}
                             </div>
                           </div>
                         </div>
