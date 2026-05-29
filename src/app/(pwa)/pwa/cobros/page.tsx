@@ -106,10 +106,11 @@ export default function CobrosPage() {
       if (!user) return
       setUserId(user.id)
 
+      // Para cobranzas: cargar TODOS los clientes activos (no solo los del vendedor),
+      // porque el vendedor también cumple rol de cobrador para cualquier cliente.
       const { data: clientesData } = await supabase
         .from('clientes')
         .select('*')
-        .eq('vendedor_id', user.id)
         .eq('estado', 'activo')
         .order('razon_social')
 
