@@ -189,7 +189,7 @@ export default function ClientesPage() {
 
   const loadMeta = useCallback(async () => {
     const [{ data: z }, { data: l }, { data: v }, { data: tc }] = await Promise.all([
-      supabase.from('zonas').select('id, nombre').eq('activo', true).order('nombre'),
+      supabase.from('zonas').select('id, nombre, dias_visita').eq('activo', true).order('nombre'),
       supabase.from('listas_precio').select('id, nombre').order('nombre'),
       supabase.from('profiles').select('id, full_name').eq('role', 'vendedor').order('full_name'),
       (supabase as any).from('tipos_cliente').select('id, nombre').eq('activo', true).order('nombre'),
@@ -915,13 +915,25 @@ export default function ClientesPage() {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <Label>Zona</Label>
-                <Select value={zonaId} onValueChange={setZonaId}>
+                <Select value={zonaId} onValueChange={(v) => {
+                  setZonaId(v)
+                  // Si el cliente NO tiene días propios, autocompletar con los de la zona
+                  if (diasVisita.length === 0) {
+                    const z = zonas.find((zz) => zz.id === v)
+                    if (z?.dias_visita?.length) setDiasVisita(z.dias_visita)
+                  }
+                }}>
                   <SelectTrigger className="mt-1">
                     <SelectValue placeholder="Seleccionar zona..." />
                   </SelectTrigger>
                   <SelectContent>
                     {zonas.map((z) => (
-                      <SelectItem key={z.id} value={z.id}>{z.nombre}</SelectItem>
+                      <SelectItem key={z.id} value={z.id}>
+                        {z.nombre}
+                        {z.dias_visita?.length > 0 && (
+                          <span className="ml-2 text-[10px] text-gray-400">· {labelDias(z.dias_visita)}</span>
+                        )}
+                      </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
@@ -941,13 +953,33 @@ export default function ClientesPage() {
               </div>
             </div>
 
-            <div className="border-t border-gray-100 pt-3">
-              <Label>Días de visita programados</Label>
-              <p className="text-[11px] text-gray-400 mb-2">
-                Días en que el vendedor debe visitar este cliente. Se usa en la app móvil para filtrar la agenda diaria.
-              </p>
-              <DiasVisitaSelector value={diasVisita} onChange={setDiasVisita} />
-            </div>
+            {(() => {
+              const zonaSel = zonas.find((zz) => zz.id === zonaId)
+              const diasZona: string[] = zonaSel?.dias_visita ?? []
+              const heredando = diasVisita.length === 0 && diasZona.length > 0
+              const personalizados = diasVisita.length > 0 && JSON.stringify([...diasVisita].sort()) !== JSON.stringify([...diasZona].sort())
+              return (
+                <div className="border-t border-gray-100 pt-3">
+                  <div className="flex items-center justify-between mb-1">
+                    <Label>Días de visita</Label>
+                    {heredando && (
+                      <span className="text-[11px] text-blue-700 bg-blue-50 border border-blue-200 px-2 py-0.5 rounded">
+                        📅 Heredados de la zona ({labelDias(diasZona)})
+                      </span>
+                    )}
+                    {personalizados && (
+                      <button type="button" onClick={() => setDiasVisita([])} className="text-[11px] text-blue-600 hover:underline">
+                        Restaurar de zona
+                      </button>
+                    )}
+                  </div>
+                  <p className="text-[11px] text-gray-400 mb-2">
+                    Si no eliges nada, el cliente hereda los días de su zona. Selecciona para personalizar.
+                  </p>
+                  <DiasVisitaSelector value={diasVisita.length > 0 ? diasVisita : diasZona} onChange={setDiasVisita} />
+                </div>
+              )
+            })()}
 
             <div>
               <Label className="text-xs font-semibold text-gray-700">Ubicación administrativa</Label>

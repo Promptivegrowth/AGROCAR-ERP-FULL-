@@ -22,6 +22,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Switch } from '@/components/ui/switch'
 import UbigeoSelector, { UBIGEO_EMPTY, type UbigeoValue } from '@/components/ubigeo-selector'
 import LeafletMap, { type MapMarker, type MapPolyline } from '@/components/maps/leaflet-map'
+import { DIAS, ATAJOS_DIAS, labelDias, type DiaSemana } from '@/lib/dias-visita'
 
 const zonaSchema = z.object({
   nombre: z.string().min(2, 'Mínimo 2 caracteres'),
@@ -53,6 +54,9 @@ export default function ZonasPage() {
   const [radioKm, setRadioKm] = useState<number>(1.5)
   const [colorHex, setColorHex] = useState<string>('#2563eb')
   const [clientesEnZona, setClientesEnZona] = useState<any[]>([])
+  const [diasVisita, setDiasVisita] = useState<DiaSemana[]>([])
+  const [detailClientes, setDetailClientes] = useState<any[]>([])
+  const [detailLoading, setDetailLoading] = useState(false)
 
   // Cantidad de clientes por zona
   const [clientesPorZona, setClientesPorZona] = useState<Record<string, number>>({})
@@ -66,7 +70,7 @@ export default function ZonasPage() {
     setLoading(true)
     let query = supabase
       .from('zonas')
-      .select('id, nombre, descripcion, referencias, activo, created_at, ubigeo, departamento, provincia, distrito, centro_lat, centro_lng, radio_km, color_hex', { count: 'exact' })
+      .select('id, nombre, descripcion, referencias, activo, created_at, ubigeo, departamento, provincia, distrito, centro_lat, centro_lng, radio_km, color_hex, dias_visita', { count: 'exact' })
       .order('nombre')
 
     if (debouncedSearch) query = query.ilike('nombre', `%${debouncedSearch}%`)
@@ -103,6 +107,7 @@ export default function ZonasPage() {
     setRadioKm(1.5)
     setColorHex('#2563eb')
     setClientesEnZona([])
+    setDiasVisita(['lun', 'mar', 'mie', 'jue', 'vie'])
     reset({ activo: true, nombre: '', descripcion: '', referencias: '', radio_km: 1.5, color_hex: '#2563eb' })
     setDialogOpen(true)
   }
@@ -122,6 +127,7 @@ export default function ZonasPage() {
     setCentro(zona.centro_lat != null && zona.centro_lng != null ? [Number(zona.centro_lat), Number(zona.centro_lng)] : null)
     setRadioKm(Number(zona.radio_km ?? 1.5))
     setColorHex(zona.color_hex ?? '#2563eb')
+    setDiasVisita((zona.dias_visita ?? []) as DiaSemana[])
     reset({
       nombre: zona.nombre,
       descripcion: zona.descripcion ?? '',
@@ -140,7 +146,39 @@ export default function ZonasPage() {
     setDialogOpen(true)
   }
 
-  const openDetail = (z: any) => { setSelected(z); setDetailOpen(true) }
+  const openDetail = async (z: any) => {
+    setSelected(z)
+    setDetailOpen(true)
+    setDetailLoading(true)
+    setDetailClientes([])
+    // Traer clientes con sus direcciones (las extra de cliente_direcciones + la principal)
+    const { data: cs } = await (supabase as any)
+      .from('clientes')
+      .select('id, razon_social, ruc, dni, telefono, direccion, latitud, longitud, dias_visita, estado')
+      .eq('zona_id', z.id)
+      .eq('estado', 'activo')
+      .order('razon_social')
+    // Traer direcciones extra de los clientes
+    const ids = (cs ?? []).map((c: any) => c.id)
+    let direccionesMap: Record<string, any[]> = {}
+    if (ids.length > 0) {
+      const { data: dirs } = await (supabase as any)
+        .from('cliente_direcciones')
+        .select('cliente_id, nombre, direccion, latitud, longitud, es_principal')
+        .in('cliente_id', ids)
+        .eq('activo', true)
+      ;(dirs ?? []).forEach((d: any) => {
+        if (!direccionesMap[d.cliente_id]) direccionesMap[d.cliente_id] = []
+        direccionesMap[d.cliente_id].push(d)
+      })
+    }
+    const enriquecidos = (cs ?? []).map((c: any) => ({
+      ...c,
+      direcciones_extra: direccionesMap[c.id] ?? [],
+    }))
+    setDetailClientes(enriquecidos)
+    setDetailLoading(false)
+  }
 
   const onSubmit = async (data: ZonaFormData) => {
     setSaving(true)
@@ -158,6 +196,7 @@ export default function ZonasPage() {
         centro_lng: centro ? centro[1] : null,
         radio_km: data.radio_km ?? null,
         color_hex: colorHex,
+        dias_visita: diasVisita,
       }
 
       if (editingZona) {
@@ -279,7 +318,7 @@ export default function ZonasPage() {
                 <table className="w-full text-sm">
                   <thead className="border-b border-gray-100 bg-gray-50/50">
                     <tr>
-                      {['Zona', 'Descripción', 'Clientes', 'Creada', 'Estado', 'Acciones'].map((h) => (
+                      {['Zona', 'Días de Visita', 'Clientes', 'Estado', 'Acciones'].map((h) => (
                         <th key={h} className="text-left py-3 px-4 text-xs font-semibold text-gray-500 uppercase tracking-wide">{h}</th>
                       ))}
                     </tr>
@@ -295,9 +334,12 @@ export default function ZonasPage() {
                             </div>
                           )}
                         </td>
-                        <td className="py-3 px-4 text-gray-500 text-xs max-w-[280px] truncate">{z.descripcion ?? '—'}</td>
-                        <td className="py-3 px-4 text-gray-600">{clientesPorZona[z.id] ?? 0}</td>
-                        <td className="py-3 px-4 text-gray-500 text-xs">{z.created_at ? formatDate(z.created_at) : '—'}</td>
+                        <td className="py-3 px-4">
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium bg-blue-50 text-blue-700 border border-blue-200">
+                            📅 {labelDias(z.dias_visita)}
+                          </span>
+                        </td>
+                        <td className="py-3 px-4 text-gray-600 font-semibold">{clientesPorZona[z.id] ?? 0}</td>
                         <td className="py-3 px-4">
                           {z.activo
                             ? <Badge className="text-xs bg-green-100 text-green-700 border-green-200">Activa</Badge>
@@ -446,6 +488,53 @@ export default function ZonasPage() {
               />
             </div>
 
+            {/* Días de visita */}
+            <div>
+              <Label className="text-sm font-semibold">Días de visita default</Label>
+              <p className="text-[11px] text-gray-500 mb-2">
+                Los clientes de esta zona se visitarán estos días por defecto. Cada cliente puede personalizar si lo necesita.
+              </p>
+              <div className="flex flex-wrap gap-1.5">
+                {DIAS.map((d) => {
+                  const activo = diasVisita.includes(d.key)
+                  return (
+                    <button
+                      key={d.key}
+                      type="button"
+                      onClick={() => setDiasVisita((prev) => activo ? prev.filter((x) => x !== d.key) : [...prev, d.key])}
+                      className={`px-2.5 py-1 rounded text-xs font-medium transition-colors ${
+                        activo
+                          ? 'bg-green-600 text-white'
+                          : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                      }`}
+                      title={d.label}
+                    >
+                      {d.label.slice(0, 3)}
+                    </button>
+                  )
+                })}
+              </div>
+              <div className="flex gap-1.5 mt-2">
+                {Object.entries(ATAJOS_DIAS).map(([nombre, dias]) => (
+                  <button
+                    key={nombre}
+                    type="button"
+                    onClick={() => setDiasVisita(dias)}
+                    className="text-[11px] text-blue-600 hover:underline"
+                  >
+                    {nombre}
+                  </button>
+                ))}
+                <button
+                  type="button"
+                  onClick={() => setDiasVisita([])}
+                  className="text-[11px] text-gray-500 hover:underline ml-auto"
+                >
+                  Limpiar
+                </button>
+              </div>
+            </div>
+
             <div className="flex items-center gap-2">
               <Switch checked={activoVal} onCheckedChange={setActivoVal} />
               <Label>Zona activa</Label>
@@ -464,64 +553,144 @@ export default function ZonasPage() {
 
       {/* Dialog Detalle */}
       <Dialog open={detailOpen} onOpenChange={setDetailOpen}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Detalle de la Zona</DialogTitle>
           </DialogHeader>
           {selected && (
             <div className="space-y-4 mt-2">
+              {/* Header */}
               <div className="flex items-center gap-3 pb-4 border-b border-gray-100">
-                <div className="w-12 h-12 bg-green-50 rounded-xl flex items-center justify-center">
-                  <Map className="w-6 h-6 text-green-600" />
+                <div
+                  className="w-12 h-12 rounded-xl flex items-center justify-center text-white text-xl font-bold"
+                  style={{ background: selected.color_hex ?? '#2563eb' }}
+                >
+                  {selected.nombre?.[0] ?? 'Z'}
                 </div>
                 <div className="min-w-0 flex-1">
                   <p className="font-semibold text-gray-900 truncate">{selected.nombre}</p>
-                  <p className="text-xs text-gray-500">
-                    Creada el {selected.created_at ? formatDate(selected.created_at) : '—'}
-                  </p>
+                  <div className="flex items-center gap-2 mt-1">
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium bg-blue-50 text-blue-700 border border-blue-200">
+                      📅 {labelDias(selected.dias_visita)}
+                    </span>
+                    <span className="text-xs text-gray-500">
+                      {detailClientes.length} {detailClientes.length === 1 ? 'cliente' : 'clientes'}
+                    </span>
+                  </div>
                 </div>
                 {selected.activo
                   ? <Badge className="text-xs bg-green-100 text-green-700 border-green-200">Activa</Badge>
                   : <Badge variant="secondary" className="text-xs">Inactiva</Badge>}
               </div>
 
-              <div className="space-y-3 text-sm">
-                {(selected.distrito || selected.provincia || selected.departamento) && (
-                  <div className="flex items-start gap-3">
-                    <MapPin className="w-4 h-4 text-gray-400 mt-0.5 shrink-0" />
-                    <div>
-                      <p className="text-xs text-gray-500">Ubicación</p>
-                      <p className="text-gray-800">
-                        {[selected.distrito, selected.provincia, selected.departamento].filter(Boolean).join(' - ')}
-                      </p>
-                      {selected.ubigeo && (
-                        <p className="text-xs text-gray-400 mt-0.5">Ubigeo {selected.ubigeo}</p>
-                      )}
+              {selected.descripcion && (
+                <p className="text-sm text-gray-600 italic">{selected.descripcion}</p>
+              )}
+
+              {/* Mapa con puntos de los clientes */}
+              {(() => {
+                const markers: MapMarker[] = detailClientes
+                  .flatMap((c: any) => {
+                    const todas = [
+                      ...(c.latitud != null && c.longitud != null
+                        ? [{ lat: Number(c.latitud), lng: Number(c.longitud), label: c.razon_social, principal: true }]
+                        : []),
+                      ...(c.direcciones_extra ?? [])
+                        .filter((d: any) => d.latitud != null && d.longitud != null)
+                        .map((d: any) => ({ lat: Number(d.latitud), lng: Number(d.longitud), label: `${c.razon_social} · ${d.nombre}`, principal: false })),
+                    ]
+                    return todas
+                  })
+                  .map((p: any, i: number) => ({
+                    id: `cli-${i}`,
+                    lat: p.lat,
+                    lng: p.lng,
+                    color: p.principal ? (selected.color_hex ?? '#2563eb') : '#9ca3af',
+                    label: p.label,
+                  }))
+
+                if (markers.length === 0) {
+                  return (
+                    <div className="bg-gray-50 border border-gray-200 rounded-lg px-3 py-6 text-center text-sm text-gray-500">
+                      Ningún cliente con dirección georreferenciada en esta zona.
                     </div>
+                  )
+                }
+
+                // Calcular centro y zoom basados en los markers
+                const lats = markers.map((m) => m.lat)
+                const lngs = markers.map((m) => m.lng)
+                const centroAuto: [number, number] = [
+                  (Math.min(...lats) + Math.max(...lats)) / 2,
+                  (Math.min(...lngs) + Math.max(...lngs)) / 2,
+                ]
+
+                return (
+                  <div className="h-72 border border-gray-200 rounded-lg overflow-hidden">
+                    <LeafletMap
+                      center={centroAuto}
+                      zoom={13}
+                      markers={markers}
+                    />
+                  </div>
+                )
+              })()}
+
+              {/* Lista de clientes */}
+              <div>
+                <h4 className="text-sm font-semibold text-gray-700 mb-2">Clientes de la zona</h4>
+                {detailLoading ? (
+                  <div className="flex justify-center py-6">
+                    <Loader2 className="w-5 h-5 animate-spin text-gray-400" />
+                  </div>
+                ) : detailClientes.length === 0 ? (
+                  <p className="text-sm text-gray-500 italic py-3">No hay clientes asignados a esta zona aún.</p>
+                ) : (
+                  <div className="border border-gray-200 rounded-lg divide-y divide-gray-100 max-h-72 overflow-y-auto">
+                    {detailClientes.map((c: any) => {
+                      const diasEfectivos = (c.dias_visita && c.dias_visita.length > 0) ? c.dias_visita : (selected.dias_visita ?? [])
+                      const heredado = !c.dias_visita || c.dias_visita.length === 0
+                      return (
+                        <div key={c.id} className="p-3 hover:bg-gray-50/50">
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="min-w-0 flex-1">
+                              <p className="font-medium text-gray-900 text-sm truncate">{c.razon_social}</p>
+                              <p className="text-[11px] text-gray-500 font-mono">
+                                {c.ruc ? `RUC ${c.ruc}` : c.dni ? `DNI ${c.dni}` : 'Sin doc.'}
+                              </p>
+                              {c.direccion && (
+                                <p className="text-xs text-gray-600 mt-1 flex items-start gap-1">
+                                  <MapPin className="w-3 h-3 text-gray-400 mt-0.5 shrink-0" />
+                                  <span>{c.direccion}</span>
+                                </p>
+                              )}
+                              {(c.direcciones_extra ?? []).map((d: any) => (
+                                <p key={d.nombre} className="text-xs text-gray-500 mt-0.5 flex items-start gap-1 ml-4">
+                                  <span className="text-[10px] text-gray-400">↳</span>
+                                  <span><span className="font-medium">{d.nombre}:</span> {d.direccion}</span>
+                                </p>
+                              ))}
+                            </div>
+                            <div className="flex flex-col items-end gap-1 shrink-0">
+                              <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium ${
+                                heredado ? 'bg-blue-50 text-blue-700 border border-blue-200' : 'bg-amber-50 text-amber-700 border border-amber-200'
+                              }`} title={heredado ? 'Heredados de la zona' : 'Días personalizados del cliente'}>
+                                📅 {labelDias(diasEfectivos)}
+                              </span>
+                              {!heredado && <span className="text-[10px] text-amber-600">Personalizados</span>}
+                            </div>
+                          </div>
+                        </div>
+                      )
+                    })}
                   </div>
                 )}
-                {selected.descripcion && (
-                  <div className="flex items-start gap-3">
-                    <MapPin className="w-4 h-4 text-gray-400 mt-0.5 shrink-0" />
-                    <div>
-                      <p className="text-xs text-gray-500">Descripción</p>
-                      <p className="text-gray-800">{selected.descripcion}</p>
-                    </div>
-                  </div>
-                )}
-                <div className="flex items-start gap-3">
-                  <Users className="w-4 h-4 text-gray-400 mt-0.5 shrink-0" />
-                  <div>
-                    <p className="text-xs text-gray-500">Clientes activos</p>
-                    <p className="text-gray-800 font-medium">{clientesPorZona[selected.id] ?? 0}</p>
-                  </div>
-                </div>
               </div>
 
               <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-3 pt-3 border-t border-gray-100">
                 <Button variant="outline" onClick={() => setDetailOpen(false)}>Cerrar</Button>
                 <Button onClick={() => { setDetailOpen(false); openEdit(selected) }} className="bg-[#FBE600] hover:bg-[#E5D100] text-black font-semibold gap-2">
-                  <Edit className="w-4 h-4" /> Editar
+                  <Edit className="w-4 h-4" /> Editar zona
                 </Button>
               </div>
             </div>

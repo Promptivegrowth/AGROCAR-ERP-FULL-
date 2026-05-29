@@ -2,10 +2,11 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { ShoppingCart, Users, DollarSign, MapPin, User } from 'lucide-react'
+import { ShoppingCart, Users, DollarSign, MapPin, User, Map } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 const navItems = [
+  { href: '/pwa/mi-zona', label: 'Mi Zona', icon: Map },
   { href: '/pwa/pedidos', label: 'Pedidos', icon: ShoppingCart },
   { href: '/pwa/clientes', label: 'Clientes', icon: Users },
   { href: '/pwa/cobros', label: 'Cobros', icon: DollarSign },
