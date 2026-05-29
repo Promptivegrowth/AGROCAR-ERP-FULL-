@@ -82,6 +82,7 @@ export default function CobrosPage() {
   } | null>(null)
   const [voucherFile, setVoucherFile] = useState<File | null>(null)
   const [voucherPreview, setVoucherPreview] = useState<string | null>(null)
+  const [nroOperacion, setNroOperacion] = useState('')
   const [notas, setNotas] = useState('')
   const [loadingEnvio, setLoadingEnvio] = useState(false)
   const [mensajeExito, setMensajeExito] = useState<string | null>(null)
@@ -234,6 +235,13 @@ export default function CobrosPage() {
 
   async function registrarCobro() {
     if (!clienteSeleccionado || totalCobro <= 0 || !userId) return
+    const yapePlinTrans = montos.yape + montos.plin + montos.transferencia
+    if (yapePlinTrans > 0 && !nroOperacion.trim()) {
+      const msg = 'Yape, Plin y Transferencia requieren el código de operación para conciliación bancaria.'
+      setMensajeError(msg)
+      toast.error('Nro. de operación requerido', { description: msg })
+      return
+    }
     setLoadingEnvio(true)
     setMensajeError(null)
     setMensajeExito(null)
@@ -254,7 +262,7 @@ export default function CobrosPage() {
         }
       }
 
-      const { data: cobroData, error: cobroError } = await supabase
+      const { data: cobroData, error: cobroError } = await (supabase as any)
         .from('cobros')
         .insert({
           cliente_id: clienteSeleccionado.id,
@@ -266,6 +274,7 @@ export default function CobrosPage() {
           transferencia: montos.transferencia,
           total: totalCobro,
           voucher_url: voucherUrl,
+          nro_operacion: nroOperacion.trim() || null,
           notas: notas || null,
           fecha: new Date().toISOString().split('T')[0],
         })
@@ -313,6 +322,7 @@ export default function CobrosPage() {
       setClienteSearch('')
       setMontos({ efectivo: 0, yape: 0, plin: 0, transferencia: 0 })
       setMontosStr({ efectivo: '', yape: '', plin: '', transferencia: '' })
+      setNroOperacion('')
       setNotas('')
       setVoucherFile(null)
       setVoucherPreview(null)
@@ -628,10 +638,34 @@ export default function CobrosPage() {
               </CardContent>
             </Card>
 
+            {/* Nro. operación — solo si pagó con método digital */}
+            {(montos.yape + montos.plin + montos.transferencia) > 0 && (
+              <Card className="border-0 shadow-sm border-l-4 border-l-amber-400">
+                <CardContent className="p-4">
+                  <h3 className="font-semibold text-gray-800 mb-1">
+                    3. Nro. de operación <span className="text-red-500">*</span>
+                  </h3>
+                  <p className="text-xs text-gray-500 mb-3">
+                    Código de la transacción Yape / Plin / Transferencia. Necesario para conciliar con el banco.
+                  </p>
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    placeholder="Ej. 0123456789"
+                    value={nroOperacion}
+                    onChange={(e) => setNroOperacion(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm font-mono focus:outline-none focus:border-[#FBE600]"
+                  />
+                </CardContent>
+              </Card>
+            )}
+
             {/* Foto de voucher */}
             <Card className="border-0 shadow-sm">
               <CardContent className="p-4">
-                <h3 className="font-semibold text-gray-800 mb-3">3. Foto de Voucher (opcional)</h3>
+                <h3 className="font-semibold text-gray-800 mb-3">
+                  {(montos.yape + montos.plin + montos.transferencia) > 0 ? '4' : '3'}. Foto de Voucher (opcional)
+                </h3>
                 {voucherPreview ? (
                   <div className="relative bg-gray-100 rounded-xl overflow-hidden">
                     <img

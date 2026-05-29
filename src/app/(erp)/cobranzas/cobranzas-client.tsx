@@ -5,10 +5,12 @@ import { useRouter } from 'next/navigation'
 import {
   Search, Loader2, CreditCard, DollarSign, AlertTriangle, Users, CheckCircle2,
   Landmark, Eye, Phone, FileText, Banknote, Smartphone, Building2, StickyNote,
+  Send, MessageCircle,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { createClient } from '@/lib/supabase/client'
 import { formatCurrency, formatDate } from '@/lib/utils'
+import { linkEnviarBoletaPago, esTelefonoPeruanoValido } from '@/lib/whatsapp'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
@@ -73,6 +75,15 @@ export default function CobranzasClient({
   const [selected, setSelected] = useState<ClienteSaldo | null>(null)
   const [saving, setSaving] = useState(false)
 
+  // Último cobro registrado — para el dialog "Enviar por WhatsApp"
+  const [enviarOpen, setEnviarOpen] = useState(false)
+  const [ultimoCobro, setUltimoCobro] = useState<{
+    id: string
+    total: number
+    cliente: string
+    telefono: string | null
+  } | null>(null)
+
   // Form de pago
   const [pago, setPago] = useState({
     fecha: new Date().toISOString().split('T')[0],
@@ -80,6 +91,7 @@ export default function CobranzasClient({
     yape: '',
     plin: '',
     transferencia: '',
+    nro_operacion: '',
     notas: '',
   })
 
@@ -110,6 +122,7 @@ export default function CobranzasClient({
       yape: '',
       plin: '',
       transferencia: '',
+      nro_operacion: '',
       notas: '',
     })
     setPagoOpen(true)
@@ -129,9 +142,16 @@ export default function CobranzasClient({
       toast.error('Monto inválido', { description: 'Ingresa al menos un método de pago.' })
       return
     }
+    const yapePlinTrans = (parseFloat(pago.yape) || 0) + (parseFloat(pago.plin) || 0) + (parseFloat(pago.transferencia) || 0)
+    if (yapePlinTrans > 0 && !pago.nro_operacion.trim()) {
+      toast.error('Nro. de operación requerido', {
+        description: 'Yape, Plin y Transferencia requieren el código de operación para conciliación.',
+      })
+      return
+    }
     setSaving(true)
     const { data: { user } } = await supabase.auth.getUser()
-    const { error } = await supabase.from('cobros').insert({
+    const { data: cobroData, error } = await (supabase as any).from('cobros').insert({
       cliente_id: selected.id,
       cobrador_id: user?.id ?? null,
       tipo: 'cobranza' as const,
@@ -141,18 +161,26 @@ export default function CobranzasClient({
       plin: parseFloat(pago.plin) || 0,
       transferencia: parseFloat(pago.transferencia) || 0,
       total: totalPago,
+      nro_operacion: pago.nro_operacion.trim() || null,
       notas: pago.notas || null,
-    })
+    }).select('id').single()
     setSaving(false)
-    if (error) {
-      toast.error('Error al registrar pago', { description: error.message })
+    if (error || !cobroData) {
+      toast.error('Error al registrar pago', { description: error?.message ?? 'No se pudo registrar el cobro' })
       return
     }
     toast.success('Pago registrado', {
       description: `${formatCurrency(totalPago)} aplicados a ${selected.razon_social}`,
     })
+    // Cierra el form, pero NO el detalle — abrimos dialog de envío
     setPagoOpen(false)
-    setDetailOpen(false)
+    setUltimoCobro({
+      id: cobroData.id,
+      total: totalPago,
+      cliente: selected.razon_social,
+      telefono: selected.telefono,
+    })
+    setEnviarOpen(true)
     router.refresh()
   }
 
@@ -559,7 +587,7 @@ export default function CobranzasClient({
 
       {/* Dialog Registrar Pago */}
       <Dialog open={pagoOpen} onOpenChange={setPagoOpen}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-md max-h-[92vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Registrar Pago</DialogTitle>
           </DialogHeader>
@@ -633,6 +661,22 @@ export default function CobranzasClient({
                 </div>
               </div>
 
+              {((parseFloat(pago.yape) || 0) + (parseFloat(pago.plin) || 0) + (parseFloat(pago.transferencia) || 0)) > 0 && (
+                <div>
+                  <Label className="flex items-center gap-1">
+                    Nro. de operación
+                    <span className="text-red-500">*</span>
+                    <span className="text-[10px] text-gray-400 font-normal">(para conciliación bancaria)</span>
+                  </Label>
+                  <Input
+                    placeholder="Ej. 0123456789 — código mostrado en el voucher"
+                    value={pago.nro_operacion}
+                    onChange={(e) => setPago((p) => ({ ...p, nro_operacion: e.target.value }))}
+                    className="mt-1 font-mono"
+                  />
+                </div>
+              )}
+
               <div className="flex items-center justify-between p-3 rounded-lg bg-yellow-50 border border-yellow-200">
                 <span className="text-sm font-medium text-gray-800">Total del pago</span>
                 <span className="text-lg font-bold text-gray-900">{formatCurrency(totalPago)}</span>
@@ -661,6 +705,100 @@ export default function CobranzasClient({
               </div>
             </div>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialog: enviar comprobante por WhatsApp después de cobrar */}
+      <Dialog open={enviarOpen} onOpenChange={(o) => { setEnviarOpen(o); if (!o) setUltimoCobro(null) }}>
+        <DialogContent className="max-w-md max-h-[92vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <CheckCircle2 className="w-5 h-5 text-green-600" />
+              Pago registrado
+            </DialogTitle>
+          </DialogHeader>
+          {ultimoCobro && (() => {
+            const telOk = esTelefonoPeruanoValido(ultimoCobro.telefono)
+            const baseUrl = typeof window !== 'undefined' ? window.location.origin : ''
+            const waLink = telOk
+              ? linkEnviarBoletaPago({
+                  baseUrl,
+                  cobroId: ultimoCobro.id,
+                  clienteNombre: ultimoCobro.cliente,
+                  total: ultimoCobro.total,
+                  telefonoCliente: ultimoCobro.telefono!,
+                })
+              : null
+            return (
+              <div className="space-y-4 mt-2">
+                <div className="bg-green-50 border border-green-200 rounded-lg p-3">
+                  <p className="text-sm text-gray-700">Cliente</p>
+                  <p className="font-semibold text-gray-900">{ultimoCobro.cliente}</p>
+                  <div className="flex items-center justify-between mt-2 pt-2 border-t border-green-200">
+                    <span className="text-xs text-gray-600">Monto cobrado</span>
+                    <span className="text-lg font-bold text-green-700">{formatCurrency(ultimoCobro.total)}</span>
+                  </div>
+                </div>
+
+                {telOk && waLink ? (
+                  <>
+                    <p className="text-sm text-gray-700">
+                      Envía el comprobante interno del pago al cliente por WhatsApp.
+                    </p>
+                    <a
+                      href={waLink}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center justify-center gap-2 bg-[#25D366] hover:bg-[#1FB659] text-white font-semibold rounded-lg px-4 py-3 text-sm w-full transition-colors"
+                      onClick={() => { setEnviarOpen(false); setUltimoCobro(null); setDetailOpen(false) }}
+                    >
+                      <Send className="w-4 h-4" /> Enviar comprobante por WhatsApp
+                    </a>
+                    <a
+                      href={`/boleta/${ultimoCobro.id}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center justify-center gap-2 text-sm text-gray-700 hover:text-gray-900 border border-gray-200 rounded-lg px-4 py-2.5 w-full"
+                    >
+                      <FileText className="w-4 h-4" /> Ver comprobante interno
+                    </a>
+                  </>
+                ) : (
+                  <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 flex items-start gap-2">
+                    <MessageCircle className="w-4 h-4 text-amber-600 mt-0.5 shrink-0" />
+                    <div>
+                      <p className="text-sm font-medium text-amber-900">
+                        Cliente sin número de WhatsApp válido
+                      </p>
+                      <p className="text-xs text-amber-800 mt-1">
+                        {ultimoCobro.telefono
+                          ? `El teléfono registrado (${ultimoCobro.telefono}) no es un celular peruano de 9 dígitos.`
+                          : 'Este cliente no tiene número de celular registrado.'}
+                        Actualiza el dato en Maestros → Clientes para poder enviar por WhatsApp.
+                      </p>
+                      <a
+                        href={`/boleta/${ultimoCobro.id}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1 mt-2 text-xs text-amber-900 underline"
+                      >
+                        <FileText className="w-3 h-3" /> Ver comprobante interno
+                      </a>
+                    </div>
+                  </div>
+                )}
+
+                <div className="flex justify-end pt-2 border-t border-gray-100">
+                  <Button
+                    variant="outline"
+                    onClick={() => { setEnviarOpen(false); setUltimoCobro(null); setDetailOpen(false) }}
+                  >
+                    Cerrar
+                  </Button>
+                </div>
+              </div>
+            )
+          })()}
         </DialogContent>
       </Dialog>
     </div>
