@@ -53,7 +53,7 @@ export default function FacturacionPage() {
         .from('pedidos')
         .select(`
           id, numero, subtotal, igv, incluir_igv, total, estado, created_at, cliente_id,
-          clientes(razon_social, ruc, dni, tipo_comprobante_preferido)
+          clientes(razon_social, ruc, dni, tipo_comprobante_preferido, credito_dias)
         `)
         .eq('estado', 'enviado')
         .order('created_at', { ascending: true }),
@@ -286,11 +286,19 @@ export default function FacturacionPage() {
     }
 
     const label = `${serieReal}-${numero}`
-    const mensaje = `Comprobante ${label} generado correctamente`
+    const totalFmt = (pedTotal > 0 ? pedTotal : subtotalCalc + igvCalc).toLocaleString('es-PE', { style: 'currency', currency: 'PEN' })
+    // Calcular fecha de vencimiento (si el cliente tiene credito_dias)
+    const creditoDias = (pedidoSeleccionado.clientes as any)?.credito_dias ?? 0
+    const vence = (() => {
+      const d = new Date()
+      d.setDate(d.getDate() + Number(creditoDias))
+      return d.toLocaleDateString('es-PE', { day: '2-digit', month: '2-digit', year: 'numeric' })
+    })()
+    const mensaje = `✅ ${label} emitido · ${totalFmt} agregado a cobranzas del cliente${creditoDias > 0 ? ` · Vence el ${vence}` : ''}`
     setSuccessMsg(mensaje)
     setComprobanteEmitidoId(compInsertado?.id ?? null)
     setComprobanteEmitidoLabel(label)
-    toast.success('Comprobante emitido', { description: mensaje })
+    toast.success('Comprobante emitido · Cuenta por cobrar generada', { description: mensaje, duration: 6000 })
     setTimeout(() => { setSuccessMsg(''); setComprobanteEmitidoId(null) }, 10000)
     loadData()
   }

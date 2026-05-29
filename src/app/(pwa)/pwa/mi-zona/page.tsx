@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import Image from 'next/image'
-import { Map, MapPin, Phone, Calendar, Loader2, ChevronDown, ChevronUp } from 'lucide-react'
+import { Map as MapIcon, MapPin, Phone, Calendar, Loader2, ChevronDown, ChevronUp } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -28,6 +28,7 @@ interface ClienteZona {
   dias_visita: string[] | null
   zona_id: string
   direcciones_extra: Array<{ id: string; nombre: string; direccion: string }>
+  saldo_pendiente?: number
 }
 
 export default function MiZonaPage() {
@@ -112,9 +113,31 @@ export default function MiZonaPage() {
             direccionesMap[d.cliente_id].push(d)
           })
         }
+        // Saldos pendientes por cliente (facturado - cobrado)
+        const saldoPorCliente = new Map<string, number>()
+        if (cIds.length > 0) {
+          const [{ data: comps }, { data: cobros }] = await Promise.all([
+            supabase.from('comprobantes').select('cliente_id, total').in('cliente_id', cIds).neq('estado', 'anulado'),
+            supabase.from('cobros').select('cliente_id, total').in('cliente_id', cIds),
+          ])
+          const facturado = new Map<string, number>()
+          const cobrado = new Map<string, number>()
+          ;(comps ?? []).forEach((c: any) => {
+            if (c.cliente_id) facturado.set(c.cliente_id, (facturado.get(c.cliente_id) ?? 0) + Number(c.total ?? 0))
+          })
+          ;(cobros ?? []).forEach((c: any) => {
+            if (c.cliente_id) cobrado.set(c.cliente_id, (cobrado.get(c.cliente_id) ?? 0) + Number(c.total ?? 0))
+          })
+          cIds.forEach((id: string) => {
+            const s = Math.max(0, (facturado.get(id) ?? 0) - (cobrado.get(id) ?? 0))
+            saldoPorCliente.set(id, s)
+          })
+        }
+
         const enriquecidos: ClienteZona[] = (cs ?? []).map((c: any) => ({
           ...c,
           direcciones_extra: direccionesMap[c.id] ?? [],
+          saldo_pendiente: saldoPorCliente.get(c.id) ?? 0,
         }))
         setClientes(enriquecidos)
       }
@@ -164,7 +187,7 @@ export default function MiZonaPage() {
       <div className="bg-black text-white px-4 pt-6 pb-4 border-b-4 border-[#FBE600]">
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-3">
-            <Map className="w-6 h-6" />
+            <MapIcon className="w-6 h-6" />
             <h1 className="text-xl font-bold">Mi Zona</h1>
           </div>
           <Image src="/logo-agrocar.png" alt="AGROCAR" width={120} height={32} className="object-contain" />
@@ -219,7 +242,7 @@ export default function MiZonaPage() {
         ) : porZona.length === 0 ? (
           <Card className="border-0 shadow-sm">
             <CardContent className="py-10 text-center text-gray-500">
-              <Map className="w-10 h-10 mx-auto mb-3 text-gray-300" />
+              <MapIcon className="w-10 h-10 mx-auto mb-3 text-gray-300" />
               <p className="text-sm">No tienes zonas asignadas todavía</p>
               <p className="text-xs text-gray-400 mt-1">Pídele al administrador que te asigne una zona</p>
             </CardContent>
@@ -303,6 +326,12 @@ export default function MiZonaPage() {
                                 ))}
                               </div>
                               <div className="flex flex-col items-end gap-1 shrink-0">
+                                {(c.saldo_pendiente ?? 0) > 0 && (
+                                  <span className="inline-flex items-center gap-0.5 px-2 py-1 rounded text-[11px] font-bold bg-red-100 text-red-800 border border-red-300"
+                                    title={`Saldo pendiente: S/ ${(c.saldo_pendiente ?? 0).toFixed(2)}`}>
+                                    💰 S/ {(c.saldo_pendiente ?? 0).toFixed(2)}
+                                  </span>
+                                )}
                                 {c.telefono && (
                                   <a
                                     href={`tel:${c.telefono}`}

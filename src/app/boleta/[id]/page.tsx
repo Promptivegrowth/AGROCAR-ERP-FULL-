@@ -3,6 +3,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { formatCurrency } from '@/lib/utils'
 import { notFound } from 'next/navigation'
 import PrintButton from './print-button'
+import { getSaldoCliente } from '@/lib/cliente-saldo'
 
 export const dynamic = 'force-dynamic'
 
@@ -28,6 +29,18 @@ export default async function BoletaPage({ params }: { params: Promise<{ id: str
 
   const cliente: any = (cobro as any).clientes
   const cobrador: any = (cobro as any).profiles
+
+  // Saldo del cliente: saldo ANTES de este cobro y saldo DESPUÉS
+  const pagoActual = Number(cobro.total ?? 0)
+  let saldoAntes = 0
+  let saldoDespues = 0
+  let muestraSaldo = false
+  if (cliente?.id) {
+    const saldoSinEste = await getSaldoCliente(supabase, cliente.id, { excluirCobroId: cobro.id })
+    saldoAntes = saldoSinEste.saldo
+    saldoDespues = Math.max(0, saldoAntes - pagoActual)
+    muestraSaldo = saldoSinEste.facturado > 0
+  }
   const fecha = new Date(cobro.fecha ?? cobro.created_at).toLocaleDateString('es-PE', {
     day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'America/Lima',
   })
@@ -117,6 +130,45 @@ export default async function BoletaPage({ params }: { params: Promise<{ id: str
             <p className="text-xs font-semibold text-black">PAGO RECIBIDO CONFORME</p>
           </div>
         </div>
+
+        {/* Estado de cuenta */}
+        {muestraSaldo && (
+          <div className="px-6 py-5 border-t border-gray-100 bg-gray-50/30">
+            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">
+              Estado de Cuenta
+            </p>
+            <div className="space-y-1.5">
+              <div className="flex justify-between items-center text-sm">
+                <span className="text-gray-700">Saldo anterior</span>
+                <span className="font-mono text-gray-900">{formatCurrency(saldoAntes)}</span>
+              </div>
+              <div className="flex justify-between items-center text-sm">
+                <span className="text-gray-700">Pago aplicado</span>
+                <span className="font-mono text-green-700">− {formatCurrency(pagoActual)}</span>
+              </div>
+              {saldoDespues > 0 ? (
+                <div className="mt-3 pt-3 border-t-2 border-red-300 bg-red-50 -mx-6 px-6 py-3">
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm font-bold text-red-900 uppercase">Saldo Pendiente</span>
+                    <span className="font-mono text-xl font-bold text-red-700">
+                      {formatCurrency(saldoDespues)}
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-red-700 mt-1">
+                    Le quedan {formatCurrency(saldoDespues)} por cancelar de pedidos anteriores.
+                  </p>
+                </div>
+              ) : (
+                <div className="mt-3 pt-3 border-t-2 border-green-300 bg-green-50 -mx-6 px-6 py-3 text-center">
+                  <p className="text-sm font-bold text-green-800 uppercase">✅ Cuenta Saldada</p>
+                  <p className="text-[11px] text-green-700 mt-1">
+                    No tiene saldo pendiente. ¡Gracias por su pago!
+                  </p>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* Voucher (si existe) */}
         {cobro.voucher_url && (
