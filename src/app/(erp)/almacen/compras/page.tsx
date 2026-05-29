@@ -57,6 +57,7 @@ type ProductoCatalogo = {
   descripcion: string | null
   tiene_lote: boolean
   tiene_vencimiento: boolean
+  peso_kg?: number
 }
 
 export default function ComprasPage() {
@@ -173,7 +174,7 @@ export default function ComprasPage() {
         .order('fecha', { ascending: false })
         .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1),
       supabase.from('proveedores').select('id, razon_social, ruc').eq('activo', true).order('razon_social'),
-      supabase.from('productos').select('id, codigo, nombre, descripcion, tiene_lote, tiene_vencimiento, stock(cantidad), unidades_medida(simbolo)').eq('activo', true).order('nombre'),
+      supabase.from('productos').select('id, codigo, nombre, descripcion, tiene_lote, tiene_vencimiento, peso_kg, stock(cantidad), unidades_medida(simbolo)').eq('activo', true).order('nombre'),
     ])
     setCompras(c ?? [])
     setTotal(count ?? 0)
@@ -782,7 +783,7 @@ export default function ComprasPage() {
                     return (
                       <div key={field.id} className="p-3 bg-white relative">
                         <div className="grid grid-cols-12 gap-2 items-start">
-                          <div className="col-span-5">
+                          <div className="col-span-4">
                             <Label className="text-[10px] text-gray-500">Producto</Label>
                             <div className="relative mt-1">
                               <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-gray-400 z-10" />
@@ -876,6 +877,16 @@ export default function ComprasPage() {
                               onFocus={(e) => e.target.select()}
                               className="h-8 text-xs mt-1"
                             />
+                          </div>
+                          {/* Columna Peso: auto-calculado del producto */}
+                          <div className="col-span-1">
+                            <Label className="text-[10px] text-gray-500">Peso</Label>
+                            <p className="h-8 text-xs mt-1 font-medium text-gray-700 flex items-center justify-end font-mono"
+                               title={prod?.peso_kg ? `${prod.peso_kg} kg c/u` : 'Sin peso configurado'}>
+                              {prod?.peso_kg
+                                ? `${(Number(prod.peso_kg) * cant).toFixed(2)} kg`
+                                : <span className="text-gray-300">—</span>}
+                            </p>
                           </div>
                           {modoIngreso === 'unitario' ? (
                             <div className="col-span-2">

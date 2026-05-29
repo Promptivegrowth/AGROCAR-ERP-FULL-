@@ -24,8 +24,16 @@ function truncar(s: string, max: number) {
   return s.length > max ? s.slice(0, max - 1) + '…' : s
 }
 
-export default async function ComprobantePage({ params }: { params: Promise<{ id: string }> }) {
+export default async function ComprobantePage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>
+  searchParams: Promise<{ formato?: string }>
+}) {
   const { id } = await params
+  const { formato } = await searchParams
+  const esA4 = formato === 'a4'
   const supabase = createAdminClient()
 
   const { data: comp } = await supabase
@@ -137,14 +145,212 @@ export default async function ComprobantePage({ params }: { params: Promise<{ id
   const qrData = `AGROCAR|20519883296|${comp.tipo}|${correlativo}|${totalNum.toFixed(2)}|${comp.fecha_emision}|${docCliente.valor}`
   const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(qrData)}`
 
+  // Toggle de formato (oculto al imprimir)
+  const ToggleFormato = () => (
+    <div className="max-w-4xl mx-auto mb-4 px-4 print:hidden">
+      <div className="flex items-center gap-2 bg-white border border-gray-200 rounded-lg p-2 shadow-sm">
+        <span className="text-xs text-gray-600 px-2">Formato:</span>
+        <a
+          href={`/comprobante/${id}`}
+          className={`px-3 py-1.5 text-xs font-semibold rounded transition-colors ${!esA4 ? 'bg-[#FBE600] text-black' : 'text-gray-600 hover:bg-gray-50'}`}
+        >
+          🧾 Ticket (80mm)
+        </a>
+        <a
+          href={`/comprobante/${id}?formato=a4`}
+          className={`px-3 py-1.5 text-xs font-semibold rounded transition-colors ${esA4 ? 'bg-[#FBE600] text-black' : 'text-gray-600 hover:bg-gray-50'}`}
+        >
+          📄 A4 SUNAT
+        </a>
+        <div className="ml-auto"><PrintButton /></div>
+      </div>
+    </div>
+  )
+
+  if (esA4) {
+    return (
+      <div className="min-h-dvh bg-gray-200 py-6 print:bg-white print:py-0">
+        <style>{`
+          @media print {
+            @page { size: A4; margin: 12mm; }
+            body { margin: 0; }
+            .no-print { display: none !important; }
+          }
+        `}</style>
+        <ToggleFormato />
+        <div className="a4-doc mx-auto bg-white shadow-lg print:shadow-none p-8" style={{ maxWidth: 800, fontFamily: '"Helvetica Neue", Arial, sans-serif', fontSize: 11, color: '#111' }}>
+          {/* Encabezado A4 */}
+          <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: 16 }}>
+            <tbody>
+              <tr>
+                <td style={{ width: '40%', verticalAlign: 'top' }}>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src="/logo-agrocar.png" alt="AGROCAR" style={{ maxWidth: 160 }} />
+                  <div style={{ marginTop: 8, fontSize: 11, lineHeight: 1.5 }}>
+                    <div style={{ fontWeight: 'bold', fontSize: 14 }}>AGROCAR S.R.L.</div>
+                    <div>Distribuidor de Línea de Frío</div>
+                    <div>Av. Bolognesi 1234, Tacna</div>
+                    <div>Tel. 052 123456 · info@agrocarsrl.com</div>
+                  </div>
+                </td>
+                <td style={{ width: '60%', verticalAlign: 'top', textAlign: 'right' }}>
+                  <div style={{ border: '2px solid #000', borderRadius: 4, padding: 12, display: 'inline-block', minWidth: 280, textAlign: 'center' }}>
+                    <div style={{ fontSize: 11, fontWeight: 'bold', marginBottom: 4 }}>R.U.C. 20519883296</div>
+                    <div style={{ fontSize: 14, fontWeight: 'bold', textTransform: 'uppercase', marginBottom: 6, lineHeight: 1.2 }}>{titulo}</div>
+                    <div style={{ fontSize: 16, fontWeight: 'bold', fontFamily: 'monospace' }}>{correlativo}</div>
+                  </div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+
+          {/* Datos del cliente */}
+          <div style={{ border: '1px solid #999', borderRadius: 4, padding: 10, marginBottom: 12, background: '#fafafa' }}>
+            <table style={{ width: '100%', fontSize: 11 }}>
+              <tbody>
+                <tr>
+                  <td style={{ padding: '2px 4px', fontWeight: 'bold', width: 120 }}>Señor(es):</td>
+                  <td style={{ padding: '2px 4px' }}>{clienteNombre}</td>
+                  <td style={{ padding: '2px 4px', fontWeight: 'bold', width: 100 }}>Fecha emisión:</td>
+                  <td style={{ padding: '2px 4px' }}>{fechaEmision}</td>
+                </tr>
+                <tr>
+                  <td style={{ padding: '2px 4px', fontWeight: 'bold' }}>{docCliente.label}:</td>
+                  <td style={{ padding: '2px 4px' }}>{docCliente.valor}</td>
+                  <td style={{ padding: '2px 4px', fontWeight: 'bold' }}>Condición:</td>
+                  <td style={{ padding: '2px 4px' }}>{condicion}</td>
+                </tr>
+                <tr>
+                  <td style={{ padding: '2px 4px', fontWeight: 'bold' }}>Dirección:</td>
+                  <td style={{ padding: '2px 4px' }} colSpan={3}>{clienteDireccion}</td>
+                </tr>
+                {vendedorNombre !== '—' && (
+                  <tr>
+                    <td style={{ padding: '2px 4px', fontWeight: 'bold' }}>Vendedor:</td>
+                    <td style={{ padding: '2px 4px' }} colSpan={3}>{vendedorNombre}</td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Tabla de items */}
+          <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: 12, fontSize: 10 }}>
+            <thead>
+              <tr style={{ background: '#000', color: '#fff' }}>
+                <th style={{ padding: 6, textAlign: 'center', border: '1px solid #000', width: 50 }}>CANT.</th>
+                <th style={{ padding: 6, textAlign: 'center', border: '1px solid #000', width: 60 }}>UND.</th>
+                <th style={{ padding: 6, textAlign: 'center', border: '1px solid #000', width: 80 }}>CÓDIGO</th>
+                <th style={{ padding: 6, textAlign: 'left', border: '1px solid #000' }}>DESCRIPCIÓN</th>
+                <th style={{ padding: 6, textAlign: 'right', border: '1px solid #000', width: 90 }}>P. UNIT.</th>
+                <th style={{ padding: 6, textAlign: 'right', border: '1px solid #000', width: 100 }}>IMPORTE</th>
+              </tr>
+            </thead>
+            <tbody>
+              {(items ?? []).map((it: any) => {
+                const prod = it.productos
+                const nombreProd = it.descripcion || prod?.descripcion?.trim() || prod?.nombre || '—'
+                const cant = Number(it.cantidad ?? 0)
+                const pu = Number(it.precio_unitario ?? 0)
+                const sub = Number(it.subtotal ?? cant * pu)
+                return (
+                  <tr key={it.id}>
+                    <td style={{ padding: 5, textAlign: 'center', border: '1px solid #ccc' }}>{cant.toFixed(2)}</td>
+                    <td style={{ padding: 5, textAlign: 'center', border: '1px solid #ccc' }}>UND</td>
+                    <td style={{ padding: 5, textAlign: 'center', border: '1px solid #ccc', fontFamily: 'monospace', fontSize: 9 }}>{prod?.codigo ?? '—'}</td>
+                    <td style={{ padding: 5, textAlign: 'left', border: '1px solid #ccc' }}>{nombreProd}</td>
+                    <td style={{ padding: 5, textAlign: 'right', border: '1px solid #ccc', fontFamily: 'monospace' }}>{fmtNum(pu)}</td>
+                    <td style={{ padding: 5, textAlign: 'right', border: '1px solid #ccc', fontFamily: 'monospace' }}>{fmtNum(sub)}</td>
+                  </tr>
+                )
+              })}
+              {/* Filas vacías para rellenar visualmente */}
+              {Array.from({ length: Math.max(0, 5 - (items?.length ?? 0)) }).map((_, i) => (
+                <tr key={`empty-${i}`}>
+                  <td style={{ padding: 5, border: '1px solid #eee', height: 22 }}>&nbsp;</td>
+                  <td style={{ padding: 5, border: '1px solid #eee' }}></td>
+                  <td style={{ padding: 5, border: '1px solid #eee' }}></td>
+                  <td style={{ padding: 5, border: '1px solid #eee' }}></td>
+                  <td style={{ padding: 5, border: '1px solid #eee' }}></td>
+                  <td style={{ padding: 5, border: '1px solid #eee' }}></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+
+          {/* Total en letras + cuadro de totales */}
+          <table style={{ width: '100%', marginBottom: 12, fontSize: 10 }}>
+            <tbody>
+              <tr>
+                <td style={{ verticalAlign: 'top', padding: 8, border: '1px solid #999', background: '#fafafa', width: '60%' }}>
+                  <div style={{ fontWeight: 'bold', fontSize: 10, marginBottom: 4 }}>SON:</div>
+                  <div style={{ fontSize: 11, textTransform: 'uppercase' }}>{totalLetras} {monedaLabel}</div>
+                </td>
+                <td style={{ verticalAlign: 'top', width: '40%', paddingLeft: 8 }}>
+                  <table style={{ width: '100%', fontSize: 11 }}>
+                    <tbody>
+                      <tr>
+                        <td style={{ padding: '4px 8px', border: '1px solid #ccc', background: '#fafafa' }}>OP. GRAVADA</td>
+                        <td style={{ padding: '4px 8px', border: '1px solid #ccc', textAlign: 'right', fontFamily: 'monospace' }}>S/ {fmtNum(subtotalNum)}</td>
+                      </tr>
+                      <tr>
+                        <td style={{ padding: '4px 8px', border: '1px solid #ccc', background: '#fafafa' }}>IGV (18%)</td>
+                        <td style={{ padding: '4px 8px', border: '1px solid #ccc', textAlign: 'right', fontFamily: 'monospace' }}>S/ {fmtNum(igvNum)}</td>
+                      </tr>
+                      <tr>
+                        <td style={{ padding: '6px 8px', border: '2px solid #000', background: '#000', color: '#fff', fontWeight: 'bold' }}>TOTAL</td>
+                        <td style={{ padding: '6px 8px', border: '2px solid #000', background: '#000', color: '#fff', textAlign: 'right', fontFamily: 'monospace', fontWeight: 'bold', fontSize: 13 }}>S/ {fmtNum(totalNum)}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+
+          {/* QR + leyenda SUNAT */}
+          <table style={{ width: '100%', marginTop: 12 }}>
+            <tbody>
+              <tr>
+                <td style={{ verticalAlign: 'top', width: 150 }}>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={qrUrl} alt="QR" style={{ width: 110, height: 110 }} />
+                </td>
+                <td style={{ verticalAlign: 'top', fontSize: 10, paddingLeft: 12, color: '#555' }}>
+                  <p style={{ marginBottom: 6 }}>Representación impresa del comprobante electrónico.</p>
+                  <p style={{ marginBottom: 6 }}>Consulte la validez del comprobante en:<br/><strong>www.sunat.gob.pe</strong></p>
+                  <p style={{ marginTop: 8, fontSize: 9 }}>
+                    Autorizado mediante Resolución de Intendencia Nº 034-005-0007698/SUNAT.<br/>
+                    Bienes y servicios afectos al IGV.
+                  </p>
+                  {facturador?.full_name && (
+                    <p style={{ marginTop: 6, fontSize: 9 }}>Emitido por: {facturador.full_name}</p>
+                  )}
+                </td>
+              </tr>
+            </tbody>
+          </table>
+
+          {/* Footer */}
+          <div style={{ marginTop: 24, textAlign: 'center', fontSize: 9, color: '#777', borderTop: '1px solid #ddd', paddingTop: 8 }}>
+            Impreso el {impreso} · AGROCAR S.R.L.
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="min-h-dvh bg-gray-200 py-6 print:bg-white print:py-0">
       <style>{`
         @media print {
           @page { size: 80mm auto; margin: 0; }
           body { margin: 0; }
+          .no-print { display: none !important; }
         }
       `}</style>
+
+      <ToggleFormato />
 
       <div className="ticket mx-auto bg-white shadow-lg print:shadow-none" style={{ maxWidth: 350, width: '100%', padding: 12, fontFamily: 'ui-monospace, "Courier New", monospace', fontSize: 11, lineHeight: 1.35, color: '#000' }}>
         {/* Logo + encabezado */}
