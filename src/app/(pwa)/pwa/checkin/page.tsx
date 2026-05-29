@@ -46,12 +46,12 @@ export default function CheckinPage() {
 
       const hoy = new Date().toISOString().split('T')[0]
 
-      // Paralelizar: clientes asignados + check-ins del día
+      // Para check-in cargar TODOS los clientes activos: aplica para vendedor
+      // (visita SUS clientes) y para repartidor (visita cualquiera al despachar).
       const [{ data: clientesData }, { data: checkinsData }] = await Promise.all([
         supabase
           .from('clientes')
           .select('id, razon_social, ruc, dni')
-          .eq('vendedor_id', user.id)
           .eq('estado', 'activo')
           .order('razon_social'),
         supabase

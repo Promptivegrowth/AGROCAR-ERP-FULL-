@@ -89,10 +89,11 @@ export default function PedidosPage() {
           .select('role')
           .eq('id', user.id)
           .single(),
+        // Cargar TODOS los clientes activos. Si es vendedor (no repartidor),
+        // se filtra en JS después según su rol.
         supabase
           .from('clientes')
           .select('*')
-          .eq('vendedor_id', user.id)
           .eq('estado', 'activo')
           .order('razon_social'),
         supabase
@@ -102,12 +103,16 @@ export default function PedidosPage() {
           .order('nombre'),
       ])
 
-      if (profile) {
-        setUserRole(profile.role)
-      }
+      const role = (profile as any)?.role ?? null
+      if (profile) setUserRole(role)
 
       if (clientesData) {
-        setClientes(clientesData)
+        // Vendedor solo ve SUS clientes (filtro frontend).
+        // Repartidor + roles administrativos ven todos.
+        const lista = role === 'vendedor'
+          ? clientesData.filter((c: any) => c.vendedor_id === user.id)
+          : clientesData
+        setClientes(lista)
       }
 
       if (productosData) {
@@ -454,16 +459,20 @@ export default function PedidosPage() {
     setLoadingPedidos(true)
     const hoy = new Date().toISOString().split('T')[0]
 
-    const { data } = await supabase
+    // Vendedor: solo los pedidos que él creó.
+    // Repartidor: todos los pedidos del día (para ver qué despachar).
+    let q = supabase
       .from('pedidos')
       .select('*')
-      .eq('vendedor_id', userId)
       .gte('created_at', hoy)
       .order('created_at', { ascending: false })
+    if (userRole === 'vendedor') q = q.eq('vendedor_id', userId)
+
+    const { data } = await q
 
     setMisPedidos((data ?? []) as PedidoConTotal[])
     setLoadingPedidos(false)
-  }, [userId])
+  }, [userId, userRole])
 
   useEffect(() => {
     if (tab === 'mis-pedidos' && userId) {

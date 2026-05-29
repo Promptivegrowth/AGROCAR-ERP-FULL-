@@ -171,8 +171,19 @@ export default function ClientesPage() {
       }
       setUserId(user.id)
 
+      // Determinar rol para saber si filtrar por vendedor o mostrar todos
+      const { data: prof } = await supabase
+        .from('profiles')
+        .select('role')
+        .eq('id', user.id)
+        .single()
+      const esRepartidor = (prof as any)?.role === 'repartidor'
+
+      let clientesQuery = supabase.from('clientes').select('*').order('razon_social')
+      if (!esRepartidor) clientesQuery = clientesQuery.eq('vendedor_id', user.id)
+
       const [clientesRes, zonasRes] = await Promise.all([
-        supabase.from('clientes').select('*').eq('vendedor_id', user.id).order('razon_social'),
+        clientesQuery,
         supabase.from('zonas').select('id, nombre').eq('activo', true).order('nombre'),
       ])
 
