@@ -59,39 +59,25 @@ export default function AlmacenPage() {
 
   const loadInventario = useCallback(async () => {
     setLoading(true)
-    const [{ data, error }, { data: preciosRaw }] = await Promise.all([
-      supabase
-        .from('stock')
-        .select(`
-          id, producto_id, cantidad, cantidad_reservada, costo_promedio, updated_at,
-          productos(id, codigo, nombre, descripcion, activo, familia_id, unidad_medida_id, tiene_lote, tiene_vencimiento,
-            stock_minimo, stock_maximo,
-            familias(nombre),
-            unidades_medida(simbolo, nombre)
-          )
-        `),
-      supabase
-        .from('lista_precio_items')
-        .select('producto_id, precio, listas_precio!inner(nombre)'),
-    ])
+    const { data, error } = await supabase
+      .from('stock')
+      .select(`
+        id, producto_id, cantidad, cantidad_reservada, costo_promedio, updated_at,
+        productos(id, codigo, nombre, descripcion, activo, familia_id, unidad_medida_id, tiene_lote, tiene_vencimiento,
+          stock_minimo, stock_maximo,
+          familias(nombre),
+          unidades_medida(simbolo, nombre)
+        )
+      `)
 
     if (error) toast.error('Error al cargar inventario', { description: error.message })
-
-    // Indexar precios por producto_id → { A, B, C }
-    const preciosPorProducto: Record<string, { A?: number; B?: number; C?: number }> = {}
-    ;(preciosRaw ?? []).forEach((p: any) => {
-      const nombre = p.listas_precio?.nombre as 'A' | 'B' | 'C' | undefined
-      if (!nombre) return
-      if (!preciosPorProducto[p.producto_id]) preciosPorProducto[p.producto_id] = {}
-      preciosPorProducto[p.producto_id][nombre] = Number(p.precio ?? 0)
-    })
 
     // Orden alfabético por descripción (nombre comercial) o nombre genérico
     const ordenado = (data ?? []).slice().sort((a: any, b: any) => {
       const an = (a.productos?.descripcion?.trim() || a.productos?.nombre || '').toLowerCase()
       const bn = (b.productos?.descripcion?.trim() || b.productos?.nombre || '').toLowerCase()
       return an.localeCompare(bn, 'es')
-    }).map((s: any) => ({ ...s, _precios: preciosPorProducto[s.producto_id] ?? {} }))
+    })
 
     setStocks(ordenado)
     setLoading(false)
@@ -307,14 +293,58 @@ export default function AlmacenPage() {
     0,
   )
 
+  // Dialog de exportación con selector de rango de fechas para precio venta promedio
   const [exportando, setExportando] = useState(false)
+  const [exportOpen, setExportOpen] = useState(false)
+  const hoyISO = new Date().toISOString().split('T')[0]
+  const hace30 = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
+  const [rangoDesde, setRangoDesde] = useState<string>(hace30)
+  const [rangoHasta, setRangoHasta] = useState<string>(hoyISO)
+
+  function setPresetRango(preset: 'hoy' | '7d' | '30d' | 'mes' | 'mes_anterior' | 'anio') {
+    const ahora = new Date()
+    const fmt = (d: Date) => d.toISOString().split('T')[0]
+    if (preset === 'hoy') {
+      setRangoDesde(fmt(ahora))
+      setRangoHasta(fmt(ahora))
+    } else if (preset === '7d') {
+      setRangoDesde(fmt(new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)))
+      setRangoHasta(fmt(ahora))
+    } else if (preset === '30d') {
+      setRangoDesde(fmt(new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)))
+      setRangoHasta(fmt(ahora))
+    } else if (preset === 'mes') {
+      setRangoDesde(fmt(new Date(ahora.getFullYear(), ahora.getMonth(), 1)))
+      setRangoHasta(fmt(ahora))
+    } else if (preset === 'mes_anterior') {
+      const inicioMesAnt = new Date(ahora.getFullYear(), ahora.getMonth() - 1, 1)
+      const finMesAnt = new Date(ahora.getFullYear(), ahora.getMonth(), 0)
+      setRangoDesde(fmt(inicioMesAnt))
+      setRangoHasta(fmt(finMesAnt))
+    } else if (preset === 'anio') {
+      setRangoDesde(fmt(new Date(ahora.getFullYear(), 0, 1)))
+      setRangoHasta(fmt(ahora))
+    }
+  }
+
+  function rangoLabel(desde: string, hasta: string): string {
+    const fmt = (d: string) =>
+      new Date(d + 'T12:00:00').toLocaleDateString('es-PE', {
+        day: '2-digit', month: 'long', year: 'numeric',
+      })
+    return desde === hasta ? fmt(desde) : `${fmt(desde)} al ${fmt(hasta)}`
+  }
 
   async function exportarExcel() {
+    if (rangoDesde > rangoHasta) {
+      toast.error('Rango inválido', { description: 'La fecha "desde" no puede ser posterior a "hasta".' })
+      return
+    }
     setExportando(true)
     try {
       const { generarExcelInventario, descargarBlob } = await import('@/lib/export/inventario-excel')
 
-      // Cargar config de empresa y almacén
+      // 1) Config empresa/almacén
       const { data: confRows } = await (supabase as any)
         .from('configuracion')
         .select('clave, valor')
@@ -322,6 +352,7 @@ export default function AlmacenPage() {
       const conf: Record<string, string> = {}
       ;(confRows ?? []).forEach((r: any) => { conf[r.clave] = r.valor })
 
+      // 2) Usuario
       const { data: { user } } = await supabase.auth.getUser()
       let generadoPor = 'Sistema'
       if (user) {
@@ -329,6 +360,38 @@ export default function AlmacenPage() {
         generadoPor = (prof as any)?.full_name ?? user.email ?? 'Sistema'
       }
 
+      // 3) Ventas reales en el rango — calcular precio promedio ponderado por producto
+      // Σ(cantidad × precio_unitario) / Σ(cantidad) — solo comprobantes NO anulados
+      const { data: ventasRaw, error: ventasErr } = await (supabase as any)
+        .from('comprobantes_items')
+        .select(`
+          producto_id,
+          cantidad,
+          precio_unitario,
+          subtotal,
+          comprobantes!inner(fecha_emision, estado)
+        `)
+        .gte('comprobantes.fecha_emision', rangoDesde)
+        .lte('comprobantes.fecha_emision', rangoHasta)
+        .neq('comprobantes.estado', 'anulado')
+
+      if (ventasErr) throw new Error('No se pudieron leer las ventas: ' + ventasErr.message)
+
+      // Agrupar por producto_id
+      const ventasPorProd = new Map<string, { qty: number; total: number; count: number }>()
+      ;(ventasRaw ?? []).forEach((it: any) => {
+        if (!it.producto_id) return
+        const cant = Number(it.cantidad ?? 0)
+        const precio = Number(it.precio_unitario ?? 0)
+        const subt = Number(it.subtotal ?? cant * precio)
+        const cur = ventasPorProd.get(it.producto_id) ?? { qty: 0, total: 0, count: 0 }
+        cur.qty += cant
+        cur.total += subt
+        cur.count += 1
+        ventasPorProd.set(it.producto_id, cur)
+      })
+
+      // 4) Armar filas combinando stock + ventas
       const rows = stocksFiltrados.map((s: any) => {
         const prod = s.productos as any
         const stockFisico = Number(s.cantidad ?? 0)
@@ -342,6 +405,9 @@ export default function AlmacenPage() {
         else if (min != null && stockFisico < Number(min)) alerta = 'bajo'
         else if (max != null && stockFisico > Number(max)) alerta = 'sobre'
 
+        const ventas = ventasPorProd.get(s.producto_id)
+        const precioPromedio = ventas && ventas.qty > 0 ? ventas.total / ventas.qty : null
+
         return {
           codigo: prod?.codigo ?? '—',
           nombre: prod?.nombre ?? '—',
@@ -354,6 +420,9 @@ export default function AlmacenPage() {
           stock_minimo: min != null ? Number(min) : null,
           stock_maximo: max != null ? Number(max) : null,
           costo_promedio: costo,
+          precio_venta_promedio: precioPromedio,
+          unidades_vendidas: ventas?.qty ?? 0,
+          ingreso_vendido: ventas?.total ?? 0,
           valor_total: stockFisico * costo,
           alerta,
           ultima_actualizacion: s.updated_at,
@@ -373,13 +442,18 @@ export default function AlmacenPage() {
         },
         fecha,
         generadoPor,
+        rango: { desde: rangoDesde, hasta: rangoHasta, label: rangoLabel(rangoDesde, rangoHasta) },
         rows,
         filtros: { familia: null, estado: null, busqueda: debouncedSearch || null },
       })
 
       const nombreFecha = new Date().toISOString().slice(0, 10).replace(/-/g, '')
-      descargarBlob(blob, `Inventario_AGROCAR_${nombreFecha}.xlsx`)
-      toast.success('Inventario exportado', { description: `${rows.length} productos descargados.` })
+      descargarBlob(blob, `Inventario_AGROCAR_${rangoDesde}_a_${rangoHasta}_${nombreFecha}.xlsx`)
+      const conVentas = rows.filter((r) => r.precio_venta_promedio != null).length
+      toast.success('Inventario exportado', {
+        description: `${rows.length} productos · ${conVentas} con ventas en el período.`,
+      })
+      setExportOpen(false)
     } catch (err: any) {
       toast.error('No se pudo exportar', { description: err?.message ?? 'Intenta nuevamente.' })
     } finally {
@@ -396,7 +470,7 @@ export default function AlmacenPage() {
         </div>
         <div className="flex flex-wrap gap-2">
           <Button
-            onClick={exportarExcel}
+            onClick={() => setExportOpen(true)}
             disabled={exportando || stocks.length === 0}
             className="bg-green-600 hover:bg-green-700 text-white font-semibold gap-2"
             size="sm"
@@ -553,20 +627,9 @@ export default function AlmacenPage() {
                           : <Badge className="text-xs bg-green-100 text-green-700 border-green-200 shrink-0">OK</Badge>}
                       </div>
                       <div className="flex items-center justify-between mt-3 flex-wrap gap-2">
-                        <div className="text-[11px] text-gray-500 flex flex-wrap items-center gap-x-3 gap-y-0.5">
-                          <span className="text-gray-400">
-                            Costo {formatCurrency(Number(s.costo_promedio) ?? 0)}
-                          </span>
-                          {(() => {
-                            const pr = (s as any)._precios ?? {}
-                            const items = (['A', 'B', 'C'] as const)
-                              .filter((k) => pr[k] != null && pr[k] > 0)
-                              .map((k) => `${k} ${formatCurrency(pr[k] as number)}`)
-                            return items.length > 0 ? (
-                              <span className="text-gray-700">{items.join(' · ')}</span>
-                            ) : null
-                          })()}
-                        </div>
+                        <span className="text-[11px] text-gray-400">
+                          Costo {formatCurrency(Number(s.costo_promedio) ?? 0)}
+                        </span>
                         <div className="flex items-center gap-1">
                           <Button variant="outline" size="sm" onClick={() => openDetail(s)} className="h-7 text-xs gap-1">
                             <Eye className="w-3.5 h-3.5" /> Ver
@@ -589,7 +652,7 @@ export default function AlmacenPage() {
                 <table className="w-full text-sm">
                   <thead className="border-b border-gray-100 bg-gray-50/50">
                     <tr>
-                      {['Código', 'Producto', 'Disponible', 'Reservado', 'Costo Prom.', 'Precio Venta', 'Última Act.', 'Estado', 'Acciones'].map((h) => (
+                      {['Código', 'Producto', 'Disponible', 'Reservado', 'Costo Prom.', 'Última Act.', 'Estado', 'Acciones'].map((h) => (
                         <th key={h} className="text-left py-3 px-4 text-xs font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap">
                           {h}
                         </th>
@@ -641,25 +704,6 @@ export default function AlmacenPage() {
                             <span className="text-xs text-gray-400 ml-1">{simbolo}</span>
                           </td>
                           <td className="py-3 px-4 text-gray-700">{formatCurrency(Number(s.costo_promedio) ?? 0)}</td>
-                          <td className="py-3 px-4 text-gray-800">
-                            {(() => {
-                              const pr = (s as any)._precios ?? {}
-                              const items = (['A', 'B', 'C'] as const)
-                                .filter((k) => pr[k] != null && pr[k] > 0)
-                                .map((k) => ({ k, v: pr[k] as number }))
-                              if (items.length === 0) return <span className="text-gray-400 text-xs">Sin precio</span>
-                              return (
-                                <div className="text-xs leading-tight space-y-0.5">
-                                  {items.map((it) => (
-                                    <div key={it.k} className="flex items-center gap-1.5">
-                                      <span className="text-[10px] font-semibold text-gray-400 w-3">{it.k}</span>
-                                      <span className="font-mono">{formatCurrency(it.v)}</span>
-                                    </div>
-                                  ))}
-                                </div>
-                              )
-                            })()}
-                          </td>
                           <td className="py-3 px-4 text-gray-500 text-xs">
                             {s.updated_at ? formatDate(s.updated_at) : '—'}
                           </td>
@@ -1163,6 +1207,99 @@ export default function AlmacenPage() {
               </div>
             )
           })()}
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialog: Exportar Excel con rango de fechas */}
+      <Dialog open={exportOpen} onOpenChange={(o) => { if (!exportando) setExportOpen(o) }}>
+        <DialogContent className="max-w-lg max-h-[92vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <FileDown className="w-5 h-5 text-green-600" />
+              Exportar Inventario a Excel
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 mt-2">
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-xs text-blue-900">
+              El Excel incluye <strong>inventario actualizado</strong> + <strong>precio venta promedio</strong> calculado de las ventas reales (comprobantes no anulados) del período seleccionado, ponderado por cantidad: <span className="font-mono">Σ(cantidad × precio) ÷ Σ(cantidad)</span>.
+            </div>
+
+            <div>
+              <Label className="text-sm">Atajos</Label>
+              <div className="flex flex-wrap gap-1.5 mt-1.5">
+                {[
+                  { key: 'hoy', label: 'Hoy' },
+                  { key: '7d', label: 'Últimos 7 días' },
+                  { key: '30d', label: 'Últimos 30 días' },
+                  { key: 'mes', label: 'Mes actual' },
+                  { key: 'mes_anterior', label: 'Mes anterior' },
+                  { key: 'anio', label: 'Año actual' },
+                ].map((p) => (
+                  <button
+                    key={p.key}
+                    type="button"
+                    onClick={() => setPresetRango(p.key as any)}
+                    disabled={exportando}
+                    className="text-xs px-2.5 py-1 rounded-md bg-gray-100 hover:bg-gray-200 border border-gray-200 disabled:opacity-50"
+                  >
+                    {p.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label className="text-sm">Desde</Label>
+                <Input
+                  type="date"
+                  value={rangoDesde}
+                  max={rangoHasta}
+                  onChange={(e) => setRangoDesde(e.target.value)}
+                  disabled={exportando}
+                  className="mt-1"
+                />
+              </div>
+              <div>
+                <Label className="text-sm">Hasta</Label>
+                <Input
+                  type="date"
+                  value={rangoHasta}
+                  min={rangoDesde}
+                  max={hoyISO}
+                  onChange={(e) => setRangoHasta(e.target.value)}
+                  disabled={exportando}
+                  className="mt-1"
+                />
+              </div>
+            </div>
+
+            <div className="bg-gray-50 border border-gray-200 rounded-lg p-3 text-xs text-gray-700">
+              <strong>Período seleccionado:</strong> {rangoLabel(rangoDesde, rangoHasta)}
+              <br />
+              Productos en inventario: <strong>{stocksFiltrados.length}</strong>
+              {debouncedSearch && (
+                <>
+                  <br />
+                  Filtro de búsqueda aplicado: <span className="font-mono">&quot;{debouncedSearch}&quot;</span>
+                </>
+              )}
+            </div>
+
+            <div className="flex justify-end gap-2 pt-2 border-t border-gray-100">
+              <Button variant="outline" onClick={() => setExportOpen(false)} disabled={exportando}>
+                Cancelar
+              </Button>
+              <Button
+                onClick={exportarExcel}
+                disabled={exportando || rangoDesde > rangoHasta}
+                className="bg-green-600 hover:bg-green-700 text-white font-semibold gap-2"
+              >
+                {exportando ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileDown className="w-4 h-4" />}
+                Generar Excel
+              </Button>
+            </div>
+          </div>
         </DialogContent>
       </Dialog>
     </div>
