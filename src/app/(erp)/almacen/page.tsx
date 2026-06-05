@@ -59,25 +59,51 @@ export default function AlmacenPage() {
 
   const loadInventario = useCallback(async () => {
     setLoading(true)
-    const { data, error } = await supabase
-      .from('stock')
-      .select(`
-        id, producto_id, cantidad, cantidad_reservada, costo_promedio, updated_at,
-        productos(id, codigo, nombre, descripcion, activo, familia_id, unidad_medida_id, tiene_lote, tiene_vencimiento,
-          stock_minimo, stock_maximo,
-          familias(nombre),
-          unidades_medida(simbolo, nombre)
-        )
-      `)
+    // Precio venta promedio de los últimos 30 días — ponderado por cantidad
+    const desde30 = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
+    const [{ data, error }, { data: ventas30 }] = await Promise.all([
+      supabase
+        .from('stock')
+        .select(`
+          id, producto_id, cantidad, cantidad_reservada, costo_promedio, updated_at,
+          productos(id, codigo, nombre, descripcion, activo, familia_id, unidad_medida_id, tiene_lote, tiene_vencimiento,
+            stock_minimo, stock_maximo,
+            familias(nombre),
+            unidades_medida(simbolo, nombre)
+          )
+        `),
+      (supabase as any)
+        .from('comprobantes_items')
+        .select('producto_id, cantidad, precio_unitario, subtotal, comprobantes!inner(fecha_emision, estado)')
+        .gte('comprobantes.fecha_emision', desde30)
+        .neq('comprobantes.estado', 'anulado'),
+    ])
 
     if (error) toast.error('Error al cargar inventario', { description: error.message })
+
+    // Agrupar ventas por producto: Σ(cantidad × precio) / Σ(cantidad)
+    const precioPromPorProd: Record<string, number> = {}
+    const agg: Record<string, { qty: number; total: number }> = {}
+    ;(ventas30 ?? []).forEach((it: any) => {
+      if (!it.producto_id) return
+      const cant = Number(it.cantidad ?? 0)
+      const precio = Number(it.precio_unitario ?? 0)
+      const subt = Number(it.subtotal ?? cant * precio)
+      const cur = agg[it.producto_id] ?? { qty: 0, total: 0 }
+      cur.qty += cant
+      cur.total += subt
+      agg[it.producto_id] = cur
+    })
+    Object.entries(agg).forEach(([prodId, v]) => {
+      if (v.qty > 0) precioPromPorProd[prodId] = v.total / v.qty
+    })
 
     // Orden alfabético por descripción (nombre comercial) o nombre genérico
     const ordenado = (data ?? []).slice().sort((a: any, b: any) => {
       const an = (a.productos?.descripcion?.trim() || a.productos?.nombre || '').toLowerCase()
       const bn = (b.productos?.descripcion?.trim() || b.productos?.nombre || '').toLowerCase()
       return an.localeCompare(bn, 'es')
-    })
+    }).map((s: any) => ({ ...s, _precio_venta_30d: precioPromPorProd[s.producto_id] ?? null }))
 
     setStocks(ordenado)
     setLoading(false)
@@ -627,9 +653,18 @@ export default function AlmacenPage() {
                           : <Badge className="text-xs bg-green-100 text-green-700 border-green-200 shrink-0">OK</Badge>}
                       </div>
                       <div className="flex items-center justify-between mt-3 flex-wrap gap-2">
-                        <span className="text-[11px] text-gray-400">
-                          Costo {formatCurrency(Number(s.costo_promedio) ?? 0)}
-                        </span>
+                        <div className="text-[11px] flex flex-wrap items-center gap-x-3 gap-y-0.5">
+                          <span className="text-gray-400">
+                            Costo {formatCurrency(Number(s.costo_promedio) ?? 0)}
+                          </span>
+                          {(s as any)._precio_venta_30d != null ? (
+                            <span className="text-blue-600 font-medium">
+                              Venta 30d {formatCurrency((s as any)._precio_venta_30d)}
+                            </span>
+                          ) : (
+                            <span className="text-gray-300 italic">Sin ventas 30d</span>
+                          )}
+                        </div>
                         <div className="flex items-center gap-1">
                           <Button variant="outline" size="sm" onClick={() => openDetail(s)} className="h-7 text-xs gap-1">
                             <Eye className="w-3.5 h-3.5" /> Ver
@@ -652,7 +687,11 @@ export default function AlmacenPage() {
                 <table className="w-full text-sm">
                   <thead className="border-b border-gray-100 bg-gray-50/50">
                     <tr>
-                      {['Código', 'Producto', 'Disponible', 'Reservado', 'Costo Prom.', 'Última Act.', 'Estado', 'Acciones'].map((h) => (
+                      {[
+                        'Código', 'Producto', 'Disponible', 'Reservado',
+                        'Costo Prom.', 'Precio Venta Prom. (30d)',
+                        'Última Act.', 'Estado', 'Acciones',
+                      ].map((h) => (
                         <th key={h} className="text-left py-3 px-4 text-xs font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap">
                           {h}
                         </th>
@@ -704,6 +743,24 @@ export default function AlmacenPage() {
                             <span className="text-xs text-gray-400 ml-1">{simbolo}</span>
                           </td>
                           <td className="py-3 px-4 text-gray-700">{formatCurrency(Number(s.costo_promedio) ?? 0)}</td>
+                          <td className="py-3 px-4">
+                            {(() => {
+                              const pv = (s as any)._precio_venta_30d
+                              if (pv == null) return <span className="text-xs text-gray-400 italic">Sin ventas</span>
+                              const c = Number(s.costo_promedio ?? 0)
+                              const margenPct = c > 0 ? ((pv - c) / c) * 100 : null
+                              return (
+                                <div className="leading-tight">
+                                  <div className="font-medium text-blue-700">{formatCurrency(pv)}</div>
+                                  {margenPct != null && (
+                                    <div className={`text-[10px] ${margenPct >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                                      {margenPct >= 0 ? '+' : ''}{margenPct.toFixed(1)}% margen
+                                    </div>
+                                  )}
+                                </div>
+                              )
+                            })()}
+                          </td>
                           <td className="py-3 px-4 text-gray-500 text-xs">
                             {s.updated_at ? formatDate(s.updated_at) : '—'}
                           </td>
