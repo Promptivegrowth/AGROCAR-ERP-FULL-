@@ -44,7 +44,7 @@ export default function PedidosPage() {
   const [deudaCliente, setDeudaCliente] = useState<number>(0)
   const [showClienteDropdown, setShowClienteDropdown] = useState(false)
 
-  const [fechaDespacho, setFechaDespacho] = useState('')
+  const [fechaDespacho, setFechaDespacho] = useState<string>(() => hoyLima())
   const [productosDisponibles, setProductosDisponibles] = useState<(Producto & { precio: number })[]>([])
   const [productoSearch, setProductoSearch] = useState('')
   const debouncedProductoSearch = useDebounce(productoSearch, 300)
@@ -66,12 +66,8 @@ export default function PedidosPage() {
 
   const supabase = createClient()
 
-  // Fecha mínima de despacho (mañana)
-  const fechaMinima = (() => {
-    const d = new Date()
-    d.setDate(d.getDate() + 1)
-    return d.toISOString().split('T')[0]
-  })()
+  // Fecha mínima = hoy en Lima. Por defecto hoy, permite futuras, bloquea pasadas.
+  const fechaMinima = hoyLima()
 
   useEffect(() => {
     async function init() {
@@ -317,6 +313,13 @@ export default function PedidosPage() {
 
   async function enviarPedido() {
     if (!clienteSeleccionado || seleccionados.length === 0 || !fechaDespacho || !userId) return
+    // Validación defensiva: no permitir fechas pasadas
+    if (fechaDespacho < hoyLima()) {
+      const msg = 'La fecha de despacho no puede ser anterior a hoy. Usa hoy o una fecha futura.'
+      setMensajeError(msg)
+      toast.error('Fecha inválida', { description: msg })
+      return
+    }
     setLoadingEnvio(true)
     setMensajeError(null)
     setMensajeExito(null)
@@ -458,7 +461,7 @@ export default function PedidosPage() {
       setClienteSeleccionado(null)
       setClienteSearch('')
       setSeleccionados([])
-      setFechaDespacho('')
+      setFechaDespacho(hoyLima())
       setDescuento('')
       setDeudaCliente(0)
       setTipoPago('contado')

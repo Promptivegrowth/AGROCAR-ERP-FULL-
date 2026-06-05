@@ -100,12 +100,9 @@ export default function NuevoPedidoDialog({ open, onOpenChange, onCreated }: Pro
   const [direccionesCliente, setDireccionesCliente] = useState<DireccionCliente[]>([])
   const [direccionEntregaId, setDireccionEntregaId] = useState<string>('')
 
-  // Fecha mínima (mañana)
-  const fechaMinima = (() => {
-    const d = new Date()
-    d.setDate(d.getDate() + 1)
-    return d.toISOString().split('T')[0]
-  })()
+  // Fecha mínima = hoy en Lima. No se permiten fechas pasadas; sí se permite
+  // hoy (caso normal) y cualquier fecha futura (para pedidos programados).
+  const fechaMinima = hoyLima()
 
   // Resetear todo al abrir
   useEffect(() => {
@@ -116,7 +113,7 @@ export default function NuevoPedidoDialog({ open, onOpenChange, onCreated }: Pro
     setVendedorId('')
     setProductoSearch('')
     setCarrito([])
-    setFechaDespacho('')
+    setFechaDespacho(hoyLima())
     setDescuento('')
     setIncluirIgv(true)
     setNotas('')
@@ -290,6 +287,14 @@ export default function NuevoPedidoDialog({ open, onOpenChange, onCreated }: Pro
 
   async function guardarPedido() {
     if (!puedeGuardar || !clienteSeleccionado) return
+    // Validación defensiva: no permitir fechas pasadas (el min del input se
+    // puede saltar editando el HTML o con el calendario de algunos navegadores).
+    if (fechaDespacho < hoyLima()) {
+      toast.error('Fecha inválida', {
+        description: 'La fecha de despacho no puede ser anterior a hoy. Usa hoy o una fecha futura.',
+      })
+      return
+    }
     setGuardando(true)
     try {
       const numero = `P-${Date.now().toString().slice(-8)}`
@@ -495,6 +500,9 @@ export default function NuevoPedidoDialog({ open, onOpenChange, onCreated }: Pro
                     onChange={(e) => setFechaDespacho(e.target.value)}
                     className="mt-1"
                   />
+                  <p className="text-[10px] text-gray-500 mt-1">
+                    Por defecto hoy. Puede programarse a fecha futura. No se permiten fechas pasadas.
+                  </p>
                 </div>
                 <div>
                   <Label className="text-sm font-semibold">4. Tipo de pago *</Label>
