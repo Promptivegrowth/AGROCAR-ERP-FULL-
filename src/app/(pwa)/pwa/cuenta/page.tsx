@@ -9,6 +9,7 @@ import { createClient } from '@/lib/supabase/client'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { formatCurrency } from '@/lib/utils'
+import { hoyLima } from '@/lib/fechas-pe'
 import type { Profile } from '@/types'
 
 interface ResumenDia {
@@ -61,7 +62,7 @@ export default function CuentaPage() {
       }
 
       // Resumen del día
-      const hoy = new Date().toISOString().split('T')[0]
+      const hoy = hoyLima()
 
       const JS_DAY_TO_KEY = ['dom', 'lun', 'mar', 'mie', 'jue', 'vie', 'sab']
       const diaHoy = JS_DAY_TO_KEY[new Date().getDay()]

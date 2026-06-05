@@ -5,6 +5,7 @@ import { BookOpen, Download, RefreshCw, Loader2, AlertCircle, CheckCircle } from
 import { toast } from 'sonner'
 import { createClient } from '@/lib/supabase/client'
 import { formatDate } from '@/lib/utils'
+import { hoyLima } from '@/lib/fechas-pe'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -157,7 +158,7 @@ export default function ContabilidadPage() {
     setActualizandoTC(true)
     // Simulamos obtener el tipo de cambio del SBS (en producción usar la API real)
     await new Promise((r) => setTimeout(r, 1500))
-    const hoyStr = new Date().toISOString().split('T')[0]
+    const hoyStr = hoyLima()
     const compra = 3.70 + Math.random() * 0.02
     const venta = compra + 0.01 + Math.random() * 0.01
 

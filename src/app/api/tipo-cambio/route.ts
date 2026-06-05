@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { hoyLima } from '@/lib/fechas-pe'
 
 export const dynamic = 'force-dynamic'
 
@@ -22,7 +23,7 @@ async function fetchDecolecta(token: string): Promise<TipoCambioData | null> {
     const venta = Number(d.sell_price ?? d.venta)
     if (!Number.isFinite(compra) || !Number.isFinite(venta)) return null
     return {
-      fecha: d.date ?? new Date().toISOString().split('T')[0],
+      fecha: d.date ?? hoyLima(),
       compra,
       venta,
       fuente: 'SUNAT (Decolecta)',

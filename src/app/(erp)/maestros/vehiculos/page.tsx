@@ -33,6 +33,7 @@ import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Textarea } from '@/components/ui/textarea'
+import { hoyLima } from '@/lib/fechas-pe'
 
 // ENUM tipo_vehiculo en la BD: 'zona' | 'auxiliar'
 const vehiculoSchema = z.object({
@@ -1135,7 +1136,7 @@ function MultaDialog({
   const [conductorId, setConductorId] = useState<string>('')
   const [codigo, setCodigo] = useState('')
   const [tipo, setTipo] = useState('')
-  const [fechaEmision, setFechaEmision] = useState(() => new Date().toISOString().split('T')[0])
+  const [fechaEmision, setFechaEmision] = useState(() => hoyLima())
   const [fechaVenc, setFechaVenc] = useState('')
   const [monto, setMonto] = useState('')
   const [descuento, setDescuento] = useState('')
@@ -1146,7 +1147,7 @@ function MultaDialog({
   useEffect(() => {
     if (!open) {
       setConductorId(''); setCodigo(''); setTipo('')
-      setFechaEmision(new Date().toISOString().split('T')[0]); setFechaVenc('')
+      setFechaEmision(hoyLima()); setFechaVenc('')
       setMonto(''); setDescuento(''); setLugar(''); setObservaciones(''); setSaving(false)
     }
   }, [open])

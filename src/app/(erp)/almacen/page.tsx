@@ -7,6 +7,7 @@ import { AlertTriangle, Package, TrendingDown, TrendingUp, Eye, Loader2, Search,
 import { createClient } from '@/lib/supabase/client'
 import { useDebounce } from '@/lib/hooks/use-debounce'
 import { formatCurrency, formatDate, formatDatetime } from '@/lib/utils'
+import { hoyLima } from '@/lib/fechas-pe'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -322,7 +323,7 @@ export default function AlmacenPage() {
   // Dialog de exportación con selector de rango de fechas para precio venta promedio
   const [exportando, setExportando] = useState(false)
   const [exportOpen, setExportOpen] = useState(false)
-  const hoyISO = new Date().toISOString().split('T')[0]
+  const hoyISO = hoyLima()
   const hace30 = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
   const [rangoDesde, setRangoDesde] = useState<string>(hace30)
   const [rangoHasta, setRangoHasta] = useState<string>(hoyISO)

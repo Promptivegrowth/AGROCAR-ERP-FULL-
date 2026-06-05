@@ -16,6 +16,7 @@ import VehiculoCard from './components/vehiculo-card'
 import PedidoDetalleModal from './components/pedido-detalle-modal'
 import { ordenarPorCercania, agruparPorZona, colorDeString, distanciaKm } from './lib/geo-utils'
 import type { PedidoListo, VehiculoDisponible, AsignacionState, OrdenEntrega } from './lib/types'
+import { hoyLima } from '@/lib/fechas-pe'
 
 type Props = {
   pedidosIniciales: PedidoListo[]
@@ -401,7 +402,7 @@ export default function DespachoClient({ pedidosIniciales, vehiculos, almacen, p
     setConsolidandoVehiculo(vehiculoId)
     try {
       // 1. Crear despacho
-      const fecha = new Date().toISOString().split('T')[0]
+      const fecha = hoyLima()
       const numero = `D-${fecha.replace(/-/g, '')}-${String(Date.now()).slice(-4)}`
       const { data: despacho, error: e1 } = await (supabase as any)
         .from('despachos')

@@ -25,6 +25,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
+import { hoyLima } from '@/lib/fechas-pe'
 
 export interface FamiliaOption {
   id: string
@@ -170,7 +171,7 @@ export default function VendedoresClient({
     anio: anioActual,
     mes: mesActual,
     semana_iso: getISOWeek(new Date()),
-    dia: new Date().toISOString().split('T')[0],
+    dia: hoyLima(),
     monto_meta: '',
     notas: '',
   })
@@ -188,7 +189,7 @@ export default function VendedoresClient({
   // Form: Liquidación
   const [liqForm, setLiqForm] = useState({
     periodo_inicio: new Date(anioActual, mesActual - 1, 1).toISOString().split('T')[0],
-    periodo_fin: new Date().toISOString().split('T')[0],
+    periodo_fin: hoyLima(),
     notas: '',
   })
   const [liqCalc, setLiqCalc] = useState({
@@ -208,7 +209,7 @@ export default function VendedoresClient({
         anio: v.meta.anio ?? anioActual,
         mes: v.meta.mes ?? mesActual,
         semana_iso: v.meta.semana_iso ?? getISOWeek(new Date()),
-        dia: v.meta.dia ?? new Date().toISOString().split('T')[0],
+        dia: v.meta.dia ?? hoyLima(),
         monto_meta: String(v.meta.monto_meta ?? ''),
         notas: v.meta.notas ?? '',
       })
@@ -218,7 +219,7 @@ export default function VendedoresClient({
         anio: anioActual,
         mes: mesActual,
         semana_iso: getISOWeek(new Date()),
-        dia: new Date().toISOString().split('T')[0],
+        dia: hoyLima(),
         monto_meta: '',
         notas: '',
       })
@@ -256,7 +257,7 @@ export default function VendedoresClient({
   const openLiq = async (v: VendedorData) => {
     setSelected(v)
     const inicio = new Date(anioActual, mesActual - 1, 1).toISOString().split('T')[0]
-    const fin = new Date().toISOString().split('T')[0]
+    const fin = hoyLima()
     setLiqForm({ periodo_inicio: inicio, periodo_fin: fin, notas: '' })
     await recalcularLiq(v, inicio, fin)
     setLiqOpen(true)
@@ -508,7 +509,7 @@ export default function VendedoresClient({
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = `reporte-vendedores-${new Date().toISOString().split('T')[0]}.csv`
+    a.download = `reporte-vendedores-${hoyLima()}.csv`
     a.click()
     URL.revokeObjectURL(url)
     toast.success('Reporte exportado')

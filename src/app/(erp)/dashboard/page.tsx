@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { formatCurrency, formatDate } from '@/lib/utils'
+import { hoyLima } from '@/lib/fechas-pe'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import {
@@ -19,7 +20,7 @@ export const dynamic = 'force-dynamic'
 
 async function getDashboardData() {
   const supabase = await createClient()
-  const today = new Date().toISOString().split('T')[0]
+  const today = hoyLima()
 
   const [
     { data: pedidosHoy },

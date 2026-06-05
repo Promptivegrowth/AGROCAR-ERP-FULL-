@@ -13,6 +13,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card, CardContent } from '@/components/ui/card'
 import { formatCurrency, formatDate } from '@/lib/utils'
+import { hoyLima } from '@/lib/fechas-pe'
 import type { Cliente, Cobro } from '@/types'
 
 type Tab = 'registrar' | 'del-dia'
@@ -276,7 +277,7 @@ export default function CobrosPage() {
           voucher_url: voucherUrl,
           nro_operacion: nroOperacion.trim() || null,
           notas: notas || null,
-          fecha: new Date().toISOString().split('T')[0],
+          fecha: hoyLima(),
         })
         .select('id')
         .single()
@@ -338,7 +339,7 @@ export default function CobrosPage() {
   const cargarCobrosDia = useCallback(async () => {
     if (!userId) return
     setLoadingCobros(true)
-    const hoy = new Date().toISOString().split('T')[0]
+    const hoy = hoyLima()
 
     const { data } = await supabase
       .from('cobros')

@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { hoyLima } from '@/lib/fechas-pe'
 import CajaClient, {
   type CajaSesionData,
   type CobroDia,
@@ -12,7 +13,7 @@ export const dynamic = 'force-dynamic'
 async function getCajaData() {
   const supabase = await createClient()
 
-  const today = new Date().toISOString().split('T')[0]
+  const today = hoyLima()
 
   // 1) Sesión abierta actual (si hay)
   const { data: sesionAbiertaRaw } = await supabase

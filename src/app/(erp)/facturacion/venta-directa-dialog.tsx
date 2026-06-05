@@ -6,6 +6,7 @@ import { toast } from 'sonner'
 import { createClient } from '@/lib/supabase/client'
 import { useDebounce } from '@/lib/hooks/use-debounce'
 import { formatCurrency } from '@/lib/utils'
+import { hoyLima } from '@/lib/fechas-pe'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -277,8 +278,8 @@ export default function VentaDirectaDialog({ open, onOpenChange, onCreated }: Pr
           cliente_externo_nombre: externoNom,
           cliente_externo_doc: externoDc,
           vendedor_id: null,
-          fecha_pedido: new Date().toISOString().split('T')[0],
-          fecha_despacho: new Date().toISOString().split('T')[0],
+          fecha_pedido: hoyLima(),
+          fecha_despacho: hoyLima(),
           estado: 'enviado',
           subtotal: baseImponible,
           igv: igvMonto,
@@ -358,7 +359,7 @@ export default function VentaDirectaDialog({ open, onOpenChange, onCreated }: Pr
         tipo: tipoComprobante,
         serie: serieReal,
         numero: numeroComp,
-        fecha_emision: new Date().toISOString().split('T')[0],
+        fecha_emision: hoyLima(),
         subtotal: baseImponible,
         igv: igvMonto,
         total: totalFinal,
@@ -391,7 +392,7 @@ export default function VentaDirectaDialog({ open, onOpenChange, onCreated }: Pr
         cobrador_id: userId,
         tipo: 'venta_directa' as any,
         referencia_id: pedido.id,
-        fecha: new Date().toISOString().split('T')[0],
+        fecha: hoyLima(),
         efectivo: parseFloat(pagoEfectivo) || 0,
         yape: parseFloat(pagoYape) || 0,
         plin: parseFloat(pagoPlin) || 0,
@@ -408,7 +409,7 @@ export default function VentaDirectaDialog({ open, onOpenChange, onCreated }: Pr
           cobrador_id: userId,
           tipo: 'cobranza',
           referencia_id: pedido.id,
-          fecha: new Date().toISOString().split('T')[0],
+          fecha: hoyLima(),
           efectivo: parseFloat(pagoEfectivo) || 0,
           yape: parseFloat(pagoYape) || 0,
           plin: parseFloat(pagoPlin) || 0,

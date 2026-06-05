@@ -6,6 +6,7 @@ import { ShoppingCart, Search, Plus, Minus, Trash2, AlertCircle, CheckCircle, Lo
 import { toast } from 'sonner'
 import { createClient } from '@/lib/supabase/client'
 import { useDebounce } from '@/lib/hooks/use-debounce'
+import { hoyLima } from '@/lib/fechas-pe'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
@@ -333,7 +334,7 @@ export default function PedidosPage() {
           numero,
           cliente_id: clienteSeleccionado.id,
           vendedor_id: userId,
-          fecha_pedido: new Date().toISOString().split('T')[0],
+          fecha_pedido: hoyLima(),
           fecha_despacho: fechaDespacho,
           estado: 'enviado',
           tipo_pago: tipoPago,
@@ -414,7 +415,7 @@ export default function PedidosPage() {
 
       // Auto check-in si no hay uno HOY de este vendedor en este cliente
       try {
-        const hoy = new Date().toISOString().split('T')[0]
+        const hoy = hoyLima()
         const { data: existing } = await (supabase as any)
           .from('gps_checkins')
           .select('id')
@@ -476,7 +477,7 @@ export default function PedidosPage() {
   const cargarMisPedidos = useCallback(async () => {
     if (!userId) return
     setLoadingPedidos(true)
-    const hoy = new Date().toISOString().split('T')[0]
+    const hoy = hoyLima()
 
     // Vendedor: solo los pedidos que él creó.
     // Repartidor: todos los pedidos del día (para ver qué despachar).

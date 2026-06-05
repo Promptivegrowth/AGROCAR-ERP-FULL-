@@ -11,6 +11,7 @@ import { toast } from 'sonner'
 import { createClient } from '@/lib/supabase/client'
 import { useDebounce } from '@/lib/hooks/use-debounce'
 import { formatCurrency, formatDate } from '@/lib/utils'
+import { hoyLima } from '@/lib/fechas-pe'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card, CardContent } from '@/components/ui/card'
@@ -108,7 +109,7 @@ export default function ComprasPage() {
     defaultValues: {
       tipo: 'directa',
       metodo_valorizacion: 'promedio',
-      fecha: new Date().toISOString().split('T')[0],
+      fecha: hoyLima(),
       items: [{ producto_id: '', cantidad: 0, precio_unitario: 0, total_linea: 0, lote_numero: '', lote_fecha_fabricacion: '', lote_fecha_vencimiento: '' }],
     },
   })

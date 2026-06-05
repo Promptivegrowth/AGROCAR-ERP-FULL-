@@ -8,6 +8,7 @@ import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { formatDate } from '@/lib/utils'
+import { hoyLima } from '@/lib/fechas-pe'
 import type { Cliente, GpsCheckin } from '@/types'
 import LeafletMap from '@/components/maps/leaflet-map'
 
@@ -44,7 +45,7 @@ export default function CheckinPage() {
       setUserId(user.id)
       setLoadingCheckins(true)
 
-      const hoy = new Date().toISOString().split('T')[0]
+      const hoy = hoyLima()
 
       // Para check-in cargar TODOS los clientes activos: aplica para vendedor
       // (visita SUS clientes) y para repartidor (visita cualquiera al despachar).
@@ -76,7 +77,7 @@ export default function CheckinPage() {
 
   async function cargarCheckinsDia(uid: string) {
     setLoadingCheckins(true)
-    const hoy = new Date().toISOString().split('T')[0]
+    const hoy = hoyLima()
 
     const { data } = await supabase
       .from('gps_checkins')

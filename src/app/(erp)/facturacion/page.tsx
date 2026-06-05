@@ -7,6 +7,7 @@ import VentaDirectaDialog from './venta-directa-dialog'
 import { toast } from 'sonner'
 import { createClient } from '@/lib/supabase/client'
 import { formatCurrency, formatDate } from '@/lib/utils'
+import { hoyLima } from '@/lib/fechas-pe'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -132,7 +133,7 @@ export default function FacturacionPage() {
       tipo,
       serie: serieReal,
       numero,
-      fecha_emision: new Date().toISOString().split('T')[0],
+      fecha_emision: hoyLima(),
       subtotal: subtotalCalc,
       igv: igvCalc,
       total: pedTotal > 0 ? pedTotal : subtotalCalc + igvCalc,
@@ -240,7 +241,7 @@ export default function FacturacionPage() {
       tipo: tipoComprobante as any,
       serie: serieReal,
       numero,
-      fecha_emision: new Date().toISOString().split('T')[0],
+      fecha_emision: hoyLima(),
       subtotal: subtotalCalc,
       igv: igvCalc,
       total: pedTotal > 0 ? pedTotal : subtotalCalc + igvCalc,

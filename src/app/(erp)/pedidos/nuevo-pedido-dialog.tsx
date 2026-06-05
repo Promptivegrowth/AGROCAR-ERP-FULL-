@@ -6,6 +6,7 @@ import { toast } from 'sonner'
 import { createClient } from '@/lib/supabase/client'
 import { useDebounce } from '@/lib/hooks/use-debounce'
 import { formatCurrency } from '@/lib/utils'
+import { hoyLima } from '@/lib/fechas-pe'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -302,7 +303,7 @@ export default function NuevoPedidoDialog({ open, onOpenChange, onCreated }: Pro
           numero,
           cliente_id: clienteSeleccionado.id,
           vendedor_id: asignarVendedor && vendedorId ? vendedorId : null,
-          fecha_pedido: new Date().toISOString().split('T')[0],
+          fecha_pedido: hoyLima(),
           fecha_despacho: fechaDespacho,
           estado: 'enviado',
           tipo_pago: tipoPago,
