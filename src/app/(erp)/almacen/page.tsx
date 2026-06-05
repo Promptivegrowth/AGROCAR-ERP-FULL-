@@ -314,7 +314,13 @@ export default function AlmacenPage() {
     )
   })
 
-  const stockBajo = stocksFiltrados.filter((s) => (Number(s.cantidad) ?? 0) < 10)
+  // "Stock bajo" = disponible real (físico - reservado) por debajo de 10.
+  // Incluye valores negativos (productos sobrecomprometidos por pedidos urgentes).
+  const stockBajo = stocksFiltrados.filter((s) => {
+    const fisico = Number(s.cantidad) ?? 0
+    const reservado = Number(s.cantidad_reservada) ?? 0
+    return (fisico - reservado) < 10
+  })
   const valorInventario = stocks.reduce(
     (acc, s) => acc + (Number(s.cantidad) ?? 0) * (Number(s.costo_promedio) ?? 0),
     0,
@@ -520,33 +526,88 @@ export default function AlmacenPage() {
         </div>
       </div>
 
-      {/* Alertas stock bajo */}
-      {stockBajo.length > 0 && (
-        <div className="bg-orange-50 border border-orange-200 rounded-xl p-4">
-          <div className="flex items-start gap-3">
-            <AlertTriangle className="w-5 h-5 text-orange-500 flex-shrink-0 mt-0.5" />
-            <div>
-              <p className="text-sm font-semibold text-orange-800">
-                {stockBajo.length} producto{stockBajo.length !== 1 ? 's' : ''} con stock bajo (&lt;10 unidades)
-              </p>
-              <div className="flex flex-wrap gap-1.5 mt-2">
-                {stockBajo.slice(0, 8).map((s) => (
-                  <span
-                    key={s.id}
-                    className="inline-flex items-center gap-1 px-2 py-0.5 bg-orange-100 border border-orange-200 rounded-full text-xs text-orange-700"
-                  >
-                    <TrendingDown className="w-2.5 h-2.5" />
-                    {(s.productos as any)?.nombre ?? '—'} ({Number(s.cantidad)})
-                  </span>
-                ))}
-                {stockBajo.length > 8 && (
-                  <span className="text-xs text-orange-600">+{stockBajo.length - 8} más</span>
-                )}
+      {/* Alerta de stock comprometido (negativo) — prioridad máxima */}
+      {(() => {
+        const negativos = stocksFiltrados.filter((s) => {
+          const fisico = Number(s.cantidad) ?? 0
+          const reservado = Number(s.cantidad_reservada) ?? 0
+          return (fisico - reservado) < 0
+        })
+        if (negativos.length === 0) return null
+        return (
+          <div className="bg-red-50 border-2 border-red-300 rounded-xl p-4">
+            <div className="flex items-start gap-3">
+              <AlertTriangle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-bold text-red-800">
+                  ⚠ {negativos.length} producto{negativos.length !== 1 ? 's' : ''} requiere{negativos.length === 1 ? '' : 'n'} REPOSICIÓN URGENTE
+                </p>
+                <p className="text-xs text-red-700 mt-0.5">
+                  Stock comprometido por pedidos con autorización. Al aplicar la compra correspondiente, el saldo se cuadra automáticamente.
+                </p>
+                <div className="flex flex-wrap gap-1.5 mt-2">
+                  {negativos.slice(0, 8).map((s) => {
+                    const fisico = Number(s.cantidad) ?? 0
+                    const reservado = Number(s.cantidad_reservada) ?? 0
+                    const disp = fisico - reservado
+                    return (
+                      <span
+                        key={s.id}
+                        className="inline-flex items-center gap-1 px-2 py-0.5 bg-red-100 border border-red-300 rounded-full text-xs text-red-800 font-medium"
+                      >
+                        {(s.productos as any)?.nombre ?? '—'} ({disp})
+                      </span>
+                    )
+                  })}
+                  {negativos.length > 8 && (
+                    <span className="text-xs text-red-700">+{negativos.length - 8} más</span>
+                  )}
+                </div>
               </div>
             </div>
           </div>
-        </div>
-      )}
+        )
+      })()}
+
+      {/* Alertas stock bajo (positivo pero <10) */}
+      {(() => {
+        const bajos = stockBajo.filter((s) => {
+          const fisico = Number(s.cantidad) ?? 0
+          const reservado = Number(s.cantidad_reservada) ?? 0
+          return (fisico - reservado) >= 0
+        })
+        if (bajos.length === 0) return null
+        return (
+          <div className="bg-orange-50 border border-orange-200 rounded-xl p-4">
+            <div className="flex items-start gap-3">
+              <AlertTriangle className="w-5 h-5 text-orange-500 flex-shrink-0 mt-0.5" />
+              <div>
+                <p className="text-sm font-semibold text-orange-800">
+                  {bajos.length} producto{bajos.length !== 1 ? 's' : ''} con stock bajo (&lt;10 unidades)
+                </p>
+                <div className="flex flex-wrap gap-1.5 mt-2">
+                  {bajos.slice(0, 8).map((s) => {
+                    const fisico = Number(s.cantidad) ?? 0
+                    const reservado = Number(s.cantidad_reservada) ?? 0
+                    return (
+                      <span
+                        key={s.id}
+                        className="inline-flex items-center gap-1 px-2 py-0.5 bg-orange-100 border border-orange-200 rounded-full text-xs text-orange-700"
+                      >
+                        <TrendingDown className="w-2.5 h-2.5" />
+                        {(s.productos as any)?.nombre ?? '—'} ({fisico - reservado})
+                      </span>
+                    )
+                  })}
+                  {bajos.length > 8 && (
+                    <span className="text-xs text-orange-600">+{bajos.length - 8} más</span>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        )
+      })()}
 
       {/* KPIs rápidos */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -624,14 +685,17 @@ export default function AlmacenPage() {
               <div className="md:hidden divide-y divide-gray-50">
                 {stocksFiltrados.map((s) => {
                   const producto = s.productos as any
-                  const disponible = Number(s.cantidad) ?? 0
+                  const fisico = Number(s.cantidad) ?? 0
                   const reservada = Number(s.cantidad_reservada) ?? 0
-                  const esBajo = disponible < 10
+                  // Disponible real puede ser negativo (pedido urgente con stock comprometido)
+                  const disponible = fisico - reservada
+                  const esNegativo = disponible < 0
+                  const esBajo = disponible < 10 && !esNegativo
                   const simbolo = producto?.unidades_medida?.simbolo ?? ''
                   return (
                     <div
                       key={s.id}
-                      className={`p-4 hover:bg-gray-50/50 ${esBajo ? 'bg-orange-50/30' : ''}`}
+                      className={`p-4 hover:bg-gray-50/50 ${esNegativo ? 'bg-red-50/40' : esBajo ? 'bg-orange-50/30' : ''}`}
                     >
                       <div className="flex items-start justify-between gap-2">
                         <div className="min-w-0 flex-1">
@@ -641,15 +705,17 @@ export default function AlmacenPage() {
                           )}
                           <p className="text-xs text-gray-500 font-mono">{producto?.codigo ?? '—'}</p>
                           <div className="flex items-center gap-3 mt-2 text-xs">
-                            <span className={`font-bold ${esBajo ? 'text-orange-600' : 'text-gray-800'}`}>
+                            <span className={`font-bold ${esNegativo ? 'text-red-600' : esBajo ? 'text-orange-600' : 'text-gray-800'}`}>
                               {disponible.toLocaleString('es-PE')} {simbolo}
                             </span>
                             <span className="text-gray-500">
-                              Reserv. {reservada.toLocaleString('es-PE')}
+                              Físico {fisico.toLocaleString('es-PE')} · Reserv. {reservada.toLocaleString('es-PE')}
                             </span>
                           </div>
                         </div>
-                        {esBajo
+                        {esNegativo
+                          ? <Badge className="text-xs bg-red-100 text-red-700 border-red-200 shrink-0">⚠ Reposición</Badge>
+                          : esBajo
                           ? <Badge className="text-xs bg-orange-100 text-orange-700 border-orange-200 shrink-0">Stock Bajo</Badge>
                           : <Badge className="text-xs bg-green-100 text-green-700 border-green-200 shrink-0">OK</Badge>}
                       </div>
@@ -702,23 +768,28 @@ export default function AlmacenPage() {
                   <tbody className="divide-y divide-gray-50">
                     {stocksFiltrados.map((s) => {
                       const producto = s.productos as any
-                      const disponible = Number(s.cantidad) ?? 0
+                      const fisico = Number(s.cantidad) ?? 0
                       const reservada = Number(s.cantidad_reservada) ?? 0
+                      // Disponible real: cantidad - reservada. Puede ser negativo si hay
+                      // pedidos creados con override (force_reserva). Cuando llega la compra,
+                      // se restaura automáticamente al sumarse a stock.cantidad.
+                      const disponible = fisico - reservada
                       const stockMin = producto?.stock_minimo != null ? Number(producto.stock_minimo) : null
                       const stockMax = producto?.stock_maximo != null ? Number(producto.stock_maximo) : null
-                      // Estado de stock: bajo_minimo, cerca_minimo, sobrestock, ok (legacy: fallback a <10 si no hay config)
-                      let estadoStock: 'bajo_minimo' | 'cerca_minimo' | 'sobrestock' | 'ok' = 'ok'
-                      if (stockMin != null && disponible < stockMin) estadoStock = 'bajo_minimo'
+                      // Estado: negativo (reposición urgente), bajo_minimo, cerca_minimo, sobrestock, ok
+                      let estadoStock: 'negativo' | 'bajo_minimo' | 'cerca_minimo' | 'sobrestock' | 'ok' = 'ok'
+                      if (disponible < 0) estadoStock = 'negativo'
+                      else if (stockMin != null && disponible < stockMin) estadoStock = 'bajo_minimo'
                       else if (stockMin != null && disponible < stockMin * 1.2) estadoStock = 'cerca_minimo'
                       else if (stockMax != null && disponible > stockMax) estadoStock = 'sobrestock'
                       else if (stockMin == null && disponible < 10) estadoStock = 'bajo_minimo'
                       const esAlerta = estadoStock !== 'ok'
                       const simbolo = producto?.unidades_medida?.simbolo ?? ''
-                      const reorden = stockMax != null && estadoStock === 'bajo_minimo'
+                      const reorden = stockMax != null && (estadoStock === 'bajo_minimo' || estadoStock === 'negativo')
                         ? Math.max(0, stockMax - disponible)
                         : null
                       return (
-                        <tr key={s.id} className={`hover:bg-gray-50/50 transition-colors ${estadoStock === 'bajo_minimo' ? 'bg-red-50/40' : estadoStock === 'cerca_minimo' ? 'bg-amber-50/30' : estadoStock === 'sobrestock' ? 'bg-purple-50/30' : ''}`}>
+                        <tr key={s.id} className={`hover:bg-gray-50/50 transition-colors ${estadoStock === 'negativo' ? 'bg-red-100/50' : estadoStock === 'bajo_minimo' ? 'bg-red-50/40' : estadoStock === 'cerca_minimo' ? 'bg-amber-50/30' : estadoStock === 'sobrestock' ? 'bg-purple-50/30' : ''}`}>
                           <td className="py-3 px-4 font-mono text-xs text-gray-500">{producto?.codigo ?? '—'}</td>
                           <td className="py-3 px-4 max-w-[280px]">
                             <div className="font-medium text-gray-900 truncate">{productoLabel(producto)}</div>
@@ -727,10 +798,21 @@ export default function AlmacenPage() {
                             )}
                           </td>
                           <td className="py-3 px-4">
-                            <span className={`font-bold ${esAlerta ? (estadoStock === 'bajo_minimo' ? 'text-red-600' : estadoStock === 'cerca_minimo' ? 'text-amber-600' : 'text-purple-600') : 'text-gray-800'}`}>
+                            <span className={`font-bold ${
+                              estadoStock === 'negativo' ? 'text-red-700' :
+                              estadoStock === 'bajo_minimo' ? 'text-red-600' :
+                              estadoStock === 'cerca_minimo' ? 'text-amber-600' :
+                              estadoStock === 'sobrestock' ? 'text-purple-600' :
+                              'text-gray-800'
+                            }`}>
                               {disponible.toLocaleString('es-PE')}
                             </span>
                             <span className="text-xs text-gray-400 ml-1">{simbolo}</span>
+                            {estadoStock === 'negativo' && (
+                              <div className="text-[10px] text-red-700 font-semibold mt-0.5">
+                                Falta {Math.abs(disponible).toLocaleString('es-PE')} {simbolo} para cuadrar
+                              </div>
+                            )}
                             {(stockMin != null || stockMax != null) && (
                               <div className="text-[10px] text-gray-400 font-mono">
                                 {stockMin != null && `min ${stockMin}`}
@@ -740,8 +822,8 @@ export default function AlmacenPage() {
                             )}
                           </td>
                           <td className="py-3 px-4 text-gray-600">
-                            {reservada.toLocaleString('es-PE')}
-                            <span className="text-xs text-gray-400 ml-1">{simbolo}</span>
+                            <div className="font-medium">{reservada.toLocaleString('es-PE')}</div>
+                            <div className="text-[10px] text-gray-400">físico {fisico.toLocaleString('es-PE')} {simbolo}</div>
                           </td>
                           <td className="py-3 px-4 text-gray-700">{formatCurrency(Number(s.costo_promedio) ?? 0)}</td>
                           <td className="py-3 px-4">
@@ -766,7 +848,12 @@ export default function AlmacenPage() {
                             {s.updated_at ? formatDate(s.updated_at) : '—'}
                           </td>
                           <td className="py-3 px-4">
-                            {estadoStock === 'bajo_minimo' ? (
+                            {estadoStock === 'negativo' ? (
+                              <div>
+                                <Badge className="text-xs bg-red-200 text-red-800 border-red-300 font-bold">⚠ REPOSICIÓN</Badge>
+                                <div className="text-[10px] text-red-700 mt-0.5">Stock comprometido</div>
+                              </div>
+                            ) : estadoStock === 'bajo_minimo' ? (
                               <div>
                                 <Badge className="text-xs bg-red-100 text-red-700 border-red-200">⚠ Bajo mínimo</Badge>
                                 {reorden != null && (
