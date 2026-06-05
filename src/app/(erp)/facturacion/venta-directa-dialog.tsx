@@ -350,39 +350,33 @@ export default function VentaDirectaDialog({ open, onOpenChange, onCreated }: Pr
       }
       const serieReal = corr[0].serie as string
       const numeroComp = corr[0].numero as string
-      const { data: compInsert, error: compError } = await (supabase.from('comprobantes') as any).insert({
-        pedido_id: pedido.id,
-        cliente_id: clienteId,
-        cliente_externo_nombre: externoNom,
-        cliente_externo_doc: externoDc,
-        facturador_id: userId,
-        tipo: tipoComprobante,
-        serie: serieReal,
-        numero: numeroComp,
-        fecha_emision: hoyLima(),
-        subtotal: baseImponible,
-        igv: igvMonto,
-        total: totalFinal,
-        moneda: 'PEN',
-        estado: 'emitido',
-      }).select('id').single()
-      if (compError || !compInsert) throw new Error('Comprobante: ' + (compError?.message ?? ''))
+      // RPC atómica: cabecera + items en una transacción. Si los items
+      // fallan, todo se hace rollback (no quedan comprobantes huérfanos
+      // con monto pero sin detalle, que era el bug reportado por Daniel).
+      // Nota: la RPC copia los items DEL PEDIDO ya creado arriba — por eso
+      // antes hay que asegurar que pedidos_items ya esté insertado.
+      const { data: compResult, error: compError } = await (supabase.rpc as any)('emitir_comprobante_atomico', {
+        p_pedido_id: pedido.id,
+        p_tipo: tipoComprobante,
+        p_serie: serieReal,
+        p_numero: numeroComp,
+        p_fecha_emision: hoyLima(),
+        p_subtotal: baseImponible,
+        p_igv: igvMonto,
+        p_total: totalFinal,
+        p_facturador_id: userId,
+      })
+      if (compError || !compResult?.id) throw new Error('Comprobante: ' + (compError?.message ?? 'no se generó'))
 
-      // Snapshot de items en comprobantes_items (inmutable, formato SUNAT)
-      const itemsCompr = carrito.map((s) => ({
-        comprobante_id: compInsert.id,
-        producto_id: s.producto.id,
-        descripcion: s.producto.descripcion?.trim() || s.producto.nombre,
-        cantidad: s.cantidad,
-        precio_unitario: s.producto.precio,
-        subtotal: s.subtotal,
-        igv_porcentaje: incluirIgv ? 18 : 0,
-      }))
-      const { error: compItemsErr } = await (supabase.from('comprobantes_items') as any).insert(itemsCompr)
-      if (compItemsErr) {
-        // No abortamos — el comprobante ya está; solo notificamos
-        toast.warning('Items del comprobante no guardados', { description: compItemsErr.message })
+      // Para snapshot externo (consumidor final): la RPC no recibe esos
+      // campos, los actualizamos aparte para mantener compatibilidad.
+      if (externoNom || externoDc) {
+        await (supabase.from('comprobantes') as any).update({
+          cliente_externo_nombre: externoNom,
+          cliente_externo_doc: externoDc,
+        }).eq('id', compResult.id)
       }
+      const compInsert = { id: compResult.id as string }
 
       // 5. Registrar el cobro
       const { error: cobroError } = await (supabase.from('cobros') as any).insert({

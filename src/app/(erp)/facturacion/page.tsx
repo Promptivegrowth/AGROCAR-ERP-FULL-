@@ -31,6 +31,19 @@ export default function FacturacionPage() {
 
   const [pedidosPendientes, setPedidosPendientes] = useState<any[]>([])
   const [comprobantes, setComprobantes] = useState<any[]>([])
+  const [userRole, setUserRole] = useState<string | null>(null)
+  // Impresión por rangos
+  const [seleccionados, setSeleccionados] = useState<Set<string>>(new Set())
+  const [filtroDesde, setFiltroDesde] = useState<string>('')
+  const [filtroHasta, setFiltroHasta] = useState<string>('')
+  const [filtroTipo, setFiltroTipo] = useState<'todos' | 'factura' | 'boleta' | 'nota_pedido_interna'>('todos')
+  // Edición controlada
+  const [editarOpen, setEditarOpen] = useState(false)
+  const [editComp, setEditComp] = useState<any>(null)
+  const [editItems, setEditItems] = useState<any[]>([])
+  const [editHistorial, setEditHistorial] = useState<any[]>([])
+  const [editNota, setEditNota] = useState('')
+  const [editSaving, setEditSaving] = useState(false)
   const [loading, setLoading] = useState(true)
   const [tipoCambio, setTipoCambio] = useState<number | null>(null)
   const [tipoCambioFecha, setTipoCambioFecha] = useState<string | null>(null)
@@ -61,11 +74,11 @@ export default function FacturacionPage() {
       supabase
         .from('comprobantes')
         .select(`
-          id, serie, numero, tipo, fecha_emision, total, estado,
+          id, serie, numero, tipo, fecha_emision, total, estado, editado, editado_at, enviado_sunat,
           clientes(razon_social)
         `)
         .order('fecha_emision', { ascending: false })
-        .limit(50),
+        .limit(200),
       // TC más reciente disponible (si hoy no hay, usa el último día hábil)
       supabase
         .from('tipo_cambio')
@@ -89,6 +102,120 @@ export default function FacturacionPage() {
 
   useEffect(() => { loadData() }, [loadData])
 
+  // Cargar rol del usuario para gating de edición (solo admin/gerente/facturador editan)
+  useEffect(() => {
+    let active = true
+    ;(async () => {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user || !active) return
+      const { data: prof } = await supabase.from('profiles').select('role').eq('id', user.id).maybeSingle()
+      if (active) setUserRole((prof as any)?.role ?? null)
+    })()
+    return () => { active = false }
+  }, [supabase])
+
+  const puedeEditar = userRole === 'administrador' || userRole === 'gerente' || userRole === 'facturador'
+
+  // Filtrar comprobantes según rango de fechas + tipo
+  const comprobantesFiltrados = comprobantes.filter((c: any) => {
+    if (filtroTipo !== 'todos' && c.tipo !== filtroTipo) return false
+    if (filtroDesde && c.fecha_emision < filtroDesde) return false
+    if (filtroHasta && c.fecha_emision > filtroHasta) return false
+    return true
+  })
+
+  function toggleSeleccion(id: string) {
+    setSeleccionados((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+  function seleccionarTodos() {
+    setSeleccionados(new Set(comprobantesFiltrados.map((c: any) => c.id)))
+  }
+  function limpiarSeleccion() {
+    setSeleccionados(new Set())
+  }
+  function imprimirLote(formato: 'a4' | 'ticket') {
+    if (seleccionados.size === 0) {
+      toast.error('Sin comprobantes seleccionados', { description: 'Marca al menos uno para imprimir en lote.' })
+      return
+    }
+    const ids = Array.from(seleccionados).join(',')
+    window.open(`/comprobante/imprimir-lote?ids=${ids}&formato=${formato}`, '_blank')
+  }
+
+  async function abrirEditar(comp: any) {
+    if (!puedeEditar) {
+      toast.error('Sin permisos', { description: 'Solo administrador, gerente o facturador pueden editar comprobantes.' })
+      return
+    }
+    if (comp.enviado_sunat) {
+      toast.error('Bloqueado', { description: 'El comprobante ya fue enviado a SUNAT y no puede editarse.' })
+      return
+    }
+    setEditComp(comp)
+    setEditNota('')
+    setEditarOpen(true)
+    // Cargar items + historial
+    const [{ data: items }, { data: hist }] = await Promise.all([
+      supabase.from('comprobantes_items')
+        .select('id, descripcion, cantidad, precio_unitario, subtotal, igv_porcentaje, productos(codigo, nombre)')
+        .eq('comprobante_id', comp.id)
+        .order('id'),
+      (supabase as any).from('comprobantes_ediciones')
+        .select('id, usuario_nombre, usuario_rol, campo, valor_anterior, valor_nuevo, item_descripcion, nota, created_at')
+        .eq('comprobante_id', comp.id)
+        .order('created_at', { ascending: false }),
+    ])
+    setEditItems((items ?? []).map((it: any) => ({ ...it, _cantidad: String(it.cantidad), _precio: String(it.precio_unitario) })))
+    setEditHistorial(hist ?? [])
+  }
+
+  async function guardarEdicion() {
+    if (!editComp) return
+    setEditSaving(true)
+    try {
+      let cambios = 0
+      for (const it of editItems) {
+        const cantNueva = parseFloat(it._cantidad)
+        const precioNueva = parseFloat(it._precio)
+        const descNueva = (it.descripcion ?? '').trim()
+        if (isNaN(cantNueva) || cantNueva <= 0 || isNaN(precioNueva) || precioNueva < 0 || !descNueva) {
+          throw new Error(`Item "${it.descripcion}": cantidad y precio deben ser válidos, descripción no puede estar vacía.`)
+        }
+        const cambioCant = Number(it.cantidad) !== cantNueva
+        const cambioPrecio = Number(it.precio_unitario) !== precioNueva
+        const cambioDesc = it.descripcion !== descNueva
+        if (!cambioCant && !cambioPrecio && !cambioDesc) continue
+        const { error } = await (supabase.rpc as any)('editar_comprobante_item', {
+          p_item_id: it.id,
+          p_descripcion: descNueva,
+          p_cantidad: cantNueva,
+          p_precio_unitario: precioNueva,
+          p_nota: editNota.trim() || null,
+        })
+        if (error) throw new Error(error.message)
+        cambios++
+      }
+      if (cambios === 0) {
+        toast.info('Sin cambios', { description: 'No modificaste ningún campo.' })
+      } else {
+        toast.success(`Comprobante actualizado`, {
+          description: `${cambios} línea${cambios === 1 ? '' : 's'} modificada${cambios === 1 ? '' : 's'}. Los totales se recalcularon.`,
+        })
+        setEditarOpen(false)
+        loadData()
+      }
+    } catch (err: any) {
+      toast.error('No se pudo guardar', { description: err?.message ?? 'Error desconocido' })
+    } finally {
+      setEditSaving(false)
+    }
+  }
+
   const handleFacturar = (pedido: any) => {
     setPedidoSeleccionado(pedido)
     const cliente = pedido.clientes ?? {}
@@ -108,9 +235,12 @@ export default function FacturacionPage() {
     return 'boleta'
   }
 
-  // Función reutilizable: emite UN comprobante para UN pedido. Retorna el id+label o lanza error.
+  // Función reutilizable: emite UN comprobante para UN pedido vía RPC atómica.
+  // La RPC valida que el pedido tenga items y hace todo en una transacción
+  // (cabecera + items snapshot + cambio de estado). Si falla, rollback completo.
+  // Esto elimina el bug histórico de comprobantes con monto pero sin detalle.
   const emitirComprobantePedido = async (pedido: any, tipo: 'factura' | 'boleta' | 'nota_pedido_interna') => {
-    // 1) Obtener correlativo
+    // 1) Correlativo
     const { data: corr, error: corrErr } = await (supabase.rpc as any)('siguiente_correlativo', { p_tipo: tipo })
     if (corrErr || !corr || corr.length === 0) {
       throw new Error(corrErr?.message ?? 'Falta configurar la numeración.')
@@ -118,7 +248,7 @@ export default function FacturacionPage() {
     const serieReal = corr[0].serie as string
     const numero = corr[0].numero as string
 
-    // 2) Calcular totales (respetar incluir_igv del pedido)
+    // 2) Totales
     const pedSubtotal = Number(pedido.subtotal ?? 0)
     const pedIgv = Number(pedido.igv ?? 0)
     const pedTotal = Number(pedido.total ?? 0)
@@ -126,48 +256,25 @@ export default function FacturacionPage() {
     const igvCalc = pedIgv > 0 ? pedIgv : (incluirIgv ? pedTotal * 0.18 / 1.18 : 0)
     const subtotalCalc = pedIgv > 0 ? pedSubtotal : (incluirIgv ? pedTotal - igvCalc : pedTotal)
 
-    // 3) Insertar comprobante
-    const { data: compIns, error: compErr } = await (supabase.from('comprobantes') as any).insert({
-      pedido_id: pedido.id,
-      cliente_id: pedido.cliente_id,
-      tipo,
-      serie: serieReal,
-      numero,
-      fecha_emision: hoyLima(),
-      subtotal: subtotalCalc,
-      igv: igvCalc,
-      total: pedTotal > 0 ? pedTotal : subtotalCalc + igvCalc,
-      moneda: 'PEN',
-      estado: 'emitido',
-    }).select('id').single()
-    if (compErr || !compIns) throw new Error(compErr?.message ?? 'Error al insertar comprobante')
+    // 3) Usuario actual (para facturador_id)
+    const { data: { user } } = await supabase.auth.getUser()
 
-    // 4) Snapshot de items
-    const { data: pedidoItems } = await supabase
-      .from('pedidos_items')
-      .select('producto_id, cantidad, precio_unitario, subtotal, productos(nombre, descripcion)')
-      .eq('pedido_id', pedido.id)
-    if (pedidoItems && pedidoItems.length > 0) {
-      const itemsCompr = pedidoItems.map((it: any) => ({
-        comprobante_id: compIns.id,
-        producto_id: it.producto_id,
-        descripcion: it.productos?.descripcion?.trim() || it.productos?.nombre || '—',
-        cantidad: it.cantidad,
-        precio_unitario: it.precio_unitario,
-        subtotal: it.subtotal,
-        igv_porcentaje: incluirIgv ? 18 : 0,
-      }))
-      await (supabase.from('comprobantes_items') as any).insert(itemsCompr)
-    }
+    // 4) Llamar RPC atómica
+    const { data: result, error: rpcError } = await (supabase.rpc as any)('emitir_comprobante_atomico', {
+      p_pedido_id: pedido.id,
+      p_tipo: tipo,
+      p_serie: serieReal,
+      p_numero: numero,
+      p_fecha_emision: hoyLima(),
+      p_subtotal: subtotalCalc,
+      p_igv: igvCalc,
+      p_total: pedTotal > 0 ? pedTotal : subtotalCalc + igvCalc,
+      p_facturador_id: user?.id ?? null,
+    })
+    if (rpcError) throw new Error(rpcError.message)
+    if (!result?.id) throw new Error('La emisión no devolvió un comprobante válido.')
 
-    // 5) Actualizar pedido a facturado
-    const { error: pedErr } = await supabase
-      .from('pedidos')
-      .update({ estado: 'facturado', updated_at: new Date().toISOString() })
-      .eq('id', pedido.id)
-    if (pedErr) throw new Error(pedErr.message)
-
-    return { id: compIns.id, label: `${serieReal}-${numero}` }
+    return { id: result.id, label: `${serieReal}-${numero}` }
   }
 
   // Emisión MASIVA por tipo
@@ -235,56 +342,27 @@ export default function FacturacionPage() {
     const igvCalc = pedIgv > 0 ? pedIgv : (incluirIgv ? pedTotal * 0.18 / 1.18 : 0)
     const subtotalCalc = pedIgv > 0 ? pedSubtotal : (incluirIgv ? pedTotal - igvCalc : pedTotal)
 
-    const { data: compInsertado, error: compError } = await (supabase.from('comprobantes') as any).insert({
-      pedido_id: pedidoSeleccionado.id,
-      cliente_id: pedidoSeleccionado.cliente_id,
-      tipo: tipoComprobante as any,
-      serie: serieReal,
-      numero,
-      fecha_emision: hoyLima(),
-      subtotal: subtotalCalc,
-      igv: igvCalc,
-      total: pedTotal > 0 ? pedTotal : subtotalCalc + igvCalc,
-      moneda: 'PEN',
-      estado: 'emitido',
-    }).select('id').single()
-
-    if (compError || !compInsertado) {
-      setSaving(false)
-      toast.error('Error al emitir comprobante', { description: compError?.message })
-      return
-    }
-
-    // Snapshot de items en comprobantes_items (formato SUNAT, inmutable)
-    const { data: pedidoItems } = await supabase
-      .from('pedidos_items')
-      .select('producto_id, cantidad, precio_unitario, subtotal, productos(nombre, descripcion)')
-      .eq('pedido_id', pedidoSeleccionado.id)
-    if (pedidoItems && pedidoItems.length > 0) {
-      const itemsCompr = pedidoItems.map((it: any) => ({
-        comprobante_id: compInsertado.id,
-        producto_id: it.producto_id,
-        descripcion: it.productos?.descripcion?.trim() || it.productos?.nombre || '—',
-        cantidad: it.cantidad,
-        precio_unitario: it.precio_unitario,
-        subtotal: it.subtotal,
-        igv_porcentaje: incluirIgv ? 18 : 0,
-      }))
-      await (supabase.from('comprobantes_items') as any).insert(itemsCompr)
-    }
-
-    const { error: pedError } = await supabase
-      .from('pedidos')
-      .update({ estado: 'facturado', updated_at: new Date().toISOString() })
-      .eq('id', pedidoSeleccionado.id)
+    // Usar RPC atómica: cabecera + items + cambio estado en una transacción
+    const { data: { user } } = await supabase.auth.getUser()
+    const { data: result, error: rpcError } = await (supabase.rpc as any)('emitir_comprobante_atomico', {
+      p_pedido_id: pedidoSeleccionado.id,
+      p_tipo: tipoComprobante,
+      p_serie: serieReal,
+      p_numero: numero,
+      p_fecha_emision: hoyLima(),
+      p_subtotal: subtotalCalc,
+      p_igv: igvCalc,
+      p_total: pedTotal > 0 ? pedTotal : subtotalCalc + igvCalc,
+      p_facturador_id: user?.id ?? null,
+    })
 
     setSaving(false)
-    setFacturarDialog(false)
-
-    if (pedError) {
-      toast.error('Error al actualizar pedido', { description: pedError.message })
+    if (rpcError || !result?.id) {
+      toast.error('Error al emitir comprobante', { description: rpcError?.message ?? 'No se generó el comprobante' })
       return
     }
+    setFacturarDialog(false)
+    const compInsertado = { id: result.id as string }
 
     const label = `${serieReal}-${numero}`
     const totalFmt = (pedTotal > 0 ? pedTotal : subtotalCalc + igvCalc).toLocaleString('es-PE', { style: 'currency', currency: 'PEN' })
@@ -512,21 +590,87 @@ export default function FacturacionPage() {
         <TabsContent value="emitidos" className="mt-4">
           <Card className="border-gray-200 shadow-sm">
             <CardHeader className="pb-2">
-              <CardTitle className="text-base font-semibold text-gray-800">Comprobantes Emitidos</CardTitle>
+              <CardTitle className="text-base font-semibold text-gray-800 flex items-center justify-between flex-wrap gap-2">
+                <span>Comprobantes Emitidos</span>
+                <span className="text-xs font-normal text-gray-500">
+                  {seleccionados.size > 0 ? `${seleccionados.size} seleccionado${seleccionados.size === 1 ? '' : 's'} · ` : ''}
+                  {comprobantesFiltrados.length} mostrados
+                </span>
+              </CardTitle>
             </CardHeader>
             <CardContent className="p-0">
+              {/* Barra de filtros + acciones por lote */}
+              <div className="px-4 pb-3 border-b border-gray-100 flex flex-wrap items-end gap-2">
+                <div>
+                  <Label className="text-[10px] uppercase tracking-wide text-gray-500">Desde</Label>
+                  <Input type="date" value={filtroDesde} onChange={(e) => setFiltroDesde(e.target.value)} className="h-8 text-xs w-36" />
+                </div>
+                <div>
+                  <Label className="text-[10px] uppercase tracking-wide text-gray-500">Hasta</Label>
+                  <Input type="date" value={filtroHasta} onChange={(e) => setFiltroHasta(e.target.value)} className="h-8 text-xs w-36" />
+                </div>
+                <div>
+                  <Label className="text-[10px] uppercase tracking-wide text-gray-500">Tipo</Label>
+                  <select
+                    value={filtroTipo}
+                    onChange={(e) => setFiltroTipo(e.target.value as any)}
+                    className="h-8 text-xs px-2 border border-gray-300 rounded-md bg-white"
+                  >
+                    <option value="todos">Todos</option>
+                    <option value="factura">Facturas</option>
+                    <option value="boleta">Boletas</option>
+                    <option value="nota_pedido_interna">Internos</option>
+                  </select>
+                </div>
+                <div className="flex-1" />
+                <Button variant="outline" size="sm" onClick={seleccionarTodos} disabled={comprobantesFiltrados.length === 0} className="text-xs h-8">
+                  Seleccionar todos
+                </Button>
+                {seleccionados.size > 0 && (
+                  <Button variant="outline" size="sm" onClick={limpiarSeleccion} className="text-xs h-8">
+                    Limpiar
+                  </Button>
+                )}
+                <Button
+                  onClick={() => imprimirLote('a4')}
+                  disabled={seleccionados.size === 0}
+                  size="sm"
+                  className="bg-blue-600 hover:bg-blue-700 text-white text-xs h-8 gap-1"
+                >
+                  🖨️ Imprimir A4 ({seleccionados.size})
+                </Button>
+                <Button
+                  onClick={() => imprimirLote('ticket')}
+                  disabled={seleccionados.size === 0}
+                  size="sm"
+                  className="bg-gray-700 hover:bg-gray-800 text-white text-xs h-8 gap-1"
+                >
+                  🧾 Imprimir Tickets ({seleccionados.size})
+                </Button>
+              </div>
+
               {loading ? (
                 <div className="flex items-center justify-center py-16">
                   <Loader2 className="w-6 h-6 text-green-600 animate-spin" />
                 </div>
-              ) : comprobantes.length === 0 ? (
-                <div className="text-center py-16 text-gray-400 text-sm">No hay comprobantes emitidos</div>
+              ) : comprobantesFiltrados.length === 0 ? (
+                <div className="text-center py-16 text-gray-400 text-sm">
+                  {comprobantes.length === 0 ? 'No hay comprobantes emitidos' : 'Ningún comprobante coincide con los filtros'}
+                </div>
               ) : (
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
                     <thead className="border-b border-gray-100 bg-gray-50/50">
                       <tr>
-                        {['Serie-Número', 'Tipo', 'Cliente', 'Fecha', 'Total', 'Estado SUNAT', 'Acciones'].map((h) => (
+                        <th className="w-10 py-3 px-3">
+                          <input
+                            type="checkbox"
+                            checked={comprobantesFiltrados.length > 0 && seleccionados.size === comprobantesFiltrados.length}
+                            onChange={() => seleccionados.size === comprobantesFiltrados.length ? limpiarSeleccion() : seleccionarTodos()}
+                            className="rounded"
+                          />
+                        </th>
+                        {['Serie-Número', 'Tipo', 'Cliente', 'Fecha', 'Total', 'Estado', 'Acciones'].map((h) => (
                           <th key={h} className="text-left py-3 px-4 text-xs font-semibold text-gray-500 uppercase tracking-wide">
                             {h}
                           </th>
@@ -534,10 +678,19 @@ export default function FacturacionPage() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-50">
-                      {comprobantes.map((c) => {
+                      {comprobantesFiltrados.map((c) => {
                         const estadoCfg = ESTADO_SUNAT[c.estado] ?? ESTADO_SUNAT.emitido
+                        const isSel = seleccionados.has(c.id)
                         return (
-                          <tr key={c.id} className="hover:bg-gray-50/50 transition-colors">
+                          <tr key={c.id} className={`transition-colors ${isSel ? 'bg-blue-50/40' : 'hover:bg-gray-50/50'}`}>
+                            <td className="py-3 px-3">
+                              <input
+                                type="checkbox"
+                                checked={isSel}
+                                onChange={() => toggleSeleccion(c.id)}
+                                className="rounded"
+                              />
+                            </td>
                             <td className="py-3 px-4 font-mono text-xs font-semibold">
                               <Link
                                 href={`/comprobante/${c.id}`}
@@ -547,6 +700,14 @@ export default function FacturacionPage() {
                               >
                                 {c.serie}-{c.numero}
                               </Link>
+                              {c.editado && (
+                                <span
+                                  className="ml-1 inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold bg-amber-100 text-amber-800 border border-amber-200"
+                                  title={c.editado_at ? `Editado el ${formatDate(c.editado_at)}` : 'Comprobante editado'}
+                                >
+                                  ⚠ EDITADO
+                                </span>
+                              )}
                             </td>
                             <td className="py-3 px-4 capitalize text-xs text-gray-600">{c.tipo}</td>
                             <td className="py-3 px-4 text-gray-800">{(c.clientes as any)?.razon_social ?? '—'}</td>
@@ -558,16 +719,27 @@ export default function FacturacionPage() {
                               </span>
                             </td>
                             <td className="py-3 px-4">
-                              <Link
-                                href={`/comprobante/${c.id}`}
-                                target="_blank"
-                                className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded transition-colors"
-                                title="Ver / imprimir en nueva pestaña"
-                              >
-                                <Eye className="w-3.5 h-3.5" />
-                                Ver
-                                <ExternalLink className="w-3 h-3 opacity-50" />
-                              </Link>
+                              <div className="flex items-center gap-1">
+                                <Link
+                                  href={`/comprobante/${c.id}`}
+                                  target="_blank"
+                                  className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded transition-colors"
+                                  title="Ver / imprimir"
+                                >
+                                  <Eye className="w-3.5 h-3.5" />
+                                  Ver
+                                </Link>
+                                {puedeEditar && !c.enviado_sunat && (
+                                  <button
+                                    type="button"
+                                    onClick={() => abrirEditar(c)}
+                                    className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-amber-700 hover:text-amber-900 hover:bg-amber-50 rounded transition-colors"
+                                    title="Editar comprobante (con auditoría)"
+                                  >
+                                    ✏️ Editar
+                                  </button>
+                                )}
+                              </div>
                             </td>
                           </tr>
                         )
@@ -667,6 +839,149 @@ export default function FacturacionPage() {
                 >
                   {saving && <Loader2 className="w-4 h-4 animate-spin" />}
                   Confirmar y Emitir
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialog: Editar comprobante con trazabilidad */}
+      <Dialog open={editarOpen} onOpenChange={(o) => { if (!editSaving) setEditarOpen(o) }}>
+        <DialogContent className="max-w-3xl max-h-[92vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-amber-700">
+              ✏️ Editar comprobante {editComp?.serie}-{editComp?.numero}
+              {editComp?.editado && (
+                <span className="text-[10px] bg-amber-100 text-amber-800 border border-amber-200 px-1.5 py-0.5 rounded font-bold">
+                  YA FUE EDITADO
+                </span>
+              )}
+            </DialogTitle>
+          </DialogHeader>
+          {editComp && (
+            <div className="space-y-4 mt-2">
+              <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-xs text-amber-900">
+                <strong>Trazabilidad activa.</strong> Cada modificación queda registrada con tu nombre, fecha y los valores anteriores/nuevos.
+                Solo puedes editar mientras el comprobante NO esté enviado a SUNAT.
+              </div>
+
+              <div>
+                <Label className="text-sm font-semibold">Líneas del comprobante</Label>
+                <div className="border border-gray-200 rounded-lg overflow-hidden mt-1">
+                  <table className="w-full text-xs">
+                    <thead className="bg-gray-50 border-b border-gray-200">
+                      <tr>
+                        <th className="text-left py-2 px-3 font-semibold text-gray-600">Descripción</th>
+                        <th className="text-right py-2 px-3 font-semibold text-gray-600 w-24">Cantidad</th>
+                        <th className="text-right py-2 px-3 font-semibold text-gray-600 w-28">P. Unit.</th>
+                        <th className="text-right py-2 px-3 font-semibold text-gray-600 w-28">Subtotal</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {editItems.length === 0 ? (
+                        <tr><td colSpan={4} className="py-4 text-center text-gray-400 italic">Sin items para editar</td></tr>
+                      ) : editItems.map((it, idx) => {
+                        const subtotalCalc = (parseFloat(it._cantidad) || 0) * (parseFloat(it._precio) || 0)
+                        return (
+                          <tr key={it.id} className="border-b border-gray-100 last:border-0">
+                            <td className="py-1.5 px-2">
+                              <Input
+                                value={it.descripcion ?? ''}
+                                onChange={(e) => setEditItems((prev) => prev.map((p, i) => i === idx ? { ...p, descripcion: e.target.value } : p))}
+                                className="h-8 text-xs"
+                                disabled={editSaving}
+                              />
+                              <div className="text-[10px] text-gray-400 mt-0.5">{(it.productos as any)?.codigo ?? '—'} · {(it.productos as any)?.nombre ?? ''}</div>
+                            </td>
+                            <td className="py-1.5 px-2">
+                              <Input
+                                type="number"
+                                step="0.01"
+                                min="0"
+                                value={it._cantidad}
+                                onChange={(e) => setEditItems((prev) => prev.map((p, i) => i === idx ? { ...p, _cantidad: e.target.value } : p))}
+                                className="h-8 text-xs text-right font-mono"
+                                disabled={editSaving}
+                              />
+                            </td>
+                            <td className="py-1.5 px-2">
+                              <Input
+                                type="number"
+                                step="0.01"
+                                min="0"
+                                value={it._precio}
+                                onChange={(e) => setEditItems((prev) => prev.map((p, i) => i === idx ? { ...p, _precio: e.target.value } : p))}
+                                className="h-8 text-xs text-right font-mono"
+                                disabled={editSaving}
+                              />
+                            </td>
+                            <td className="py-1.5 px-3 text-right font-mono">
+                              {formatCurrency(subtotalCalc)}
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+                <p className="text-[10px] text-gray-500 mt-1">
+                  Los totales del comprobante se recalculan automáticamente al guardar (incluyendo IGV proporcional).
+                </p>
+              </div>
+
+              <div>
+                <Label className="text-sm font-semibold">
+                  Nota / motivo del cambio
+                  <span className="text-gray-400 font-normal text-xs"> (opcional pero recomendado)</span>
+                </Label>
+                <Input
+                  placeholder='Ej: "Corregir cantidad por error de digitado, cliente reportó al recibir"'
+                  value={editNota}
+                  onChange={(e) => setEditNota(e.target.value)}
+                  className="mt-1"
+                  disabled={editSaving}
+                  maxLength={200}
+                />
+              </div>
+
+              {/* Historial de cambios previos */}
+              {editHistorial.length > 0 && (
+                <div>
+                  <Label className="text-sm font-semibold">Historial de modificaciones ({editHistorial.length})</Label>
+                  <div className="mt-1 border border-gray-200 rounded-lg max-h-44 overflow-y-auto bg-gray-50/50">
+                    {editHistorial.map((h: any) => (
+                      <div key={h.id} className="px-3 py-2 border-b border-gray-100 last:border-0 text-xs">
+                        <div className="flex items-center justify-between gap-2 flex-wrap">
+                          <span className="font-semibold text-gray-800">{h.usuario_nombre}</span>
+                          <span className="text-[10px] text-gray-400">{new Date(h.created_at).toLocaleString('es-PE', { timeZone: 'America/Lima' })}</span>
+                        </div>
+                        <div className="text-gray-700 mt-0.5">
+                          <span className="font-mono text-[10px] bg-gray-200 px-1 rounded">{h.campo}</span>
+                          {h.item_descripcion && <span className="text-gray-500"> · {h.item_descripcion}</span>}
+                          <span>: </span>
+                          <span className="line-through text-red-500">{h.valor_anterior ?? '—'}</span>
+                          <span className="mx-1">→</span>
+                          <span className="text-green-700 font-semibold">{h.valor_nuevo ?? '—'}</span>
+                        </div>
+                        {h.nota && <div className="text-[10px] text-gray-500 italic mt-0.5">"{h.nota}"</div>}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <div className="flex justify-end gap-2 pt-2 border-t border-gray-100">
+                <Button variant="outline" onClick={() => setEditarOpen(false)} disabled={editSaving}>
+                  Cancelar
+                </Button>
+                <Button
+                  onClick={guardarEdicion}
+                  disabled={editSaving || editItems.length === 0}
+                  className="bg-amber-600 hover:bg-amber-700 text-white font-semibold gap-2"
+                >
+                  {editSaving && <Loader2 className="w-4 h-4 animate-spin" />}
+                  Guardar con trazabilidad
                 </Button>
               </div>
             </div>
