@@ -18,17 +18,10 @@ async function getVendedoresData() {
   const inicioMes = new Date(anioActual, mesActual - 1, 1).toISOString().split('T')[0]
   const finMes = new Date(anioActual, mesActual, 0).toISOString().split('T')[0]
 
-  const [
-    { data: vendedoresRaw },
-    { data: familiasRaw },
-    { data: pedidosMes },
-    { data: comprobantesMes },
-    { data: cobrosMes },
-    { data: checkinsMes },
-    { data: metasMes },
-    { data: reglasRaw },
-    { data: liquidacionesRaw },
-  ] = await Promise.all([
+  // Promise.allSettled — si UNA query falla (tabla nueva, RLS, timeout, etc.) la página
+  // sigue cargando con array vacío para esa fuente, en lugar de hacer crash y dejar al
+  // usuario en blanco o redirigido al login.
+  const results = await Promise.allSettled([
     supabase
       .from('profiles')
       .select('id, full_name, email, role, activo')
@@ -73,6 +66,29 @@ async function getVendedoresData() {
       .select('*')
       .order('created_at', { ascending: false }),
   ])
+
+  const pick = <T,>(idx: number, label: string): T[] => {
+    const r = results[idx]
+    if (r.status === 'rejected') {
+      console.error(`[vendedores] query "${label}" rechazada:`, r.reason)
+      return []
+    }
+    const v = r.value as any
+    if (v?.error) {
+      console.error(`[vendedores] query "${label}" devolvió error:`, v.error)
+      return []
+    }
+    return (v?.data ?? []) as T[]
+  }
+  const vendedoresRaw = pick<any>(0, 'profiles vendedores')
+  const familiasRaw = pick<any>(1, 'familias')
+  const pedidosMes = pick<any>(2, 'pedidos mes')
+  const comprobantesMes = pick<any>(3, 'comprobantes mes')
+  const cobrosMes = pick<any>(4, 'cobros mes')
+  const checkinsMes = pick<any>(5, 'gps_checkins mes')
+  const metasMes = pick<any>(6, 'metas mes')
+  const reglasRaw = pick<any>(7, 'comisiones_reglas')
+  const liquidacionesRaw = pick<any>(8, 'liquidaciones_comision')
 
   const vendedores = (vendedoresRaw ?? []) as any[]
   const familias = (familiasRaw ?? []) as FamiliaOption[]
