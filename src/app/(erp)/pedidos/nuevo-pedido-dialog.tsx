@@ -95,6 +95,13 @@ export default function NuevoPedidoDialog({ open, onOpenChange, onCreated }: Pro
   const [notas, setNotas] = useState('')
   const [guardando, setGuardando] = useState(false)
 
+  // Dialog override por stock insuficiente
+  const [stockDialogOpen, setStockDialogOpen] = useState(false)
+  const [stockInsuficientes, setStockInsuficientes] = useState<Array<{
+    producto_id: string; nombre: string; pedido: number; disponible: number
+  }>>([])
+  const [motivoReposicion, setMotivoReposicion] = useState('')
+
   // Tipo de pago y direcciones
   const [tipoPago, setTipoPago] = useState<'contado' | 'credito'>('contado')
   const [direccionesCliente, setDireccionesCliente] = useState<DireccionCliente[]>([])
@@ -285,52 +292,43 @@ export default function NuevoPedidoDialog({ open, onOpenChange, onCreated }: Pro
   const puedeGuardar = !!clienteSeleccionado && carrito.length > 0 && !!fechaDespacho
     && totalFinal >= MINIMO_PEDIDO && (!asignarVendedor || !!vendedorId) && !guardando
 
-  async function guardarPedido() {
-    if (!puedeGuardar || !clienteSeleccionado) return
-    // Validación defensiva: no permitir fechas pasadas (el min del input se
-    // puede saltar editando el HTML o con el calendario de algunos navegadores).
-    if (fechaDespacho < hoyLima()) {
-      toast.error('Fecha inválida', {
-        description: 'La fecha de despacho no puede ser anterior a hoy. Usa hoy o una fecha futura.',
-      })
-      return
+  // Verifica disponibilidad real contra v_stock_disponible_real.
+  // Devuelve productos cuya cantidad pedida supera el stock disponible.
+  async function detectarInsuficientes() {
+    const ids = carrito.map((s) => s.producto.id)
+    if (ids.length === 0) return []
+    const { data: stocks } = await (supabase as any)
+      .from('v_stock_disponible_real')
+      .select('producto_id, stock_disponible')
+      .in('producto_id', ids)
+    const dispMap = new Map<string, number>()
+    ;(stocks ?? []).forEach((r: any) => dispMap.set(r.producto_id, Number(r.stock_disponible ?? 0)))
+    const faltantes: Array<{ producto_id: string; nombre: string; pedido: number; disponible: number }> = []
+    for (const s of carrito) {
+      const disp = dispMap.get(s.producto.id) ?? 0
+      if (s.cantidad > disp) {
+        faltantes.push({
+          producto_id: s.producto.id,
+          nombre: s.producto.descripcion?.trim() || s.producto.nombre,
+          pedido: s.cantidad,
+          disponible: disp,
+        })
+      }
     }
+    return faltantes
+  }
+
+  // Llama a la RPC atómica. Si permitirSinStock=true, pasa motivo.
+  async function ejecutarRpcCrearPedido(permitirSinStock: boolean, motivo: string | null) {
+    if (!clienteSeleccionado) return false
     setGuardando(true)
     try {
       const numero = `P-${Date.now().toString().slice(-8)}`
 
-      // Snapshot textual de la dirección elegida
       const direccionEntrega = direccionesCliente.find((d) => d.id === direccionEntregaId)
       const direccionEntregaTexto = direccionEntrega?.direccion ?? clienteSeleccionado.direccion ?? null
 
-      const { data: pedido, error: pedidoError } = await (supabase.from('pedidos') as any)
-        .insert({
-          numero,
-          cliente_id: clienteSeleccionado.id,
-          vendedor_id: asignarVendedor && vendedorId ? vendedorId : null,
-          fecha_pedido: hoyLima(),
-          fecha_despacho: fechaDespacho,
-          estado: 'enviado',
-          tipo_pago: tipoPago,
-          direccion_entrega_id: direccionEntregaId || null,
-          direccion_entrega_texto: direccionEntregaTexto,
-          descuento_porcentaje: descuentoPct,
-          descuento_monto: descuentoMonto,
-          subtotal: baseImponible,
-          igv: igvMonto,
-          incluir_igv: incluirIgv,
-          total: totalFinal,
-          requiere_autorizacion: requiereAutorizacion,
-          notas: notas.trim() || (requiereAutorizacion ? `Descuento ${descuentoPct}% requiere autorización` : null),
-        })
-        .select()
-        .single()
-
-      if (pedidoError || !pedido) {
-        throw new Error(pedidoError?.message ?? 'No se pudo crear el pedido')
-      }
-
-      // FEFO: asignar lote por producto con stock disponible
+      // FEFO solo para productos con lote
       const conLote = carrito.filter((s) => s.producto.tiene_lote || s.producto.tiene_vencimiento)
       const lotePorProducto: Record<string, string | null> = {}
       if (conLote.length > 0) {
@@ -348,8 +346,27 @@ export default function NuevoPedidoDialog({ open, onOpenChange, onCreated }: Pro
         }
       }
 
-      const itemsToInsert = carrito.map((s) => ({
-        pedido_id: pedido.id,
+      const pedidoPayload = {
+        numero,
+        cliente_id: clienteSeleccionado.id,
+        vendedor_id: asignarVendedor && vendedorId ? vendedorId : null,
+        fecha_pedido: hoyLima(),
+        fecha_despacho: fechaDespacho,
+        estado: 'enviado',
+        tipo_pago: tipoPago,
+        direccion_entrega_id: direccionEntregaId || null,
+        direccion_entrega_texto: direccionEntregaTexto,
+        descuento_porcentaje: descuentoPct,
+        descuento_monto: descuentoMonto,
+        subtotal: baseImponible,
+        igv: igvMonto,
+        incluir_igv: incluirIgv,
+        total: totalFinal,
+        requiere_autorizacion: requiereAutorizacion,
+        notas: notas.trim() || (requiereAutorizacion ? `Descuento ${descuentoPct}% requiere autorización` : null),
+      }
+
+      const itemsPayload = carrito.map((s) => ({
         producto_id: s.producto.id,
         lote_id: lotePorProducto[s.producto.id] ?? null,
         cantidad: s.cantidad,
@@ -358,22 +375,78 @@ export default function NuevoPedidoDialog({ open, onOpenChange, onCreated }: Pro
         subtotal: s.subtotal,
       }))
 
-      const { error: itemsError } = await (supabase.from('pedidos_items') as any).insert(itemsToInsert)
-      if (itemsError) throw new Error(itemsError.message)
+      const { data: result, error } = await (supabase.rpc as any)('crear_pedido_atomico', {
+        p_pedido: pedidoPayload,
+        p_items: itemsPayload,
+        p_permitir_sin_stock: permitirSinStock,
+        p_motivo_reposicion: motivo,
+      })
 
-      toast.success('Pedido creado', {
-        description: `${numero} · ${clienteSeleccionado.razon_social} · ${formatCurrency(totalFinal)}`,
+      if (error) throw new Error(error.message)
+
+      toast.success(permitirSinStock ? 'Pedido creado · Requiere reposición' : 'Pedido creado', {
+        description: `${(result as any)?.numero ?? numero} · ${clienteSeleccionado.razon_social} · ${formatCurrency(totalFinal)}${permitirSinStock ? ' · ⚠ Notificar almacén' : ''}`,
+        duration: permitirSinStock ? 7000 : 4000,
       })
       onCreated()
       onOpenChange(false)
+      return true
     } catch (err: any) {
-      toast.error('No se pudo crear el pedido', { description: err?.message })
+      toast.error('No se pudo crear el pedido', { description: err?.message ?? 'Error desconocido' })
+      return false
     } finally {
       setGuardando(false)
     }
   }
 
+  async function guardarPedido() {
+    // Validación dura: carrito no vacío. Sin esto un usuario podía generar
+    // pedidos con monto pero sin productos (bug reportado).
+    if (carrito.length === 0) {
+      toast.error('Pedido vacío', { description: 'Agrega al menos un producto al carrito antes de guardar.' })
+      return
+    }
+    if (!puedeGuardar || !clienteSeleccionado) return
+    if (fechaDespacho < hoyLima()) {
+      toast.error('Fecha inválida', {
+        description: 'La fecha de despacho no puede ser anterior a hoy. Usa hoy o una fecha futura.',
+      })
+      return
+    }
+
+    // Pre-validación de stock: si hay productos insuficientes, abrir dialog
+    // de override para que el usuario decida (ej. camión en camino).
+    setGuardando(true)
+    const insuficientes = await detectarInsuficientes()
+    setGuardando(false)
+    if (insuficientes.length > 0) {
+      setStockInsuficientes(insuficientes)
+      setMotivoReposicion('')
+      setStockDialogOpen(true)
+      return
+    }
+
+    // Flujo normal: stock suficiente, llamar RPC sin override
+    await ejecutarRpcCrearPedido(false, null)
+  }
+
+  async function confirmarOverrideStock() {
+    if (!motivoReposicion.trim() || motivoReposicion.trim().length < 6) {
+      toast.error('Motivo requerido', {
+        description: 'Explica brevemente la razón (mín. 6 caracteres). Ej: "Camión en camino, llega 17:00".',
+      })
+      return
+    }
+    const ok = await ejecutarRpcCrearPedido(true, motivoReposicion.trim())
+    if (ok) {
+      setStockDialogOpen(false)
+      setStockInsuficientes([])
+      setMotivoReposicion('')
+    }
+  }
+
   return (
+    <>
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
@@ -799,5 +872,81 @@ export default function NuevoPedidoDialog({ open, onOpenChange, onCreated }: Pro
         )}
       </DialogContent>
     </Dialog>
+
+    {/* Dialog secundario: stock insuficiente, permitir override controlado */}
+    <Dialog open={stockDialogOpen} onOpenChange={(o) => { if (!guardando) setStockDialogOpen(o) }}>
+        <DialogContent className="max-w-lg max-h-[92vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-amber-700">
+              <AlertCircle className="w-5 h-5" />
+              Stock insuficiente
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 mt-2">
+            <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-xs text-amber-900">
+              Los siguientes productos no tienen stock disponible suficiente. Si conoces una razón operativa
+              (camión en camino, reposición urgente, llegada programada), puedes autorizar la creación del
+              pedido y quedará marcado para que almacén priorice la reposición.
+            </div>
+
+            <div className="border border-gray-200 rounded-lg overflow-hidden">
+              <table className="w-full text-xs">
+                <thead className="bg-gray-50 border-b border-gray-200">
+                  <tr>
+                    <th className="text-left py-2 px-3 font-semibold text-gray-600">Producto</th>
+                    <th className="text-right py-2 px-3 font-semibold text-gray-600">Pediste</th>
+                    <th className="text-right py-2 px-3 font-semibold text-gray-600">Disponible</th>
+                    <th className="text-right py-2 px-3 font-semibold text-red-600">Faltan</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {stockInsuficientes.map((p) => (
+                    <tr key={p.producto_id} className="border-b border-gray-100 last:border-0">
+                      <td className="py-2 px-3 truncate max-w-[200px]" title={p.nombre}>{p.nombre}</td>
+                      <td className="py-2 px-3 text-right font-mono">{p.pedido.toLocaleString('es-PE')}</td>
+                      <td className="py-2 px-3 text-right font-mono text-gray-500">{p.disponible.toLocaleString('es-PE')}</td>
+                      <td className="py-2 px-3 text-right font-mono font-bold text-red-600">
+                        {(p.pedido - p.disponible).toLocaleString('es-PE')}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <div>
+              <Label className="text-sm font-semibold">
+                Motivo de la autorización <span className="text-red-500">*</span>
+              </Label>
+              <Input
+                placeholder='Ej: "Camión en camino a Tacna, llega a las 17:00"'
+                value={motivoReposicion}
+                onChange={(e) => setMotivoReposicion(e.target.value)}
+                className="mt-1"
+                disabled={guardando}
+                maxLength={200}
+              />
+              <p className="text-[10px] text-gray-500 mt-1">
+                Este texto queda registrado en el pedido para que el almacén entienda la razón.
+              </p>
+            </div>
+
+            <div className="flex justify-end gap-2 pt-2 border-t border-gray-100">
+              <Button variant="outline" onClick={() => setStockDialogOpen(false)} disabled={guardando}>
+                Volver al carrito
+              </Button>
+              <Button
+                onClick={confirmarOverrideStock}
+                disabled={guardando}
+                className="bg-amber-600 hover:bg-amber-700 text-white font-semibold gap-2"
+              >
+                {guardando && <Loader2 className="w-4 h-4 animate-spin" />}
+                Crear con reposición pendiente
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+    </Dialog>
+    </>
   )
 }

@@ -11,6 +11,8 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent } from '@/components/ui/card'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Label } from '@/components/ui/label'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import type { Cliente, Producto, Pedido } from '@/types'
 import { clienteVisitaHoy } from '@/lib/dias-visita'
@@ -59,6 +61,13 @@ export default function PedidosPage() {
   const [direccionEntregaId, setDireccionEntregaId] = useState<string>('')
   const [mensajeExito, setMensajeExito] = useState<string | null>(null)
   const [mensajeError, setMensajeError] = useState<string | null>(null)
+
+  // Override de stock insuficiente (mismo modelo que ERP)
+  const [stockDialogOpen, setStockDialogOpen] = useState(false)
+  const [stockInsuficientes, setStockInsuficientes] = useState<Array<{
+    producto_id: string; nombre: string; pedido: number; disponible: number
+  }>>([])
+  const [motivoReposicion, setMotivoReposicion] = useState('')
 
   // Mis pedidos
   const [misPedidos, setMisPedidos] = useState<PedidoConTotal[]>([])
@@ -311,66 +320,47 @@ export default function PedidosPage() {
   const requiereAutorizacion = descuentoPct > DESCUENTO_MAX_SIN_AUTH
   const pedidoMinimo = totalFinal >= MINIMO_PEDIDO || seleccionados.length === 0
 
-  async function enviarPedido() {
-    if (!clienteSeleccionado || seleccionados.length === 0 || !fechaDespacho || !userId) return
-    // Validación defensiva: no permitir fechas pasadas
-    if (fechaDespacho < hoyLima()) {
-      const msg = 'La fecha de despacho no puede ser anterior a hoy. Usa hoy o una fecha futura.'
-      setMensajeError(msg)
-      toast.error('Fecha inválida', { description: msg })
-      return
+  // Detecta productos cuya cantidad pedida supera el stock disponible real
+  async function detectarInsuficientesPwa() {
+    const ids = seleccionados.map((s) => s.producto.id)
+    if (ids.length === 0) return []
+    const { data: stocks } = await (supabase as any)
+      .from('v_stock_disponible_real')
+      .select('producto_id, stock_disponible')
+      .in('producto_id', ids)
+    const dispMap = new Map<string, number>()
+    ;(stocks ?? []).forEach((r: any) => dispMap.set(r.producto_id, Number(r.stock_disponible ?? 0)))
+    const faltantes: Array<{ producto_id: string; nombre: string; pedido: number; disponible: number }> = []
+    for (const s of seleccionados) {
+      const disp = dispMap.get(s.producto.id) ?? 0
+      if (s.cantidad > disp) {
+        faltantes.push({
+          producto_id: s.producto.id,
+          nombre: (s.producto as any).descripcion?.trim() || s.producto.nombre,
+          pedido: s.cantidad,
+          disponible: disp,
+        })
+      }
     }
+    return faltantes
+  }
+
+  // Llamada a la RPC atómica — única vía para crear pedidos (sin cabeceras huérfanas)
+  async function ejecutarRpcCrearPedidoPwa(permitirSinStock: boolean, motivo: string | null) {
+    if (!clienteSeleccionado || !userId) return false
     setLoadingEnvio(true)
     setMensajeError(null)
     setMensajeExito(null)
-
     try {
-      // Generar número de pedido único
       const numero = `P-${Date.now().toString().slice(-8)}`
-
-      // Snapshot textual de dirección elegida
       const dirEnt = direccionesCliente.find((d) => d.id === direccionEntregaId)
       const dirEntTexto = dirEnt?.direccion ?? clienteSeleccionado.direccion ?? null
 
-      const { data: pedido, error: pedidoError } = await (supabase.from('pedidos') as any)
-        .insert({
-          numero,
-          cliente_id: clienteSeleccionado.id,
-          vendedor_id: userId,
-          fecha_pedido: hoyLima(),
-          fecha_despacho: fechaDespacho,
-          estado: 'enviado',
-          tipo_pago: tipoPago,
-          direccion_entrega_id: direccionEntregaId || null,
-          direccion_entrega_texto: dirEntTexto,
-          descuento_porcentaje: descuentoPct,
-          descuento_monto: descuentoMonto,
-          subtotal: baseImponible,
-          igv: igvMonto,
-          incluir_igv: incluirIgv,
-          total: totalFinal,
-          requiere_autorizacion: requiereAutorizacion,
-          notas: requiereAutorizacion ? `Descuento ${descuentoPct}% requiere autorización` : null,
-        })
-        .select()
-        .single()
-
-      if (pedidoError || !pedido) {
-        const msg = 'Error al crear el pedido: ' + (pedidoError?.message ?? 'Desconocido')
-        setMensajeError(msg)
-        toast.error('No se pudo enviar el pedido', {
-          description: pedidoError?.message ?? 'Error desconocido',
-        })
-        return
-      }
-
-      // Para productos con lote, intentar asignar el lote más próximo a vencer (FEFO)
+      // FEFO por producto con lote
       const productosConLote = seleccionados.filter(
         (s) => (s.producto as any).tiene_lote === true || (s.producto as any).tiene_vencimiento === true
       )
-      let lotePorProducto: Record<string, string | null> = {}
-      let productosSinLote: string[] = []
-
+      const lotePorProducto: Record<string, string | null> = {}
       if (productosConLote.length > 0) {
         const ids = productosConLote.map((s) => s.producto.id)
         const { data: lotesDisp } = await supabase
@@ -380,26 +370,33 @@ export default function PedidosPage() {
           .eq('activo', true)
           .gt('cantidad_actual', 0)
           .order('fecha_vencimiento', { ascending: true, nullsFirst: false })
-
-        // Tomamos el primer lote disponible por producto (menor fecha_vencimiento)
         for (const s of productosConLote) {
           const lote = (lotesDisp ?? []).find((l: any) => l.producto_id === s.producto.id)
-          if (lote) {
-            lotePorProducto[s.producto.id] = (lote as any).id
-          } else {
-            productosSinLote.push((s.producto as any).descripcion?.trim() || s.producto.nombre)
-          }
-        }
-
-        if (productosSinLote.length > 0) {
-          toast.warning('Productos sin lote disponible', {
-            description: `No se encontró lote con stock para: ${productosSinLote.join(', ')}`,
-          })
+          lotePorProducto[s.producto.id] = lote ? (lote as any).id : null
         }
       }
 
-      const items = seleccionados.map((s) => ({
-        pedido_id: pedido.id,
+      const pedidoPayload = {
+        numero,
+        cliente_id: clienteSeleccionado.id,
+        vendedor_id: userId,
+        fecha_pedido: hoyLima(),
+        fecha_despacho: fechaDespacho,
+        estado: 'enviado',
+        tipo_pago: tipoPago,
+        direccion_entrega_id: direccionEntregaId || null,
+        direccion_entrega_texto: dirEntTexto,
+        descuento_porcentaje: descuentoPct,
+        descuento_monto: descuentoMonto,
+        subtotal: baseImponible,
+        igv: igvMonto,
+        incluir_igv: incluirIgv,
+        total: totalFinal,
+        requiere_autorizacion: requiereAutorizacion,
+        notas: requiereAutorizacion ? `Descuento ${descuentoPct}% requiere autorización` : null,
+      }
+
+      const itemsPayload = seleccionados.map((s) => ({
         producto_id: s.producto.id,
         lote_id: lotePorProducto[s.producto.id] ?? null,
         cantidad: s.cantidad,
@@ -408,15 +405,21 @@ export default function PedidosPage() {
         subtotal: s.subtotal,
       }))
 
-      const { error: itemsError } = await supabase.from('pedidos_items').insert(items)
+      const { data: result, error } = await (supabase.rpc as any)('crear_pedido_atomico', {
+        p_pedido: pedidoPayload,
+        p_items: itemsPayload,
+        p_permitir_sin_stock: permitirSinStock,
+        p_motivo_reposicion: motivo,
+      })
 
-      if (itemsError) {
-        setMensajeError('Error al guardar los items: ' + itemsError.message)
-        toast.error('Error al guardar los items', { description: itemsError.message })
-        return
+      if (error) {
+        const msg = 'Error al crear el pedido: ' + error.message
+        setMensajeError(msg)
+        toast.error('No se pudo enviar el pedido', { description: error.message })
+        return false
       }
 
-      // Auto check-in si no hay uno HOY de este vendedor en este cliente
+      // Auto check-in best-effort (no rompe si falla)
       try {
         const hoy = hoyLima()
         const { data: existing } = await (supabase as any)
@@ -428,9 +431,7 @@ export default function PedidosPage() {
           .gte('created_at', `${hoy}T00:00:00`)
           .limit(1)
           .maybeSingle()
-
         if (!existing) {
-          // Intentar capturar GPS del vendedor; si falla, usar coords del cliente
           const obtenerCoords = (): Promise<[number | null, number | null]> =>
             new Promise((resolve) => {
               if (!navigator.geolocation) return resolve([null, null])
@@ -451,12 +452,14 @@ export default function PedidosPage() {
           })
         }
       } catch {
-        /* check-in es best-effort, no rompe el flujo del pedido */
+        /* check-in es best-effort */
       }
 
-      setMensajeExito('Pedido enviado correctamente')
-      toast.success('Pedido enviado', {
-        description: `${numero} · ${clienteSeleccionado.razon_social}`,
+      setMensajeExito(permitirSinStock
+        ? 'Pedido enviado · Marcado para reposición'
+        : 'Pedido enviado correctamente')
+      toast.success(permitirSinStock ? 'Pedido enviado · Requiere reposición' : 'Pedido enviado', {
+        description: `${(result as any)?.numero ?? numero} · ${clienteSeleccionado.razon_social}${permitirSinStock ? ' · ⚠ Almacén' : ''}`,
       })
       setClienteSeleccionado(null)
       setClienteSearch('')
@@ -469,11 +472,59 @@ export default function PedidosPage() {
       setDireccionEntregaId('')
       setTab('mis-pedidos')
       cargarMisPedidos()
-    } catch {
+      return true
+    } catch (err: any) {
       setMensajeError('Error inesperado al enviar el pedido')
-      toast.error('Error inesperado', { description: 'No se pudo enviar el pedido.' })
+      toast.error('Error inesperado', { description: err?.message ?? 'No se pudo enviar el pedido.' })
+      return false
     } finally {
       setLoadingEnvio(false)
+    }
+  }
+
+  async function enviarPedido() {
+    // Bloquear pedidos vacíos (bug reportado: monto > 0 sin productos)
+    if (!clienteSeleccionado || seleccionados.length === 0 || !fechaDespacho || !userId) {
+      if (seleccionados.length === 0) {
+        const msg = 'Agrega al menos un producto al carrito antes de enviar.'
+        setMensajeError(msg)
+        toast.error('Pedido vacío', { description: msg })
+      }
+      return
+    }
+    if (fechaDespacho < hoyLima()) {
+      const msg = 'La fecha de despacho no puede ser anterior a hoy. Usa hoy o una fecha futura.'
+      setMensajeError(msg)
+      toast.error('Fecha inválida', { description: msg })
+      return
+    }
+
+    // Pre-validación de stock — si hay faltantes, abrir dialog para autorizar
+    setLoadingEnvio(true)
+    const insuficientes = await detectarInsuficientesPwa()
+    setLoadingEnvio(false)
+    if (insuficientes.length > 0) {
+      setStockInsuficientes(insuficientes)
+      setMotivoReposicion('')
+      setStockDialogOpen(true)
+      return
+    }
+
+    await ejecutarRpcCrearPedidoPwa(false, null)
+  }
+
+  async function confirmarOverrideStockPwa() {
+    if (!motivoReposicion.trim() || motivoReposicion.trim().length < 6) {
+      toast.error('Motivo requerido', {
+        description: 'Explica brevemente la razón (mín. 6 caracteres). Ej: "Camión en camino, llega 17:00".',
+      })
+      return
+    }
+    const ok = await ejecutarRpcCrearPedidoPwa(true, motivoReposicion.trim())
+    if (ok) {
+      setStockDialogOpen(false)
+      setStockInsuficientes([])
+      setMotivoReposicion('')
     }
   }
 
@@ -1015,6 +1066,74 @@ export default function PedidosPage() {
           </div>
         )}
       </div>
+
+      {/* Dialog override por stock insuficiente */}
+      <Dialog open={stockDialogOpen} onOpenChange={(o) => { if (!loadingEnvio) setStockDialogOpen(o) }}>
+        <DialogContent className="max-w-md max-h-[92vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-amber-700 text-base">
+              <AlertCircle className="w-5 h-5" />
+              Stock insuficiente
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 mt-2">
+            <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-xs text-amber-900">
+              No hay stock suficiente para algunos productos. Si tienes una razón operativa (camión en camino,
+              reposición urgente), puedes autorizar el pedido y quedará marcado para que el almacén priorice.
+            </div>
+            <div className="border border-gray-200 rounded-lg overflow-hidden">
+              <table className="w-full text-xs">
+                <thead className="bg-gray-50 border-b border-gray-200">
+                  <tr>
+                    <th className="text-left py-1.5 px-2 font-semibold text-gray-600">Producto</th>
+                    <th className="text-right py-1.5 px-2 font-semibold text-gray-600">Pides</th>
+                    <th className="text-right py-1.5 px-2 font-semibold text-gray-600">Hay</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {stockInsuficientes.map((p) => (
+                    <tr key={p.producto_id} className="border-b border-gray-100 last:border-0">
+                      <td className="py-1.5 px-2 truncate max-w-[160px]" title={p.nombre}>{p.nombre}</td>
+                      <td className="py-1.5 px-2 text-right font-mono">{p.pedido.toLocaleString('es-PE')}</td>
+                      <td className="py-1.5 px-2 text-right font-mono text-gray-500">{p.disponible.toLocaleString('es-PE')}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div>
+              <Label className="text-sm font-semibold">
+                Motivo <span className="text-red-500">*</span>
+              </Label>
+              <Input
+                placeholder='"Camión en camino, llega 17:00"'
+                value={motivoReposicion}
+                onChange={(e) => setMotivoReposicion(e.target.value)}
+                className="mt-1"
+                disabled={loadingEnvio}
+                maxLength={200}
+              />
+              <p className="text-[10px] text-gray-500 mt-1">
+                Mínimo 6 caracteres. Queda registrado en el pedido.
+              </p>
+            </div>
+            <div className="flex justify-end gap-2 pt-2 border-t border-gray-100">
+              <Button variant="outline" size="sm" onClick={() => setStockDialogOpen(false)} disabled={loadingEnvio}>
+                Volver
+              </Button>
+              <Button
+                onClick={confirmarOverrideStockPwa}
+                disabled={loadingEnvio}
+                className="bg-amber-600 hover:bg-amber-700 text-white font-semibold gap-2"
+                size="sm"
+              >
+                {loadingEnvio && <Loader2 className="w-4 h-4 animate-spin" />}
+                Crear con reposición
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
