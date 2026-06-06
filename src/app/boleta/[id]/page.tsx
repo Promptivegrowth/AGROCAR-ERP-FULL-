@@ -15,10 +15,11 @@ export default async function BoletaPage({ params }: { params: Promise<{ id: str
   const { id } = await params
   const supabase = createAdminClient()
 
-  const { data: cobro } = await supabase
+  const { data: cobro } = await (supabase as any)
     .from('cobros')
     .select(`
-      id, total, efectivo, yape, plin, transferencia, fecha, notas, voucher_url, created_at,
+      id, numero, total, efectivo, yape, plin, transferencia, fecha, notas, voucher_url, created_at, nro_operacion,
+      cliente_externo_nombre, cliente_externo_doc,
       clientes(id, razon_social, ruc, dni, direccion, telefono),
       profiles!cobros_cobrador_id_fkey(full_name)
     `)
@@ -29,6 +30,19 @@ export default async function BoletaPage({ params }: { params: Promise<{ id: str
 
   const cliente: any = (cobro as any).clientes
   const cobrador: any = (cobro as any).profiles
+
+  // Aplicaciones del cobro: a qué facturas se aplicó y cuánto
+  const { data: aplicaciones } = await (supabase as any)
+    .from('cobros_aplicaciones')
+    .select(`
+      monto_aplicado, es_a_cuenta,
+      comprobantes(serie, numero, tipo, total, fecha_emision)
+    `)
+    .eq('cobro_id', id)
+    .order('created_at', { ascending: true })
+
+  const aplicsAFacturas = (aplicaciones ?? []).filter((a: any) => !a.es_a_cuenta && a.comprobantes)
+  const aCuenta = (aplicaciones ?? []).filter((a: any) => a.es_a_cuenta).reduce((acc: number, a: any) => acc + Number(a.monto_aplicado ?? 0), 0)
 
   // Saldo del cliente: saldo ANTES de este cobro y saldo DESPUÉS
   const pagoActual = Number(cobro.total ?? 0)
@@ -55,7 +69,8 @@ export default async function BoletaPage({ params }: { params: Promise<{ id: str
     { label: 'Transferencia', monto: Number(cobro.transferencia ?? 0) },
   ].filter((m) => m.monto > 0)
 
-  const codigo = `R-${cobro.id.slice(0, 8).toUpperCase()}`
+  // Usar el correlativo legible si existe (R-YYYYMM-NNNNNN); fallback al short del UUID
+  const codigo = (cobro as any).numero ?? `R-${cobro.id.slice(0, 8).toUpperCase()}`
 
   return (
     <div className="min-h-dvh bg-gray-100 py-6 px-4 print:bg-white print:py-0">
@@ -131,6 +146,43 @@ export default async function BoletaPage({ params }: { params: Promise<{ id: str
           </div>
         </div>
 
+        {/* Aplicación del pago — a qué facturas se imputó */}
+        {(aplicsAFacturas.length > 0 || aCuenta > 0) && (
+          <div className="px-6 py-4 border-t border-gray-100">
+            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
+              Aplicación del pago
+            </p>
+            <div className="space-y-1.5">
+              {aplicsAFacturas.map((a: any, idx: number) => {
+                const comp = a.comprobantes
+                const tipoLabel = comp.tipo === 'factura' ? 'Factura' : comp.tipo === 'boleta' ? 'Boleta' : 'Comprobante'
+                return (
+                  <div key={idx} className="flex justify-between items-start text-sm gap-2 border-b border-gray-50 pb-1.5 last:border-0">
+                    <div className="min-w-0 flex-1">
+                      <p className="text-xs text-gray-500">{tipoLabel}</p>
+                      <p className="font-mono text-xs text-gray-900">{comp.serie}-{String(comp.numero).padStart(6, '0')}</p>
+                    </div>
+                    <span className="font-mono text-sm text-green-700 font-semibold whitespace-nowrap">
+                      − {formatCurrency(Number(a.monto_aplicado ?? 0))}
+                    </span>
+                  </div>
+                )
+              })}
+              {aCuenta > 0 && (
+                <div className="flex justify-between items-center text-sm gap-2 pt-1 mt-1 border-t border-amber-200 bg-amber-50/40 -mx-6 px-6 py-2">
+                  <div>
+                    <p className="text-xs font-semibold text-amber-900">A CUENTA</p>
+                    <p className="text-[10px] text-amber-800">Saldo a favor del cliente</p>
+                  </div>
+                  <span className="font-mono text-sm text-amber-800 font-bold whitespace-nowrap">
+                    {formatCurrency(aCuenta)}
+                  </span>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
         {/* Estado de cuenta */}
         {muestraSaldo && (
           <div className="px-6 py-5 border-t border-gray-100 bg-gray-50/30">
@@ -184,6 +236,14 @@ export default async function BoletaPage({ params }: { params: Promise<{ id: str
                 className="block mx-auto max-h-80 w-auto max-w-full object-contain"
               />
             </div>
+          </div>
+        )}
+
+        {/* Nro. de operación (Yape/Plin/Transferencia) */}
+        {(cobro as any).nro_operacion && (
+          <div className="px-6 py-3 border-t border-gray-100">
+            <p className="text-[10px] uppercase tracking-wide text-gray-400 mb-0.5">Nro. de operación</p>
+            <p className="text-xs font-mono text-gray-800">{(cobro as any).nro_operacion}</p>
           </div>
         )}
 

@@ -19,10 +19,16 @@ async function getCobranzasData() {
     .select('id, cliente_id, tipo, serie, numero, fecha_emision, total, estado')
     .neq('estado', 'anulado')
 
-  // 3) Traer cobros (pagos aplicados) por cliente
-  const { data: cobros } = await supabase
+  // 3) Traer cobros (pagos aplicados) por cliente + sus aplicaciones a comprobantes
+  const { data: cobros } = await (supabase as any)
     .from('cobros')
-    .select('id, cliente_id, fecha, total, efectivo, yape, plin, transferencia, notas, created_at')
+    .select(`
+      id, numero, cliente_id, fecha, total, efectivo, yape, plin, transferencia, notas, created_at, nro_operacion,
+      cobros_aplicaciones(
+        monto_aplicado, es_a_cuenta,
+        comprobantes(serie, numero, tipo)
+      )
+    `)
 
   // 4) Agregación en JS: saldo pendiente por cliente
   const facturadoPorCliente = new Map<string, number>()

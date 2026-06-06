@@ -167,11 +167,20 @@ export default function ReportesPage() {
 
   return (
     <div className="space-y-5">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Reportes y KPIs</h1>
           <p className="text-sm text-gray-500 mt-0.5">Análisis de ventas, cobranzas y comisiones</p>
         </div>
+        <a
+          href="/reportes/rendicion-diaria"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold bg-amber-100 text-amber-900 border border-amber-300 rounded-md hover:bg-amber-200"
+          title="Rendición diaria por vendedor y repartidor (imprimible)"
+        >
+          📊 Rendición diaria por persona
+        </a>
       </div>
 
       {/* Filtros */}

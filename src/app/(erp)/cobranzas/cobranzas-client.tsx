@@ -534,7 +534,7 @@ export default function CobranzasClient({
                     <table className="w-full text-xs">
                       <thead className="bg-gray-50 border-b border-gray-100">
                         <tr>
-                          {['Fecha', 'Total', 'Efectivo', 'Yape', 'Plin', 'Transf.', 'Notas'].map((h) => (
+                          {['Recibo', 'Fecha', 'Total', 'Aplicado a', 'Efectivo', 'Yape', 'Plin', 'Transf.', 'Notas'].map((h) => (
                             <th key={h} className="text-left py-2 px-3 font-semibold text-gray-500 uppercase tracking-wide">{h}</th>
                           ))}
                         </tr>
@@ -542,10 +542,48 @@ export default function CobranzasClient({
                       <tbody className="divide-y divide-gray-50">
                         {selected.cobros.map((cb: any) => {
                           const tieneNota = cb.notas && String(cb.notas).trim().length > 0
+                          const aplicsAFact = (cb.cobros_aplicaciones ?? []).filter((a: any) => !a.es_a_cuenta && a.comprobantes)
+                          const aCta = (cb.cobros_aplicaciones ?? []).filter((a: any) => a.es_a_cuenta).reduce((acc: number, a: any) => acc + Number(a.monto_aplicado ?? 0), 0)
                           return (
                             <tr key={cb.id} className="hover:bg-gray-50/50">
+                              <td className="py-2 px-3 font-mono">
+                                <a
+                                  href={`/boleta/${cb.id}`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="text-green-700 hover:underline"
+                                >
+                                  {cb.numero ?? `R-${String(cb.id).slice(0, 8)}`}
+                                </a>
+                              </td>
                               <td className="py-2 px-3 text-gray-600">{formatDate(cb.fecha)}</td>
                               <td className="py-2 px-3 font-bold text-green-600">{formatCurrency(cb.total ?? 0)}</td>
+                              <td className="py-2 px-3 max-w-[220px]">
+                                {aplicsAFact.length === 0 && aCta === 0 ? (
+                                  <span className="text-[10px] text-gray-400 italic">Sin aplicación</span>
+                                ) : (
+                                  <div className="space-y-0.5">
+                                    {aplicsAFact.slice(0, 3).map((a: any, i: number) => (
+                                      <div key={i} className="text-[10px] text-gray-700 flex items-center gap-1.5">
+                                        <span className="font-mono text-gray-900">
+                                          {a.comprobantes.serie}-{String(a.comprobantes.numero).padStart(6, '0')}
+                                        </span>
+                                        <span className="text-green-700 font-semibold">
+                                          {formatCurrency(Number(a.monto_aplicado ?? 0))}
+                                        </span>
+                                      </div>
+                                    ))}
+                                    {aplicsAFact.length > 3 && (
+                                      <div className="text-[10px] text-gray-400">+{aplicsAFact.length - 3} más</div>
+                                    )}
+                                    {aCta > 0 && (
+                                      <div className="text-[10px] text-amber-700 font-semibold">
+                                        A cuenta: {formatCurrency(aCta)}
+                                      </div>
+                                    )}
+                                  </div>
+                                )}
+                              </td>
                               <td className="py-2 px-3 text-gray-600">{formatCurrency(cb.efectivo ?? 0)}</td>
                               <td className="py-2 px-3 text-gray-600">{formatCurrency(cb.yape ?? 0)}</td>
                               <td className="py-2 px-3 text-gray-600">{formatCurrency(cb.plin ?? 0)}</td>

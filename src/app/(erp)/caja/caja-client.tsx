@@ -640,6 +640,15 @@ export default function CajaClient({
                   </p>
                 </div>
                 <div className="col-span-2 lg:col-auto">
+                  <a
+                    href={`/caja/cierre/${sesion.id}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center justify-center gap-2 text-sm px-3 py-2 border border-gray-300 rounded-md hover:bg-gray-50 w-full lg:w-auto"
+                    title="Reporte general de todas las operaciones de la sesión"
+                  >
+                    <FileDown className="w-4 h-4" /> Reporte de cierre
+                  </a>
                   <Button
                     onClick={() => {
                       setFormCierre({ monto: saldoTeorico.toFixed(2), notas: '' })
@@ -1373,7 +1382,7 @@ export default function CajaClient({
                     <tr>
                       {[
                         'Apertura', 'Cierre', 'Cajero', 'Saldo inicial',
-                        'Saldo final', 'Diferencia', 'Duración',
+                        'Saldo final', 'Diferencia', 'Duración', 'Reporte',
                       ].map((h) => (
                         <th
                           key={h}
@@ -1422,6 +1431,16 @@ export default function CajaClient({
                             {s.fecha_cierre
                               ? formatDuration(s.fecha_apertura, s.fecha_cierre)
                               : '—'}
+                          </td>
+                          <td className="py-2.5 px-3 text-xs">
+                            <a
+                              href={`/caja/cierre/${s.id}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-blue-700 hover:underline"
+                            >
+                              📄 Ver
+                            </a>
                           </td>
                         </tr>
                       )
