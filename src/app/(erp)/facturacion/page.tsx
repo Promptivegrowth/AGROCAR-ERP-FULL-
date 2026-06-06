@@ -964,7 +964,7 @@ export default function FacturacionPage() {
                           <span className="mx-1">→</span>
                           <span className="text-green-700 font-semibold">{h.valor_nuevo ?? '—'}</span>
                         </div>
-                        {h.nota && <div className="text-[10px] text-gray-500 italic mt-0.5">"{h.nota}"</div>}
+                        {h.nota && <div className="text-[10px] text-gray-500 italic mt-0.5">&ldquo;{h.nota}&rdquo;</div>}
                       </div>
                     ))}
                   </div>
