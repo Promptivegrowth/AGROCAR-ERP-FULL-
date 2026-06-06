@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { Printer, MessageCircle, List } from 'lucide-react'
+import { Printer, MessageCircle, List, Package2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { usePathname } from 'next/navigation'
 
@@ -23,6 +23,11 @@ export default function HojaRutaActions({ telefono, numero }: { telefono: string
       <Link href={`/hoja-ruta/${despachoId}/simple`}>
         <Button variant="outline" className="gap-2 text-gray-700">
           <List className="w-4 h-4" /> Versión simple
+        </Button>
+      </Link>
+      <Link href={`/hoja-ruta/${despachoId}/almacen`}>
+        <Button variant="outline" className="gap-2 text-blue-700 border-blue-300 hover:bg-blue-50">
+          <Package2 className="w-4 h-4" /> Consolidado almacén
         </Button>
       </Link>
       {telefono && (

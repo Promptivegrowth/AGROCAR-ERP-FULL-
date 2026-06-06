@@ -437,7 +437,13 @@ export default function DespachoClient({ pedidosIniciales, vehiculos, almacen, p
         .in('id', pedidosVeh.map((p) => p.id))
       if (e3) throw e3
 
-      toast.success('Hoja de ruta emitida', { description: `Despacho ${despacho.numero} creado con ${pedidosVeh.length} paradas.` })
+      toast.success('Hoja de ruta emitida', {
+        description: `Despacho ${despacho.numero} creado con ${pedidosVeh.length} paradas.`,
+        action: {
+          label: 'Consolidado almacén',
+          onClick: () => window.open(`/hoja-ruta/${despacho.id}/almacen`, '_blank'),
+        },
+      })
       // Abre la hoja de ruta en nueva pestaña
       window.open(`/hoja-ruta/${despacho.id}`, '_blank')
       // Refresca la página (los pedidos ya no aparecerán como 'facturados')

@@ -279,6 +279,7 @@ export default function HistorialClient({ despachosIniciales }: { despachosInici
                         <div className="flex items-center gap-2">
                           <Link href={`/hoja-ruta/${d.id}`} target="_blank" className="text-xs text-blue-700 hover:underline font-medium">Premium</Link>
                           <Link href={`/hoja-ruta/${d.id}/simple`} target="_blank" className="text-xs text-gray-600 hover:underline">Simple</Link>
+                          <Link href={`/hoja-ruta/${d.id}/almacen`} target="_blank" className="text-xs text-blue-700 hover:underline">📦 Almacén</Link>
                         </div>
                       </td>
                     </tr>

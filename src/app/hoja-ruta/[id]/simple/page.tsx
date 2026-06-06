@@ -23,7 +23,7 @@ async function getData(id: string) {
     .select(`
       id, pedido_id, estado,
       pedidos(
-        id, numero, total,
+        id, numero, total, tipo_pago,
         clientes(razon_social, ruc, dni, tipo_comprobante_preferido),
         profiles!pedidos_vendedor_id_fkey(id, full_name, codigo),
         comprobantes(serie, numero, tipo)
@@ -43,6 +43,12 @@ async function getData(id: string) {
       const vendedorCodigo = ped.profiles?.codigo
         ? ped.profiles.codigo
         : ped.profiles?.id ? ped.profiles.id.slice(-3).toUpperCase() : '—'
+      // tipo_pago del pedido determina la condición.
+      // Si no está definido (legacy), inferir por el cliente: si tiene RUC con
+      // credito_dias > 0 → crédito, sino → contado.
+      const condicion = ped.tipo_pago === 'contado' ? 'Contado'
+        : ped.tipo_pago === 'credito' ? 'Crédito'
+        : 'Contado'
       return {
         pedido_numero: ped.numero ?? '—',
         vendedor_codigo: vendedorCodigo,
@@ -52,7 +58,7 @@ async function getData(id: string) {
         cliente: ped.clientes?.razon_social ?? '—',
         ruc_dni: ped.clientes?.ruc ?? ped.clientes?.dni ?? '—',
         total: Number(ped.total ?? 0),
-        condicion: 'Crédito',
+        condicion,
         observacion: '',
         secuencia: ordenMap.get(it.pedido_id) ?? 999,
       }
@@ -70,11 +76,16 @@ export default async function HojaRutaSimplePage({ params }: { params: { id: str
   const v = despacho.vehiculos as any
   const totalGeneral = paradas.reduce((a: number, p: any) => a + p.total, 0)
 
-  const fechaDoc = new Date(despacho.fecha_despacho).toLocaleDateString('es-PE', {
+  // Las fechas se interpretan en timezone de Lima (UTC-5) — el servidor está en UTC.
+  // Para fecha_despacho que viene como YYYY-MM-DD, agregamos T12:00:00 para evitar
+  // que se desplace al día anterior al convertir a Date.
+  const fechaDoc = new Date(despacho.fecha_despacho + 'T12:00:00').toLocaleDateString('es-PE', {
     weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
+    timeZone: 'America/Lima',
   })
   const horaDoc = new Date(despacho.hoja_ruta_emitida_at ?? Date.now()).toLocaleTimeString('es-PE', {
     hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false,
+    timeZone: 'America/Lima',
   })
 
   return (

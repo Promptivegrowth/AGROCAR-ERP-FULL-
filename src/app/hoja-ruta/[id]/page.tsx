@@ -124,7 +124,7 @@ export default async function HojaRutaPage({ params }: { params: { id: string } 
   const JS_DAY_TO_KEY = ['dom', 'lun', 'mar', 'mie', 'jue', 'vie', 'sab']
   const diaDespacho = JS_DAY_TO_KEY[new Date(despacho.fecha_despacho + 'T12:00:00').getDay()]
   const pctCapacidad = v?.capacidad_kg ? (Number(despacho.peso_total_kg) / Number(v.capacidad_kg)) * 100 : 0
-  const fecha = new Date(despacho.fecha_despacho).toLocaleDateString('es-PE', { year: 'numeric', month: 'long', day: 'numeric' })
+  const fecha = new Date(despacho.fecha_despacho + 'T12:00:00').toLocaleDateString('es-PE', { year: 'numeric', month: 'long', day: 'numeric', timeZone: 'America/Lima' })
 
   const mapaCoords: [number, number][] = [[almacen.lat, almacen.lng]]
   paradas.forEach((p: any) => {
@@ -336,7 +336,7 @@ export default async function HojaRutaPage({ params }: { params: { id: string } 
         </div>
 
         <p className="text-center text-[10px] text-gray-400 mt-6">
-          Documento generado {new Date().toLocaleString('es-PE')} · AGROCAR ERP
+          Documento generado {new Date().toLocaleString('es-PE', { timeZone: 'America/Lima' })} · AGROCAR ERP
         </p>
       </div>
     </div>
