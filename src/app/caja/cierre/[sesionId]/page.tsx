@@ -1,6 +1,7 @@
 import { createAdminClient } from '@/lib/supabase/admin'
 import { notFound } from 'next/navigation'
 import { formatCurrency } from '@/lib/utils'
+import { EMPRESA, SLOGAN_FONT_STACK } from '@/lib/empresa'
 import CierreActions from './cierre-actions'
 
 export const dynamic = 'force-dynamic'
@@ -113,8 +114,17 @@ export default async function CierreCajaReporte({
       <div className="max-w-5xl mx-auto px-6 py-8 print:px-0 print:py-0">
         {/* Cabecera */}
         <div className="text-center mb-4">
-          <h2 className="text-[16pt] font-bold tracking-wide">AGROCAR S.R.L.</h2>
-          <h3 className="text-[12pt] font-semibold mt-1">REPORTE DE CIERRE DE CAJA</h3>
+          <h2 className="text-[16pt] font-bold tracking-wide">{EMPRESA.razon_social}</h2>
+          <div style={{ fontFamily: SLOGAN_FONT_STACK, fontSize: 18, color: '#1f2937', lineHeight: 1, marginTop: 2 }}>
+            {EMPRESA.slogan}
+          </div>
+          <div className="text-[9pt] text-gray-600 mt-1">
+            RUC {EMPRESA.ruc} · {EMPRESA.direccion_comercial}
+          </div>
+          <div className="text-[9pt] text-gray-600">
+            Tel. {EMPRESA.telefono} · {EMPRESA.correo}
+          </div>
+          <h3 className="text-[12pt] font-semibold mt-3 border-t border-gray-300 pt-2">REPORTE DE CIERRE DE CAJA</h3>
         </div>
 
         <div className="grid grid-cols-2 gap-4 mb-4 text-[10pt] border border-gray-300 rounded p-3">

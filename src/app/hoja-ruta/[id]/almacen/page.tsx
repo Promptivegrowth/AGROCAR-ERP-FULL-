@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { notFound } from 'next/navigation'
 import HojaRutaAlmacenActions from './almacen-actions'
+import { EMPRESA, SLOGAN_FONT_STACK } from '@/lib/empresa'
 
 export const dynamic = 'force-dynamic'
 
@@ -146,11 +147,16 @@ export default async function HojaRutaAlmacenPage({ params }: { params: Promise<
       </div>
 
       <div className="max-w-5xl mx-auto px-6 py-8 print:px-0 print:py-0">
+        {/* Membrete empresa */}
+        <div className="text-center pb-1 border-b border-gray-200 mb-3">
+          <div className="font-bold text-[12pt]">{EMPRESA.razon_social} · RUC {EMPRESA.ruc}</div>
+          <div style={{ fontFamily: SLOGAN_FONT_STACK, fontSize: 16, color: '#1f2937', lineHeight: 1 }}>{EMPRESA.slogan}</div>
+          <div className="text-[9pt] text-gray-600">{EMPRESA.direccion_comercial} · Tel. {EMPRESA.telefono} · {EMPRESA.correo}</div>
+        </div>
+
         {/* Cabecera del documento */}
         <div className="flex items-start justify-between mb-3 print:mb-2">
-          <div>
-            {/* Espacio para logo si lo necesitas */}
-          </div>
+          <div></div>
           <div className="text-right text-[10pt] text-gray-700">
             <div className="capitalize">{fechaDespachoFmt}</div>
             <div className="font-mono">{generadoFmt.split(' ')[1]}</div>

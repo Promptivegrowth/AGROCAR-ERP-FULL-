@@ -3,6 +3,7 @@ import { notFound } from 'next/navigation'
 import Image from 'next/image'
 import HojaRutaActions from './hoja-ruta-actions'
 import HojaRutaMapa from './hoja-ruta-mapa'
+import { EMPRESA, SLOGAN_FONT_STACK } from '@/lib/empresa'
 
 export const dynamic = 'force-dynamic'
 
@@ -162,9 +163,16 @@ export default async function HojaRutaPage({ params }: { params: { id: string } 
           <div className="flex items-start gap-3">
             <Image src="/logo-agrocar.png" alt="AGROCAR" width={56} height={56} className="object-contain" />
             <div>
-              <h1 className="text-xl font-bold text-gray-900">{empresa.razon_social}</h1>
-              <p className="text-xs text-gray-600 font-mono">RUC {empresa.ruc}</p>
-              {empresa.direccion && <p className="text-xs text-gray-500">{empresa.direccion}</p>}
+              <h1 className="text-xl font-bold text-gray-900">{EMPRESA.razon_social}</h1>
+              <p
+                className="text-gray-800"
+                style={{ fontFamily: SLOGAN_FONT_STACK, fontSize: 16, lineHeight: 1, marginTop: 2 }}
+              >
+                {EMPRESA.slogan}
+              </p>
+              <p className="text-xs text-gray-600 font-mono mt-1">RUC {EMPRESA.ruc}</p>
+              <p className="text-xs text-gray-500">{EMPRESA.direccion_comercial}</p>
+              <p className="text-[10px] text-gray-500">Tel. {EMPRESA.telefono} · {EMPRESA.correo}</p>
             </div>
           </div>
           <div className="text-right">

@@ -2,6 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { formatCurrency } from '@/lib/utils'
 import RendicionActions from './rendicion-actions'
 import { hoyLima } from '@/lib/fechas-pe'
+import { EMPRESA, SLOGAN_FONT_STACK } from '@/lib/empresa'
 
 export const dynamic = 'force-dynamic'
 
@@ -219,8 +220,16 @@ export default async function RendicionDiariaPage({
 
       <div className="max-w-6xl mx-auto px-6 py-6 print:px-0 print:py-0">
         <div className="text-center mb-3">
-          <h2 className="text-[14pt] font-bold">AGROCAR S.R.L.</h2>
-          <h3 className="text-[11pt] font-semibold">RENDICIÓN DIARIA DE VENDEDORES Y REPARTIDORES</h3>
+          <h2 className="text-[14pt] font-bold">{EMPRESA.razon_social}</h2>
+          <div style={{ fontFamily: SLOGAN_FONT_STACK, fontSize: 16, color: '#1f2937', lineHeight: 1, marginTop: 2 }}>
+            {EMPRESA.slogan}
+          </div>
+          <div className="text-[9pt] text-gray-600 mt-1">
+            RUC {EMPRESA.ruc} · Tel. {EMPRESA.telefono} · {EMPRESA.correo}
+          </div>
+          <h3 className="text-[11pt] font-semibold mt-2 border-t border-gray-300 pt-2">
+            RENDICIÓN DIARIA DE VENDEDORES Y REPARTIDORES
+          </h3>
           <p className="text-[10pt] capitalize mt-1">{fechaFmt}</p>
         </div>
 

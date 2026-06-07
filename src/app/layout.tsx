@@ -1,9 +1,11 @@
 import type { Metadata, Viewport } from "next"
-import { Inter } from "next/font/google"
+import { Inter, Great_Vibes } from "next/font/google"
 import "./globals.css"
 import { Toaster } from "@/components/ui/toaster"
 
 const inter = Inter({ subsets: ["latin"] })
+// Fuente script para el slogan "Pasión hecha a mano" — similar al logo de AGROCAR
+const greatVibes = Great_Vibes({ subsets: ["latin"], weight: "400", variable: "--font-slogan", display: "swap" })
 
 export const metadata: Metadata = {
   title: "AGROCAR ERP",
@@ -20,7 +22,7 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="es">
+    <html lang="es" className={greatVibes.variable}>
       <body className={inter.className}>
         {children}
         <Toaster />

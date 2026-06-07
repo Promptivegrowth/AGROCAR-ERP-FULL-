@@ -1,6 +1,7 @@
 import { createAdminClient } from '@/lib/supabase/admin'
 import { notFound } from 'next/navigation'
 import { numeroALetras } from '@/lib/utils'
+import { EMPRESA, SLOGAN_FONT_STACK } from '@/lib/empresa'
 import PrintButton from './print-button'
 
 export const dynamic = 'force-dynamic'
@@ -186,11 +187,15 @@ export default async function ComprobantePage({
                 <td style={{ width: '40%', verticalAlign: 'top' }}>
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img src="/logo-agrocar.png" alt="AGROCAR" style={{ maxWidth: 160 }} />
-                  <div style={{ marginTop: 8, fontSize: 11, lineHeight: 1.5 }}>
-                    <div style={{ fontWeight: 'bold', fontSize: 14 }}>AGROCAR S.R.L.</div>
-                    <div>Distribuidor de Línea de Frío</div>
-                    <div>Av. Bolognesi 1234, Tacna</div>
-                    <div>Tel. 052 123456 · info@agrocarsrl.com</div>
+                  <div style={{ fontFamily: SLOGAN_FONT_STACK, fontSize: 16, color: '#1f2937', marginTop: 2, marginLeft: 4 }}>
+                    {EMPRESA.slogan}
+                  </div>
+                  <div style={{ marginTop: 6, fontSize: 11, lineHeight: 1.5 }}>
+                    <div style={{ fontWeight: 'bold', fontSize: 14 }}>{EMPRESA.razon_social}</div>
+                    <div>{EMPRESA.rubro}</div>
+                    <div>{EMPRESA.direccion_comercial}</div>
+                    <div style={{ fontSize: 10, color: '#6b7280' }}>{EMPRESA.direccion_fundo}</div>
+                    <div>Tel. {EMPRESA.telefono} · {EMPRESA.correo}</div>
                   </div>
                 </td>
                 <td style={{ width: '60%', verticalAlign: 'top', textAlign: 'right' }}>
@@ -356,14 +361,18 @@ export default async function ComprobantePage({
         {/* Logo + encabezado */}
         <div style={{ textAlign: 'center' }}>
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/logo-agrocar.png" alt="AGROCAR" style={{ maxWidth: 140, margin: '0 auto 4px', display: 'block' }} />
-          <div style={{ fontWeight: 'bold', fontSize: 13 }}>AGROCAR S.R.L.</div>
-          <div>RUC: 20519883296</div>
+          <img src="/logo-agrocar.png" alt="AGROCAR" style={{ maxWidth: 140, margin: '0 auto 2px', display: 'block' }} />
+          <div style={{ fontFamily: SLOGAN_FONT_STACK, fontSize: 15, color: '#000', marginBottom: 4 }}>
+            {EMPRESA.slogan}
+          </div>
+          <div style={{ fontWeight: 'bold', fontSize: 13 }}>{EMPRESA.razon_social}</div>
+          <div>RUC: {EMPRESA.ruc}</div>
           <div>CALLE EMILIO FORERO 553-A</div>
           <div>PARA GRANDE - TACNA</div>
           <div>FUNDO PARA GRANDE PARCELA 31</div>
           <div>SUB LT 1 - TACNA</div>
-          <div>TELEFONO: 952901119</div>
+          <div>TELEFONO: {EMPRESA.telefono}</div>
+          <div style={{ fontSize: 10 }}>{EMPRESA.correo}</div>
         </div>
 
         <div style={{ borderTop: '1px dashed #000', margin: '8px 0' }} />

@@ -1,5 +1,6 @@
 import { createAdminClient } from '@/lib/supabase/admin'
 import { numeroALetras } from '@/lib/utils'
+import { EMPRESA, SLOGAN_FONT_STACK } from '@/lib/empresa'
 import AutoPrint from './auto-print'
 
 export const dynamic = 'force-dynamic'
@@ -156,10 +157,15 @@ export default async function ImprimirLotePage({
                         <td style={{ width: '40%', verticalAlign: 'top' }}>
                           {/* eslint-disable-next-line @next/next/no-img-element */}
                           <img src="/logo-agrocar.png" alt="AGROCAR" style={{ maxWidth: 160 }} />
-                          <div style={{ marginTop: 8, fontSize: 11, lineHeight: 1.5 }}>
-                            <div style={{ fontWeight: 'bold', fontSize: 14 }}>AGROCAR S.R.L.</div>
-                            <div>Distribuidor de Línea de Frío</div>
-                            <div>Tacna, Perú</div>
+                          <div style={{ fontFamily: SLOGAN_FONT_STACK, fontSize: 16, color: '#1f2937', marginTop: 2, marginLeft: 4 }}>
+                            {EMPRESA.slogan}
+                          </div>
+                          <div style={{ marginTop: 6, fontSize: 11, lineHeight: 1.5 }}>
+                            <div style={{ fontWeight: 'bold', fontSize: 14 }}>{EMPRESA.razon_social}</div>
+                            <div>{EMPRESA.rubro}</div>
+                            <div>{EMPRESA.direccion_comercial}</div>
+                            <div style={{ fontSize: 10, color: '#6b7280' }}>{EMPRESA.direccion_fundo}</div>
+                            <div>Tel. {EMPRESA.telefono} · {EMPRESA.correo}</div>
                           </div>
                         </td>
                         <td style={{ width: '60%', verticalAlign: 'top', textAlign: 'right' }}>
@@ -288,8 +294,12 @@ export default async function ImprimirLotePage({
               ) : (
                 /* Ticket 80mm — versión compacta */
                 <>
-                  <div style={{ textAlign: 'center', fontWeight: 'bold' }}>AGROCAR S.R.L.</div>
-                  <div style={{ textAlign: 'center' }}>RUC: 20519883296</div>
+                  <div style={{ textAlign: 'center', fontFamily: SLOGAN_FONT_STACK, fontSize: 13, marginBottom: 1 }}>
+                    {EMPRESA.slogan}
+                  </div>
+                  <div style={{ textAlign: 'center', fontWeight: 'bold' }}>{EMPRESA.razon_social}</div>
+                  <div style={{ textAlign: 'center' }}>RUC: {EMPRESA.ruc}</div>
+                  <div style={{ textAlign: 'center', fontSize: 9 }}>Tel. {EMPRESA.telefono} · {EMPRESA.correo}</div>
                   <div style={{ borderTop: '1px dashed #000', margin: '6px 0' }} />
                   <div style={{ textAlign: 'center', fontWeight: 'bold' }}>{titulo}</div>
                   <div style={{ textAlign: 'center', fontWeight: 'bold', fontSize: 13 }}>{correlativo}</div>

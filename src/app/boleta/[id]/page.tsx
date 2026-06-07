@@ -4,6 +4,7 @@ import { formatCurrency } from '@/lib/utils'
 import { notFound } from 'next/navigation'
 import PrintButton from './print-button'
 import { getSaldoCliente } from '@/lib/cliente-saldo'
+import { EMPRESA, SLOGAN_FONT_STACK } from '@/lib/empresa'
 
 export const dynamic = 'force-dynamic'
 
@@ -78,21 +79,30 @@ export default async function BoletaPage({ params }: { params: Promise<{ id: str
         {/* Header negro con logo AGROCAR */}
         <div className="bg-black text-white px-6 pt-6 pb-5 border-b-4 border-[#FBE600]">
           <div className="flex items-center justify-between">
-            <Image
-              src="/logo-agrocar.png"
-              alt="AGROCAR"
-              width={140}
-              height={40}
-              priority
-              className="object-contain bg-white rounded p-1"
-            />
+            <div>
+              <Image
+                src="/logo-agrocar.png"
+                alt="AGROCAR"
+                width={140}
+                height={40}
+                priority
+                className="object-contain bg-white rounded p-1"
+              />
+              <p
+                className="mt-1 text-[#FBE600]"
+                style={{ fontFamily: SLOGAN_FONT_STACK, fontSize: 18, lineHeight: 1 }}
+              >
+                {EMPRESA.slogan}
+              </p>
+            </div>
             <div className="text-right">
               <p className="text-[10px] uppercase tracking-wide text-gray-400">Recibo</p>
               <p className="font-mono font-bold text-lg">{codigo}</p>
             </div>
           </div>
-          <p className="text-xs text-gray-400 mt-3">AGROCAR S.R.L. · RUC 20519883296</p>
-          <p className="text-xs text-gray-400">Tacna, Perú</p>
+          <p className="text-xs text-gray-300 mt-3">{EMPRESA.razon_social} · RUC {EMPRESA.ruc}</p>
+          <p className="text-[11px] text-gray-400">{EMPRESA.direccion_comercial}</p>
+          <p className="text-[11px] text-gray-400">Tel. {EMPRESA.telefono} · {EMPRESA.correo}</p>
         </div>
 
         {/* Info cabecera */}

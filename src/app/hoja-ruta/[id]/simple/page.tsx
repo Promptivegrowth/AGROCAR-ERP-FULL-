@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { notFound } from 'next/navigation'
 import HojaRutaSimpleActions from './hoja-ruta-simple-actions'
+import { EMPRESA, SLOGAN_FONT_STACK } from '@/lib/empresa'
 
 export const dynamic = 'force-dynamic'
 
@@ -113,8 +114,14 @@ export default async function HojaRutaSimplePage({ params }: { params: { id: str
 
       {/* Hoja imprimible */}
       <div className="max-w-5xl mx-auto bg-white p-6 print:p-0 shadow-sm my-3 print:my-0 print:shadow-none">
+        {/* Membrete */}
+        <div className="text-center pb-1 border-b border-gray-200">
+          <div className="font-bold text-sm">{EMPRESA.razon_social} · RUC {EMPRESA.ruc}</div>
+          <div style={{ fontFamily: SLOGAN_FONT_STACK, fontSize: 14, color: '#1f2937', lineHeight: 1 }}>{EMPRESA.slogan}</div>
+          <div className="text-[9px] text-gray-500">{EMPRESA.direccion_comercial} · Tel. {EMPRESA.telefono} · {EMPRESA.correo}</div>
+        </div>
         {/* Header */}
-        <div className="flex items-start justify-between pb-2 border-b-2 border-black">
+        <div className="flex items-start justify-between pb-2 mt-2 border-b-2 border-black">
           <div>
             <p className="text-[10px] text-gray-500">Desde: {new Date(despacho.fecha_despacho).toLocaleDateString('es-PE')} hasta: {new Date(despacho.fecha_despacho).toLocaleDateString('es-PE')}</p>
             <p className="text-[10px] text-gray-500">Todos</p>
