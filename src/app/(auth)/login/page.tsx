@@ -4,12 +4,13 @@ import { useState } from 'react'
 import Image from 'next/image'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
-import { ChevronDown, ChevronUp, Eye, EyeOff, KeyRound, Loader2 } from 'lucide-react'
+import { Eye, EyeOff, Loader2 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { EMPRESA } from '@/lib/empresa'
 import type { UserRole } from '@/types'
 
 const roleRedirects: Record<UserRole, string> = {
@@ -22,17 +23,6 @@ const roleRedirects: Record<UserRole, string> = {
   repartidor: '/pwa/cobros',
 }
 
-// Credenciales de prueba reales (alineadas con la DB)
-const CREDENCIALES_PRUEBA = [
-  { rol: 'Administrador', email: 'admin@agrocar.pe', password: 'Admin2024!' },
-  { rol: 'Gerente', email: 'gerente@agrocar.pe', password: 'Gerente2024!' },
-  { rol: 'Facturador', email: 'facturador@agrocar.pe', password: 'Factura2024!' },
-  { rol: 'Almacenero', email: 'almacen@agrocar.pe', password: 'Almacen2024!' },
-  { rol: 'Contador', email: 'contador@agrocar.pe', password: 'Contad2024!' },
-  { rol: 'Vendedor', email: 'vendedor1@agrocar.pe', password: 'Vend2024!' },
-  { rol: 'Repartidor', email: 'repartidor1@agrocar.pe', password: 'Repart2024!' },
-]
-
 export default function LoginPage() {
   const router = useRouter()
   const [email, setEmail] = useState('')
@@ -40,7 +30,6 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [showCredenciales, setShowCredenciales] = useState(false)
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
@@ -109,13 +98,6 @@ export default function LoginPage() {
     } finally {
       setLoading(false)
     }
-  }
-
-  // Rellena las credenciales en el formulario al hacer clic en una fila de prueba
-  const usarCredencial = (cred: typeof CREDENCIALES_PRUEBA[number]) => {
-    setEmail(cred.email)
-    setPassword(cred.password)
-    setShowCredenciales(false)
   }
 
   return (
@@ -221,50 +203,11 @@ export default function LoginPage() {
           </CardContent>
         </Card>
 
-        {/* Card colapsable con credenciales de prueba para testing */}
-        <Card className="mt-4 border border-gray-200 bg-white/70 backdrop-blur">
-          <button
-            type="button"
-            onClick={() => setShowCredenciales(!showCredenciales)}
-            className="w-full flex items-center justify-between px-4 py-3 text-sm font-medium text-gray-700 hover:bg-gray-50 rounded-lg transition-colors"
-          >
-            <span className="flex items-center gap-2">
-              <KeyRound className="w-4 h-4 text-gray-700" />
-              Ver credenciales de prueba
-            </span>
-            {showCredenciales ? (
-              <ChevronUp className="w-4 h-4 text-gray-400" />
-            ) : (
-              <ChevronDown className="w-4 h-4 text-gray-400" />
-            )}
-          </button>
-          {showCredenciales && (
-            <div className="border-t border-gray-100 px-2 py-2 space-y-1 animate-in fade-in slide-in-from-top-1 duration-200">
-              {CREDENCIALES_PRUEBA.map((c) => (
-                <button
-                  key={c.email}
-                  type="button"
-                  onClick={() => usarCredencial(c)}
-                  className="w-full text-left px-3 py-2 rounded-md hover:bg-yellow-50 transition-colors flex items-center justify-between gap-2"
-                >
-                  <div className="min-w-0 flex-1">
-                    <div className="text-xs font-semibold text-gray-800">{c.rol}</div>
-                    <div className="text-xs text-gray-500 font-mono truncate">{c.email}</div>
-                  </div>
-                  <span className="text-xs text-gray-400 font-mono shrink-0 hidden sm:inline">
-                    {c.password}
-                  </span>
-                </button>
-              ))}
-              <p className="text-[10px] text-gray-400 px-3 py-1 text-center">
-                Haz clic en cualquier fila para autocompletar el formulario.
-              </p>
-            </div>
-          )}
-        </Card>
-
         <p className="text-center text-xs text-gray-400 mt-6">
-          AGROCAR S.R.L. &middot; Tacna, Perú &middot; {new Date().getFullYear()}
+          {EMPRESA.razon_social} &middot; Tacna, Perú &middot; {new Date().getFullYear()}
+        </p>
+        <p className="text-center text-[10px] text-gray-400 mt-1">
+          ¿Problemas para acceder? Contacta al administrador del sistema.
         </p>
       </div>
     </div>
