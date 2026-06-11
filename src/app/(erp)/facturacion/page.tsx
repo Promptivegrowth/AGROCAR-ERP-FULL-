@@ -67,6 +67,7 @@ export default function FacturacionPage() {
         .from('pedidos')
         .select(`
           id, numero, subtotal, igv, incluir_igv, total, estado, created_at, cliente_id,
+          fecha_pedido, fecha_despacho,
           clientes(razon_social, ruc, dni, tipo_comprobante_preferido, credito_dias)
         `)
         .eq('estado', 'enviado')
@@ -538,7 +539,7 @@ export default function FacturacionPage() {
                   <table className="w-full text-sm">
                     <thead className="border-b border-gray-100 bg-gray-50/50">
                       <tr>
-                        {['Pedido', 'Tipo', 'Cliente', 'RUC / DNI', 'Fecha', 'Total', 'Acción'].map((h) => (
+                        {['N°', 'Tipo', 'Cliente', 'RUC / DNI', 'F. Pedido', 'F. Despacho', 'Total', 'Acción'].map((h) => (
                           <th key={h} className="text-left py-3 px-4 text-xs font-semibold text-gray-500 uppercase tracking-wide">
                             {h}
                           </th>
@@ -565,7 +566,16 @@ export default function FacturacionPage() {
                           <td className="py-3 px-4 text-gray-500 font-mono text-xs">
                             {pedido.clientes?.ruc ?? pedido.clientes?.dni ?? '—'}
                           </td>
-                          <td className="py-3 px-4 text-gray-500 text-xs">{formatDate(pedido.created_at)}</td>
+                          <td className="py-3 px-4 text-gray-500 text-xs">
+                            {pedido.fecha_pedido ? formatDate(pedido.fecha_pedido) : formatDate(pedido.created_at)}
+                          </td>
+                          <td className="py-3 px-4 text-xs">
+                            {pedido.fecha_despacho ? (
+                              <span className="font-semibold text-blue-700">{formatDate(pedido.fecha_despacho)}</span>
+                            ) : (
+                              <span className="text-gray-400">—</span>
+                            )}
+                          </td>
                           <td className="py-3 px-4 font-semibold text-gray-800">{formatCurrency(pedido.total ?? 0)}</td>
                           <td className="py-3 px-4">
                             <Button

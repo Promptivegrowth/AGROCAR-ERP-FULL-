@@ -22,12 +22,25 @@ export function formatCurrency(amount: number, currency: string = 'PEN'): string
   }).format(amount)
 }
 
+/**
+ * Formatea una fecha en zona horaria de Lima (UTC-5).
+ *
+ * Para strings tipo 'YYYY-MM-DD' (columnas DATE), se interpreta con T12:00:00
+ * Lima para evitar desplazamientos. Para timestamptz se respeta el momento real
+ * pero se formatea en zona Lima.
+ *
+ * Antes este helper no tenía timeZone y en Vercel (UTC) formateaba con la
+ * zona del servidor, mostrando día siguiente entre 19:00-23:59 hora Lima.
+ */
 export function formatDate(date: string | Date): string {
-  const d = typeof date === 'string' ? new Date(date) : date
+  const d = typeof date === 'string'
+    ? (/^\d{4}-\d{2}-\d{2}$/.test(date) ? new Date(date + 'T12:00:00-05:00') : new Date(date))
+    : date
   return new Intl.DateTimeFormat('es-PE', {
     day: '2-digit',
     month: '2-digit',
     year: 'numeric',
+    timeZone: 'America/Lima',
   }).format(d)
 }
 
@@ -40,6 +53,7 @@ export function formatDatetime(date: string | Date): string {
     hour: '2-digit',
     minute: '2-digit',
     hour12: true,
+    timeZone: 'America/Lima',
   }).format(d)
 }
 
