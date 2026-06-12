@@ -716,22 +716,50 @@ export default function PedidosClient({ pedidosIniciales }: { pedidosIniciales: 
 
                 <div className="bg-gray-50 rounded-lg p-3 space-y-1 text-sm">
                   {(() => {
-                    const subtotal = Number(selected.subtotal ?? 0)
-                    const descuento = Number(selected.descuento_monto ?? 0)
                     const incluirIgv = selected.incluir_igv !== false
-                    const base = subtotal - descuento
-                    const igv = incluirIgv ? Number(selected.igv ?? base * 0.18) : 0
-                    const total = incluirIgv ? base + igv : base
+                    const descuentoPct = Number(selected.descuento_porcentaje ?? 0)
+                    let sumaItems = 0
+                    let hayCambios = false
+
+                    if (editMode) {
+                      // Suma EN VIVO usando los inputs editados (drafts)
+                      // Si el item tiene draft, usar cantidad×precio del draft
+                      // Si no, usar el subtotal actual del item
+                      for (const it of items) {
+                        const draft = editItems[it.id]
+                        if (draft) {
+                          const c = parseFloat(draft.cantidad) || 0
+                          const p = parseFloat(draft.precio) || 0
+                          const sub = c * p
+                          sumaItems += sub
+                          if (sub !== Number(it.subtotal ?? 0)) hayCambios = true
+                        } else {
+                          sumaItems += Number(it.subtotal ?? 0)
+                        }
+                      }
+                    } else {
+                      // Modo normal: usar lo persistido en el pedido
+                      sumaItems = items.reduce((acc, it) => acc + Number(it.subtotal ?? 0), 0)
+                      if (sumaItems === 0) sumaItems = Number(selected.subtotal ?? 0) + Number(selected.igv ?? 0)
+                    }
+
+                    // sumaItems está CON IGV (es lo que guarda el modelo). Desagregar:
+                    const descuentoMonto = sumaItems * descuentoPct / 100
+                    const baseConIgv = sumaItems - descuentoMonto
+                    const igv = incluirIgv ? baseConIgv - (baseConIgv / 1.18) : 0
+                    const subtotalSinIgv = baseConIgv - igv
+                    const total = baseConIgv
+
                     return (
                       <>
                         <div className="flex justify-between">
                           <span className="text-gray-500">Subtotal</span>
-                          <span className="font-mono">{formatCurrency(subtotal)}</span>
+                          <span className="font-mono">{formatCurrency(subtotalSinIgv)}</span>
                         </div>
-                        {descuento > 0 && (
+                        {descuentoMonto > 0 && (
                           <div className="flex justify-between text-red-600">
-                            <span>Descuento ({selected.descuento_porcentaje}%)</span>
-                            <span className="font-mono">-{formatCurrency(descuento)}</span>
+                            <span>Descuento ({descuentoPct}%)</span>
+                            <span className="font-mono">-{formatCurrency(descuentoMonto)}</span>
                           </div>
                         )}
                         {incluirIgv ? (
@@ -751,6 +779,11 @@ export default function PedidosClient({ pedidosIniciales }: { pedidosIniciales: 
                             {formatCurrency(total)}
                           </span>
                         </div>
+                        {editMode && hayCambios && (
+                          <p className="text-[10px] text-amber-700 italic mt-1 text-right">
+                            Vista previa con cambios sin guardar. Pulsa ✓ en cada línea para confirmar.
+                          </p>
+                        )}
                       </>
                     )
                   })()}
