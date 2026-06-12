@@ -53,6 +53,18 @@ export default function PedidosClient({ pedidosIniciales }: { pedidosIniciales: 
   const [comprobanteId, setComprobanteId] = useState<string | null>(null)
   const [nuevoOpen, setNuevoOpen] = useState(false)
 
+  // Edición del pedido (solo si estado='enviado')
+  const [editMode, setEditMode] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [editItems, setEditItems] = useState<Record<string, { cantidad: string; precio: string }>>({})
+  // Form para agregar producto
+  const [productoSearch, setProductoSearch] = useState('')
+  const debouncedProductoSearch = useDebounce(productoSearch, 250)
+  const [productosOpciones, setProductosOpciones] = useState<any[]>([])
+  const [nuevoProd, setNuevoProd] = useState<{ id: string; nombre: string; codigo: string; precio: number } | null>(null)
+  const [nuevaCantidad, setNuevaCantidad] = useState('')
+  const [nuevoPrecio, setNuevoPrecio] = useState('')
+
   const filtrados = useMemo(() => {
     return pedidos.filter((p) => {
       if (debouncedSearch) {
@@ -88,6 +100,11 @@ export default function PedidosClient({ pedidosIniciales }: { pedidosIniciales: 
     setDetailOpen(true)
     setLoadingItems(true)
     setComprobanteId(null)
+    setEditMode(false)
+    setEditItems({})
+    setNuevoProd(null)
+    setNuevaCantidad('')
+    setProductoSearch('')
     const [{ data }, { data: comp }] = await Promise.all([
       supabase
         .from('pedidos_items')
@@ -102,6 +119,153 @@ export default function PedidosClient({ pedidosIniciales }: { pedidosIniciales: 
     setItems(data ?? [])
     setComprobanteId((comp as any)?.id ?? null)
     setLoadingItems(false)
+  }
+
+  // Recarga los items del pedido actual y refresca la lista de pedidos
+  const recargarPedidoActual = async () => {
+    if (!selected) return
+    const { data } = await supabase
+      .from('pedidos_items')
+      .select('id, cantidad, precio_unitario, descuento_porcentaje, subtotal, productos(codigo, nombre, descripcion, unidades_medida(simbolo))')
+      .eq('pedido_id', selected.id)
+    setItems(data ?? [])
+    // Releer cabecera (totales pueden haber cambiado)
+    const { data: ped } = await (supabase as any)
+      .from('pedidos')
+      .select('id, subtotal, igv, descuento_monto, descuento_porcentaje, total, incluir_igv, estado, requiere_reposicion')
+      .eq('id', selected.id)
+      .maybeSingle()
+    if (ped) {
+      const p: any = ped
+      setSelected({ ...selected, ...p })
+      setPedidos((prev) => prev.map((x) => x.id === p.id ? { ...x, ...p } : x))
+    }
+    setEditItems({})
+  }
+
+  // ─── Eliminar pedido ─────────────────────────────────────
+  const eliminarPedido = async () => {
+    if (!selected) return
+    if (!confirm(`¿Eliminar definitivamente el pedido ${selected.numero}? Esta acción borra el pedido y libera la reserva de stock.`)) return
+    setSaving(true)
+    const { error } = await (supabase.rpc as any)('eliminar_pedido', { p_pedido_id: selected.id })
+    setSaving(false)
+    if (error) {
+      toast.error('No se pudo eliminar', { description: error.message })
+      return
+    }
+    toast.success('Pedido eliminado', { description: `${selected.numero} fue eliminado.` })
+    setPedidos((prev) => prev.filter((x) => x.id !== selected.id))
+    setDetailOpen(false)
+  }
+
+  // ─── Agregar producto ─────────────────────────────────────
+  // Buscar productos cuando el usuario tipea (incluye precio de lista A si existe)
+  useMemo(() => {
+    if (!editMode || !debouncedProductoSearch.trim()) {
+      setProductosOpciones([])
+      return
+    }
+    ;(async () => {
+      const q = debouncedProductoSearch.trim()
+      const { data } = await (supabase as any)
+        .from('productos')
+        .select(`
+          id, codigo, nombre, descripcion,
+          lista_precio_items(precio, listas_precio(nombre))
+        `)
+        .eq('activo', true)
+        .or(`codigo.ilike.%${q}%,nombre.ilike.%${q}%,descripcion.ilike.%${q}%`)
+        .limit(8)
+      // Extraer precio de la lista A si está disponible
+      const items = (data ?? []).map((p: any) => {
+        const precioA = (p.lista_precio_items ?? []).find((it: any) => it.listas_precio?.nombre === 'A')
+        return {
+          ...p,
+          precio_sugerido: Number(precioA?.precio ?? 0),
+        }
+      })
+      setProductosOpciones(items)
+    })()
+  }, [debouncedProductoSearch, editMode, supabase])
+
+  const agregarProducto = async () => {
+    if (!selected || !nuevoProd) return
+    const cant = parseFloat(nuevaCantidad)
+    const precio = parseFloat(nuevoPrecio)
+    if (!cant || cant <= 0) {
+      toast.error('Cantidad inválida')
+      return
+    }
+    if (isNaN(precio) || precio < 0) {
+      toast.error('Precio inválido')
+      return
+    }
+    setSaving(true)
+    const { error } = await (supabase.rpc as any)('agregar_item_pedido', {
+      p_pedido_id: selected.id,
+      p_producto_id: nuevoProd.id,
+      p_cantidad: cant,
+      p_precio_unitario: precio,
+      p_descuento_porcentaje: selected.descuento_porcentaje ?? 0,
+      p_force_reserva: false,
+    })
+    setSaving(false)
+    if (error) {
+      toast.error('No se pudo agregar', { description: error.message })
+      return
+    }
+    toast.success('Producto agregado')
+    setNuevoProd(null)
+    setNuevaCantidad('')
+    setNuevoPrecio('')
+    setProductoSearch('')
+    setProductosOpciones([])
+    await recargarPedidoActual()
+  }
+
+  // ─── Editar / Eliminar item ──────────────────────────────
+  const guardarEdicionItem = async (itemId: string) => {
+    const draft = editItems[itemId]
+    if (!draft) return
+    const cant = parseFloat(draft.cantidad)
+    const precio = parseFloat(draft.precio)
+    if (!cant || cant <= 0 || isNaN(precio) || precio < 0) {
+      toast.error('Cantidad o precio inválidos')
+      return
+    }
+    setSaving(true)
+    const { error } = await (supabase.rpc as any)('editar_item_pedido', {
+      p_item_id: itemId,
+      p_cantidad: cant,
+      p_precio_unitario: precio,
+    })
+    setSaving(false)
+    if (error) {
+      toast.error('No se pudo editar', { description: error.message })
+      return
+    }
+    toast.success('Item actualizado')
+    await recargarPedidoActual()
+  }
+
+  const eliminarItem = async (itemId: string, nombre: string) => {
+    if (!confirm(`¿Quitar "${nombre}" del pedido?`)) return
+    setSaving(true)
+    const { data, error } = await (supabase.rpc as any)('eliminar_item_pedido', { p_item_id: itemId })
+    setSaving(false)
+    if (error) {
+      toast.error('No se pudo quitar', { description: error.message })
+      return
+    }
+    if ((data as any)?.pedido_eliminado) {
+      toast.success('Último item: el pedido fue eliminado.')
+      setPedidos((prev) => prev.filter((x) => x.id !== selected.id))
+      setDetailOpen(false)
+      return
+    }
+    toast.success('Producto quitado del pedido')
+    await recargarPedidoActual()
   }
 
   const cancelarPedido = async () => {
@@ -351,9 +515,16 @@ export default function PedidosClient({ pedidosIniciales }: { pedidosIniciales: 
 
                 {/* Items */}
                 <div>
-                  <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
-                    Productos
-                  </p>
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                      Productos
+                    </p>
+                    {editMode && (
+                      <span className="text-[10px] font-semibold uppercase tracking-wide text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded">
+                        Modo edición
+                      </span>
+                    )}
+                  </div>
                   {loadingItems ? (
                     <div className="py-8 flex justify-center">
                       <Loader2 className="w-5 h-5 text-gray-400 animate-spin" />
@@ -369,28 +540,176 @@ export default function PedidosClient({ pedidosIniciales }: { pedidosIniciales: 
                             <th className="text-right px-3 py-2 text-xs font-semibold text-gray-500 uppercase">Cant.</th>
                             <th className="text-right px-3 py-2 text-xs font-semibold text-gray-500 uppercase">Precio</th>
                             <th className="text-right px-3 py-2 text-xs font-semibold text-gray-500 uppercase">Subtotal</th>
+                            {editMode && <th className="px-3 py-2 w-20"></th>}
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-50">
-                          {items.map((it: any) => (
-                            <tr key={it.id}>
-                              <td className="px-3 py-2">
-                                <div className="font-medium text-gray-900 text-sm">{it.productos?.descripcion?.trim() || it.productos?.nombre || '—'}</div>
-                                <div className="text-xs text-gray-400 font-mono">{it.productos?.codigo}</div>
-                              </td>
-                              <td className="px-3 py-2 text-right font-mono text-sm">
-                                {Number(it.cantidad ?? 0)} {it.productos?.unidades_medida?.simbolo ?? ''}
-                              </td>
-                              <td className="px-3 py-2 text-right font-mono text-sm">
-                                {formatCurrency(Number(it.precio_unitario ?? 0))}
-                              </td>
-                              <td className="px-3 py-2 text-right font-mono text-sm font-semibold">
-                                {formatCurrency(Number(it.subtotal ?? 0))}
-                              </td>
-                            </tr>
-                          ))}
+                          {items.map((it: any) => {
+                            const nombreProd = it.productos?.descripcion?.trim() || it.productos?.nombre || '—'
+                            const draft = editItems[it.id]
+                            const cantInput = draft?.cantidad ?? String(it.cantidad)
+                            const precioInput = draft?.precio ?? String(it.precio_unitario)
+                            const dirty = draft && (parseFloat(cantInput) !== Number(it.cantidad) || parseFloat(precioInput) !== Number(it.precio_unitario))
+                            return (
+                              <tr key={it.id}>
+                                <td className="px-3 py-2">
+                                  <div className="font-medium text-gray-900 text-sm">{nombreProd}</div>
+                                  <div className="text-xs text-gray-400 font-mono">{it.productos?.codigo}</div>
+                                </td>
+                                <td className="px-3 py-2 text-right font-mono text-sm">
+                                  {editMode ? (
+                                    <input
+                                      type="number"
+                                      step="0.01"
+                                      min="0"
+                                      value={cantInput}
+                                      onChange={(e) => setEditItems((prev) => ({ ...prev, [it.id]: { cantidad: e.target.value, precio: precioInput } }))}
+                                      className="w-20 text-right border border-gray-200 rounded px-1.5 py-1 text-sm font-mono"
+                                      disabled={saving}
+                                    />
+                                  ) : (
+                                    <>{Number(it.cantidad ?? 0)} {it.productos?.unidades_medida?.simbolo ?? ''}</>
+                                  )}
+                                </td>
+                                <td className="px-3 py-2 text-right font-mono text-sm">
+                                  {editMode ? (
+                                    <input
+                                      type="number"
+                                      step="0.01"
+                                      min="0"
+                                      value={precioInput}
+                                      onChange={(e) => setEditItems((prev) => ({ ...prev, [it.id]: { cantidad: cantInput, precio: e.target.value } }))}
+                                      className="w-24 text-right border border-gray-200 rounded px-1.5 py-1 text-sm font-mono"
+                                      disabled={saving}
+                                    />
+                                  ) : (
+                                    formatCurrency(Number(it.precio_unitario ?? 0))
+                                  )}
+                                </td>
+                                <td className="px-3 py-2 text-right font-mono text-sm font-semibold">
+                                  {formatCurrency(editMode ? (parseFloat(cantInput) || 0) * (parseFloat(precioInput) || 0) : Number(it.subtotal ?? 0))}
+                                </td>
+                                {editMode && (
+                                  <td className="px-2 py-2 text-right whitespace-nowrap">
+                                    {dirty && (
+                                      <button
+                                        type="button"
+                                        onClick={() => guardarEdicionItem(it.id)}
+                                        disabled={saving}
+                                        className="text-xs text-green-700 hover:bg-green-50 px-1.5 py-0.5 rounded mr-1 font-semibold"
+                                        title="Guardar cambios"
+                                      >
+                                        ✓
+                                      </button>
+                                    )}
+                                    <button
+                                      type="button"
+                                      onClick={() => eliminarItem(it.id, nombreProd)}
+                                      disabled={saving}
+                                      className="text-xs text-red-600 hover:bg-red-50 w-6 h-6 rounded font-bold"
+                                      title="Quitar item"
+                                    >
+                                      ×
+                                    </button>
+                                  </td>
+                                )}
+                              </tr>
+                            )
+                          })}
                         </tbody>
                       </table>
+                    </div>
+                  )}
+
+                  {/* Form para agregar producto (solo en edit mode) */}
+                  {editMode && (
+                    <div className="mt-3 border border-dashed border-gray-300 rounded-lg p-3 bg-gray-50/40">
+                      <p className="text-xs font-semibold text-gray-600 uppercase mb-2">Agregar producto</p>
+                      {!nuevoProd ? (
+                        <div className="relative">
+                          <Input
+                            placeholder="Buscar por código o nombre..."
+                            value={productoSearch}
+                            onChange={(e) => setProductoSearch(e.target.value)}
+                            disabled={saving}
+                            className="h-9 text-sm"
+                          />
+                          {productosOpciones.length > 0 && (
+                            <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-md shadow-md max-h-48 overflow-y-auto z-10">
+                              {productosOpciones.map((p: any) => (
+                                <button
+                                  key={p.id}
+                                  type="button"
+                                  onClick={() => {
+                                    const precioSug = Number(p.precio_sugerido ?? 0)
+                                    setNuevoProd({
+                                      id: p.id, codigo: p.codigo,
+                                      nombre: p.descripcion?.trim() || p.nombre,
+                                      precio: precioSug,
+                                    })
+                                    setNuevoPrecio(precioSug > 0 ? String(precioSug) : '')
+                                    setProductoSearch('')
+                                    setProductosOpciones([])
+                                  }}
+                                  className="w-full text-left px-3 py-2 hover:bg-gray-50 text-sm border-b border-gray-50 last:border-0"
+                                >
+                                  <div className="font-medium">{p.descripcion?.trim() || p.nombre}</div>
+                                  <div className="text-xs text-gray-400 font-mono">
+                                    {p.codigo}{p.precio_sugerido > 0 && ` · Lista A: S/ ${Number(p.precio_sugerido).toFixed(2)}`}
+                                  </div>
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        <div className="space-y-2">
+                          <div className="flex items-center justify-between bg-white border border-gray-200 rounded-md px-3 py-2">
+                            <div className="text-sm">
+                              <div className="font-medium">{nuevoProd.nombre}</div>
+                              <div className="text-xs text-gray-400 font-mono">{nuevoProd.codigo}</div>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => { setNuevoProd(null); setNuevaCantidad(''); setNuevoPrecio('') }}
+                              className="text-xs text-gray-500 hover:text-gray-700"
+                            >
+                              Cambiar
+                            </button>
+                          </div>
+                          <div className="grid grid-cols-3 gap-2">
+                            <Input
+                              type="number"
+                              step="0.01"
+                              min="0"
+                              placeholder="Cantidad"
+                              value={nuevaCantidad}
+                              onChange={(e) => setNuevaCantidad(e.target.value)}
+                              disabled={saving}
+                              className="h-9 text-sm"
+                            />
+                            <Input
+                              type="number"
+                              step="0.01"
+                              min="0"
+                              placeholder="Precio S/"
+                              value={nuevoPrecio}
+                              onChange={(e) => setNuevoPrecio(e.target.value)}
+                              disabled={saving}
+                              className="h-9 text-sm"
+                            />
+                            <Button
+                              size="sm"
+                              onClick={agregarProducto}
+                              disabled={saving || !nuevaCantidad || !nuevoPrecio}
+                              className="h-9 bg-green-600 hover:bg-green-700 text-white"
+                            >
+                              {saving && <Loader2 className="w-3.5 h-3.5 animate-spin mr-1" />}
+                              Agregar
+                            </Button>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
@@ -443,20 +762,43 @@ export default function PedidosClient({ pedidosIniciales }: { pedidosIniciales: 
                   </div>
                 )}
 
-                <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-2 pt-3 border-t border-gray-100">
+                <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-2 pt-3 border-t border-gray-100 flex-wrap">
                   <Button variant="outline" onClick={() => setDetailOpen(false)}>Cerrar</Button>
                   {selected.estado === 'enviado' && (
-                    <Button
-                      variant="outline"
-                      onClick={cancelarPedido}
-                      disabled={cancelando}
-                      className="border-red-300 text-red-700 hover:bg-red-50 gap-2"
-                    >
-                      {cancelando && <Loader2 className="w-4 h-4 animate-spin" />}
-                      <XCircle className="w-4 h-4" /> Cancelar pedido
-                    </Button>
+                    <>
+                      <Button
+                        variant="outline"
+                        onClick={eliminarPedido}
+                        disabled={saving}
+                        className="border-red-400 text-red-700 hover:bg-red-50 gap-2"
+                        title="Borra el pedido completo y libera la reserva de stock"
+                      >
+                        {saving && <Loader2 className="w-4 h-4 animate-spin" />}
+                        🗑️ Eliminar
+                      </Button>
+                      <Button
+                        variant="outline"
+                        onClick={cancelarPedido}
+                        disabled={cancelando}
+                        className="border-gray-300 text-gray-700 hover:bg-gray-50 gap-2"
+                        title="Cambia estado a cancelado (no borra del historial)"
+                      >
+                        {cancelando && <Loader2 className="w-4 h-4 animate-spin" />}
+                        <XCircle className="w-4 h-4" /> Cancelar
+                      </Button>
+                      <Button
+                        variant={editMode ? 'default' : 'outline'}
+                        onClick={() => setEditMode(!editMode)}
+                        disabled={saving}
+                        className={editMode
+                          ? 'bg-amber-600 hover:bg-amber-700 text-white gap-2'
+                          : 'border-amber-400 text-amber-800 hover:bg-amber-50 gap-2'}
+                      >
+                        ✏️ {editMode ? 'Salir de edición' : 'Editar'}
+                      </Button>
+                    </>
                   )}
-                  {(selected.estado === 'enviado' || selected.estado === 'validado') && (
+                  {(selected.estado === 'enviado' || selected.estado === 'validado') && !editMode && (
                     <Button
                       onClick={() => router.push('/facturacion')}
                       className="bg-[#FBE600] hover:bg-[#E5D100] text-black font-semibold gap-2"
