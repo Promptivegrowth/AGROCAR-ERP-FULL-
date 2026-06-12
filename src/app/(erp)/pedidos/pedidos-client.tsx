@@ -249,6 +249,79 @@ export default function PedidosClient({ pedidosIniciales }: { pedidosIniciales: 
     await recargarPedidoActual()
   }
 
+  // Detecta items con cambios sin guardar (drafts cuya cantidad o precio difieren del item original)
+  const draftsPendientes = useMemo(() => {
+    return Object.entries(editItems).filter(([itemId, draft]) => {
+      const it = items.find((i: any) => i.id === itemId)
+      if (!it) return false
+      return parseFloat(draft.cantidad) !== Number(it.cantidad)
+          || parseFloat(draft.precio) !== Number(it.precio_unitario)
+    })
+  }, [editItems, items])
+
+  // Guarda TODOS los cambios pendientes de una sola vez
+  const guardarTodosLosCambios = async () => {
+    if (draftsPendientes.length === 0) return
+    setSaving(true)
+    let exitos = 0
+    let fallos = 0
+    let primerError = ''
+    for (const [itemId, draft] of draftsPendientes) {
+      const cant = parseFloat(draft.cantidad)
+      const precio = parseFloat(draft.precio)
+      if (!cant || cant <= 0 || isNaN(precio) || precio < 0) {
+        fallos++
+        if (!primerError) primerError = 'Cantidad o precio inválidos en una línea'
+        continue
+      }
+      const { error } = await (supabase.rpc as any)('editar_item_pedido', {
+        p_item_id: itemId,
+        p_cantidad: cant,
+        p_precio_unitario: precio,
+      })
+      if (error) {
+        fallos++
+        if (!primerError) primerError = error.message
+      } else {
+        exitos++
+      }
+    }
+    setSaving(false)
+    if (fallos === 0) {
+      toast.success(`${exitos} línea${exitos === 1 ? '' : 's'} actualizada${exitos === 1 ? '' : 's'}`)
+    } else {
+      toast.warning(`${exitos} guardadas, ${fallos} con error`, { description: primerError })
+    }
+    await recargarPedidoActual()
+  }
+
+  const descartarCambios = () => {
+    if (draftsPendientes.length === 0) {
+      setEditMode(false)
+      return
+    }
+    if (confirm(`Descartar ${draftsPendientes.length} cambio${draftsPendientes.length === 1 ? '' : 's'} sin guardar?`)) {
+      setEditItems({})
+      setEditMode(false)
+    }
+  }
+
+  // Salir de edición: si hay cambios, pedir confirmación; si no, salir limpio
+  const salirEdicion = () => {
+    if (draftsPendientes.length === 0) {
+      setEditMode(false)
+      return
+    }
+    const accion = confirm(
+      `Tienes ${draftsPendientes.length} cambio${draftsPendientes.length === 1 ? '' : 's'} sin guardar.\n\n` +
+      'Aceptar = Guardar y salir\n' +
+      'Cancelar = Continuar editando'
+    )
+    if (accion) {
+      guardarTodosLosCambios().then(() => setEditMode(false))
+    }
+  }
+
   const eliminarItem = async (itemId: string, nombre: string) => {
     if (!confirm(`¿Quitar "${nombre}" del pedido?`)) return
     setSaving(true)
@@ -592,15 +665,10 @@ export default function PedidosClient({ pedidosIniciales }: { pedidosIniciales: 
                                 {editMode && (
                                   <td className="px-2 py-2 text-right whitespace-nowrap">
                                     {dirty && (
-                                      <button
-                                        type="button"
-                                        onClick={() => guardarEdicionItem(it.id)}
-                                        disabled={saving}
-                                        className="text-xs text-green-700 hover:bg-green-50 px-1.5 py-0.5 rounded mr-1 font-semibold"
-                                        title="Guardar cambios"
-                                      >
-                                        ✓
-                                      </button>
+                                      <span
+                                        className="inline-block w-2 h-2 rounded-full bg-amber-500 mr-2"
+                                        title="Modificado — pulsa Guardar cambios para confirmar"
+                                      />
                                     )}
                                     <button
                                       type="button"
@@ -781,7 +849,7 @@ export default function PedidosClient({ pedidosIniciales }: { pedidosIniciales: 
                         </div>
                         {editMode && hayCambios && (
                           <p className="text-[10px] text-amber-700 italic mt-1 text-right">
-                            Vista previa con cambios sin guardar. Pulsa ✓ en cada línea para confirmar.
+                            Vista previa de cambios. Pulsa <strong>Guardar cambios</strong> para confirmar.
                           </p>
                         )}
                       </>
@@ -797,7 +865,47 @@ export default function PedidosClient({ pedidosIniciales }: { pedidosIniciales: 
 
                 <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-2 pt-3 border-t border-gray-100 flex-wrap">
                   <Button variant="outline" onClick={() => setDetailOpen(false)}>Cerrar</Button>
-                  {selected.estado === 'enviado' && (
+
+                  {/* MODO EDICIÓN: botones específicos */}
+                  {selected.estado === 'enviado' && editMode && (
+                    <>
+                      {draftsPendientes.length > 0 ? (
+                        <>
+                          <Button
+                            variant="outline"
+                            onClick={descartarCambios}
+                            disabled={saving}
+                            className="border-gray-300 text-gray-600 hover:bg-gray-50 gap-2"
+                            title="Descartar todos los cambios sin guardar"
+                          >
+                            Descartar
+                          </Button>
+                          <Button
+                            onClick={guardarTodosLosCambios}
+                            disabled={saving}
+                            className="bg-green-600 hover:bg-green-700 text-white font-semibold gap-2"
+                            title={`Guardar ${draftsPendientes.length} cambio${draftsPendientes.length === 1 ? '' : 's'}`}
+                          >
+                            {saving && <Loader2 className="w-4 h-4 animate-spin" />}
+                            💾 Guardar cambios ({draftsPendientes.length})
+                          </Button>
+                        </>
+                      ) : (
+                        <Button
+                          variant="outline"
+                          onClick={() => setEditMode(false)}
+                          disabled={saving}
+                          className="border-gray-300 text-gray-700 hover:bg-gray-50 gap-2"
+                          title="Salir del modo edición"
+                        >
+                          Salir de edición
+                        </Button>
+                      )}
+                    </>
+                  )}
+
+                  {/* MODO NORMAL: botones de acción */}
+                  {selected.estado === 'enviado' && !editMode && (
                     <>
                       <Button
                         variant="outline"
@@ -820,17 +928,16 @@ export default function PedidosClient({ pedidosIniciales }: { pedidosIniciales: 
                         <XCircle className="w-4 h-4" /> Cancelar
                       </Button>
                       <Button
-                        variant={editMode ? 'default' : 'outline'}
-                        onClick={() => setEditMode(!editMode)}
+                        variant="outline"
+                        onClick={() => setEditMode(true)}
                         disabled={saving}
-                        className={editMode
-                          ? 'bg-amber-600 hover:bg-amber-700 text-white gap-2'
-                          : 'border-amber-400 text-amber-800 hover:bg-amber-50 gap-2'}
+                        className="border-amber-400 text-amber-800 hover:bg-amber-50 gap-2"
                       >
-                        ✏️ {editMode ? 'Salir de edición' : 'Editar'}
+                        ✏️ Editar
                       </Button>
                     </>
                   )}
+
                   {(selected.estado === 'enviado' || selected.estado === 'validado') && !editMode && (
                     <Button
                       onClick={() => router.push('/facturacion')}
