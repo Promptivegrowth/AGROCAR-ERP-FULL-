@@ -73,7 +73,7 @@ export default async function ImprimirLotePage({
       <AutoPrint count={lista.length} />
       <style>{`
         @media print {
-          @page { size: ${esA4 ? 'A4' : '80mm auto'}; margin: ${esA4 ? '12mm' : '0'}; }
+          @page { size: ${esA4 ? 'A4' : '80mm auto'}; margin: ${esA4 ? '8mm' : '0'}; }
           body { margin: 0; }
           .no-print { display: none !important; }
           .pagebreak { page-break-after: always; break-after: page; }
@@ -209,14 +209,14 @@ export default async function ImprimirLotePage({
                   </div>
 
                   {/* Items */}
-                  <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: 12, fontSize: 10 }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: 8, fontSize: 9.5, lineHeight: 1.2 }}>
                     <thead>
                       <tr style={{ background: '#000', color: '#fff' }}>
-                        <th style={{ padding: 6, textAlign: 'center', border: '1px solid #000', width: 50 }}>CANT.</th>
-                        <th style={{ padding: 6, textAlign: 'center', border: '1px solid #000', width: 80 }}>CÓDIGO</th>
-                        <th style={{ padding: 6, textAlign: 'left', border: '1px solid #000' }}>DESCRIPCIÓN</th>
-                        <th style={{ padding: 6, textAlign: 'right', border: '1px solid #000', width: 90 }}>P. UNIT.</th>
-                        <th style={{ padding: 6, textAlign: 'right', border: '1px solid #000', width: 100 }}>IMPORTE</th>
+                        <th style={{ padding: '3px 4px', textAlign: 'center', border: '1px solid #000', width: 45 }}>CANT.</th>
+                        <th style={{ padding: '3px 4px', textAlign: 'center', border: '1px solid #000', width: 70 }}>CÓDIGO</th>
+                        <th style={{ padding: '3px 4px', textAlign: 'left', border: '1px solid #000' }}>DESCRIPCIÓN</th>
+                        <th style={{ padding: '3px 4px', textAlign: 'right', border: '1px solid #000', width: 80 }}>P. UNIT.</th>
+                        <th style={{ padding: '3px 4px', textAlign: 'right', border: '1px solid #000', width: 90 }}>IMPORTE</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -231,11 +231,11 @@ export default async function ImprimirLotePage({
                         const sub = Number(it.subtotal ?? cant * pu)
                         return (
                           <tr key={it.id}>
-                            <td style={{ padding: 5, textAlign: 'center', border: '1px solid #ccc' }}>{cant.toFixed(2)}</td>
-                            <td style={{ padding: 5, textAlign: 'center', border: '1px solid #ccc', fontFamily: 'monospace', fontSize: 9 }}>{prod?.codigo ?? '—'}</td>
-                            <td style={{ padding: 5, textAlign: 'left', border: '1px solid #ccc' }}>{it.descripcion || prod?.descripcion?.trim() || prod?.nombre || '—'}</td>
-                            <td style={{ padding: 5, textAlign: 'right', border: '1px solid #ccc', fontFamily: 'monospace' }}>{fmtNum(pu)}</td>
-                            <td style={{ padding: 5, textAlign: 'right', border: '1px solid #ccc', fontFamily: 'monospace' }}>{fmtNum(sub)}</td>
+                            <td style={{ padding: '2px 4px', textAlign: 'center', border: '1px solid #ccc' }}>{cant.toFixed(2)}</td>
+                            <td style={{ padding: '2px 4px', textAlign: 'center', border: '1px solid #ccc', fontFamily: 'monospace', fontSize: 8.5 }}>{prod?.codigo ?? '—'}</td>
+                            <td style={{ padding: '2px 4px', textAlign: 'left', border: '1px solid #ccc' }}>{it.descripcion || prod?.descripcion?.trim() || prod?.nombre || '—'}</td>
+                            <td style={{ padding: '2px 4px', textAlign: 'right', border: '1px solid #ccc', fontFamily: 'monospace' }}>{fmtNum(pu)}</td>
+                            <td style={{ padding: '2px 4px', textAlign: 'right', border: '1px solid #ccc', fontFamily: 'monospace' }}>{fmtNum(sub)}</td>
                           </tr>
                         )
                       })}

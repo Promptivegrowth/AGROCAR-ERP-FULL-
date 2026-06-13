@@ -173,7 +173,7 @@ export default async function ComprobantePage({
       <div className="min-h-dvh bg-gray-200 py-6 print:bg-white print:py-0">
         <style>{`
           @media print {
-            @page { size: A4; margin: 12mm; }
+            @page { size: A4; margin: 8mm; }
             body { margin: 0; }
             .no-print { display: none !important; }
           }
@@ -240,15 +240,15 @@ export default async function ComprobantePage({
           </div>
 
           {/* Tabla de items */}
-          <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: 12, fontSize: 10 }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: 8, fontSize: 9.5, lineHeight: 1.2 }}>
             <thead>
               <tr style={{ background: '#000', color: '#fff' }}>
-                <th style={{ padding: 6, textAlign: 'center', border: '1px solid #000', width: 50 }}>CANT.</th>
-                <th style={{ padding: 6, textAlign: 'center', border: '1px solid #000', width: 60 }}>UND.</th>
-                <th style={{ padding: 6, textAlign: 'center', border: '1px solid #000', width: 80 }}>CÓDIGO</th>
-                <th style={{ padding: 6, textAlign: 'left', border: '1px solid #000' }}>DESCRIPCIÓN</th>
-                <th style={{ padding: 6, textAlign: 'right', border: '1px solid #000', width: 90 }}>P. UNIT.</th>
-                <th style={{ padding: 6, textAlign: 'right', border: '1px solid #000', width: 100 }}>IMPORTE</th>
+                <th style={{ padding: '3px 4px', textAlign: 'center', border: '1px solid #000', width: 45 }}>CANT.</th>
+                <th style={{ padding: '3px 4px', textAlign: 'center', border: '1px solid #000', width: 40 }}>UND.</th>
+                <th style={{ padding: '3px 4px', textAlign: 'center', border: '1px solid #000', width: 70 }}>CÓDIGO</th>
+                <th style={{ padding: '3px 4px', textAlign: 'left', border: '1px solid #000' }}>DESCRIPCIÓN</th>
+                <th style={{ padding: '3px 4px', textAlign: 'right', border: '1px solid #000', width: 80 }}>P. UNIT.</th>
+                <th style={{ padding: '3px 4px', textAlign: 'right', border: '1px solid #000', width: 90 }}>IMPORTE</th>
               </tr>
             </thead>
             <tbody>
@@ -260,24 +260,24 @@ export default async function ComprobantePage({
                 const sub = Number(it.subtotal ?? cant * pu)
                 return (
                   <tr key={it.id}>
-                    <td style={{ padding: 5, textAlign: 'center', border: '1px solid #ccc' }}>{cant.toFixed(2)}</td>
-                    <td style={{ padding: 5, textAlign: 'center', border: '1px solid #ccc' }}>UND</td>
-                    <td style={{ padding: 5, textAlign: 'center', border: '1px solid #ccc', fontFamily: 'monospace', fontSize: 9 }}>{prod?.codigo ?? '—'}</td>
-                    <td style={{ padding: 5, textAlign: 'left', border: '1px solid #ccc' }}>{nombreProd}</td>
-                    <td style={{ padding: 5, textAlign: 'right', border: '1px solid #ccc', fontFamily: 'monospace' }}>{fmtNum(pu)}</td>
-                    <td style={{ padding: 5, textAlign: 'right', border: '1px solid #ccc', fontFamily: 'monospace' }}>{fmtNum(sub)}</td>
+                    <td style={{ padding: '2px 4px', textAlign: 'center', border: '1px solid #ccc' }}>{cant.toFixed(2)}</td>
+                    <td style={{ padding: '2px 4px', textAlign: 'center', border: '1px solid #ccc' }}>UND</td>
+                    <td style={{ padding: '2px 4px', textAlign: 'center', border: '1px solid #ccc', fontFamily: 'monospace', fontSize: 8.5 }}>{prod?.codigo ?? '—'}</td>
+                    <td style={{ padding: '2px 4px', textAlign: 'left', border: '1px solid #ccc' }}>{nombreProd}</td>
+                    <td style={{ padding: '2px 4px', textAlign: 'right', border: '1px solid #ccc', fontFamily: 'monospace' }}>{fmtNum(pu)}</td>
+                    <td style={{ padding: '2px 4px', textAlign: 'right', border: '1px solid #ccc', fontFamily: 'monospace' }}>{fmtNum(sub)}</td>
                   </tr>
                 )
               })}
-              {/* Filas vacías para rellenar visualmente */}
-              {Array.from({ length: Math.max(0, 5 - (items?.length ?? 0)) }).map((_, i) => (
+              {/* Solo agregar 1 fila vacía si hay pocos items (≤2), no rellenar tanto */}
+              {Array.from({ length: Math.max(0, 2 - (items?.length ?? 0)) }).map((_, i) => (
                 <tr key={`empty-${i}`}>
-                  <td style={{ padding: 5, border: '1px solid #eee', height: 22 }}>&nbsp;</td>
-                  <td style={{ padding: 5, border: '1px solid #eee' }}></td>
-                  <td style={{ padding: 5, border: '1px solid #eee' }}></td>
-                  <td style={{ padding: 5, border: '1px solid #eee' }}></td>
-                  <td style={{ padding: 5, border: '1px solid #eee' }}></td>
-                  <td style={{ padding: 5, border: '1px solid #eee' }}></td>
+                  <td style={{ padding: '2px 4px', border: '1px solid #eee', height: 16 }}>&nbsp;</td>
+                  <td style={{ padding: '2px 4px', border: '1px solid #eee' }}></td>
+                  <td style={{ padding: '2px 4px', border: '1px solid #eee' }}></td>
+                  <td style={{ padding: '2px 4px', border: '1px solid #eee' }}></td>
+                  <td style={{ padding: '2px 4px', border: '1px solid #eee' }}></td>
+                  <td style={{ padding: '2px 4px', border: '1px solid #eee' }}></td>
                 </tr>
               ))}
             </tbody>

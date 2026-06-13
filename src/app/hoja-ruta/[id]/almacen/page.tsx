@@ -125,11 +125,12 @@ export default async function HojaRutaAlmacenPage({ params }: { params: Promise<
     <div className="min-h-screen bg-gray-50 print:bg-white">
       <style>{`
         @media print {
-          @page { size: A4 portrait; margin: 10mm; }
-          body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+          @page { size: A4 portrait; margin: 7mm; }
+          body { -webkit-print-color-adjust: exact; print-color-adjust: exact; line-height: 1.15; }
           .no-print { display: none !important; }
-          .almacen-table { font-size: 10pt !important; }
-          .almacen-table td, .almacen-table th { padding: 3px 6px !important; }
+          .almacen-table { font-size: 9pt !important; line-height: 1.1 !important; }
+          .almacen-table td, .almacen-table th { padding: 1px 4px !important; }
+          .almacen-table tr { height: auto !important; }
         }
       `}</style>
 
@@ -163,12 +164,12 @@ export default async function HojaRutaAlmacenPage({ params }: { params: Promise<
           </div>
         </div>
 
-        <h2 className="text-center text-[14pt] font-bold tracking-wide mb-2 print:mb-1">
+        <h2 className="text-center text-[13pt] font-bold tracking-wide mb-1">
           REPARTO DE MERCADERIA POR ZONA
         </h2>
 
         {/* Datos del vehículo + fecha */}
-        <div className="border-y border-gray-300 py-1.5 mb-3 text-[10pt] flex items-baseline gap-6 flex-wrap">
+        <div className="border-y border-gray-300 py-0.5 mb-2 text-[9.5pt] flex items-baseline gap-4 flex-wrap">
           <div>
             <span className="font-bold">Fecha:</span>{' '}
             <span className="text-gray-700">Desde: {fechaCorta} hasta: {fechaCorta}</span>
@@ -189,14 +190,14 @@ export default async function HojaRutaAlmacenPage({ params }: { params: Promise<
         </div>
 
         {/* Tabla consolidada */}
-        <table className="w-full almacen-table border-collapse">
+        <table className="w-full almacen-table border-collapse" style={{ lineHeight: 1.15 }}>
           <thead>
-            <tr className="border-b-2 border-gray-700 text-[10pt]">
-              <th className="text-left py-1 px-2 font-bold w-20">Codigo</th>
-              <th className="text-left py-1 px-2 font-bold">Descripción</th>
-              <th className="text-left py-1 px-2 font-bold w-16">UDM</th>
-              <th className="text-right py-1 px-2 font-bold w-20">Cantidad</th>
-              <th className="text-right py-1 px-2 font-bold w-20">Peso</th>
+            <tr className="border-b-2 border-gray-700 text-[9pt]">
+              <th className="text-left py-0.5 px-1.5 font-bold w-20">Codigo</th>
+              <th className="text-left py-0.5 px-1.5 font-bold">Descripción</th>
+              <th className="text-left py-0.5 px-1.5 font-bold w-14">UDM</th>
+              <th className="text-right py-0.5 px-1.5 font-bold w-20">Cantidad</th>
+              <th className="text-right py-0.5 px-1.5 font-bold w-20">Peso</th>
             </tr>
           </thead>
           <tbody>
@@ -207,22 +208,22 @@ export default async function HojaRutaAlmacenPage({ params }: { params: Promise<
                 </td>
               </tr>
             ) : filas.map((r) => (
-              <tr key={r.producto_id} className="border-b border-gray-100 text-[10pt]">
-                <td className="py-1 px-2 font-mono text-gray-700">{r.codigo}</td>
-                <td className="py-1 px-2 text-gray-900">{r.descripcion}</td>
-                <td className="py-1 px-2 text-gray-700 uppercase">{r.udm}</td>
-                <td className="py-1 px-2 text-right font-mono">{r.cantidad.toFixed(2)}</td>
-                <td className="py-1 px-2 text-right font-mono">{r.peso_total.toFixed(2)}</td>
+              <tr key={r.producto_id} className="border-b border-gray-100 text-[9pt]" style={{ lineHeight: 1.1 }}>
+                <td className="py-0 px-1.5 font-mono text-gray-700">{r.codigo}</td>
+                <td className="py-0 px-1.5 text-gray-900">{r.descripcion}</td>
+                <td className="py-0 px-1.5 text-gray-700 uppercase">{r.udm}</td>
+                <td className="py-0 px-1.5 text-right font-mono">{r.cantidad.toFixed(2)}</td>
+                <td className="py-0 px-1.5 text-right font-mono">{r.peso_total.toFixed(2)}</td>
               </tr>
             ))}
           </tbody>
           <tfoot>
-            <tr className="border-t-2 border-gray-700 text-[10pt] font-bold">
-              <td colSpan={3} className="py-1.5 px-2 text-right">TOTALES DE PRODUCTOS:</td>
-              <td className="py-1.5 px-2 text-right font-mono">
+            <tr className="border-t-2 border-gray-700 text-[9pt] font-bold">
+              <td colSpan={3} className="py-1 px-1.5 text-right">TOTALES DE PRODUCTOS:</td>
+              <td className="py-1 px-1.5 text-right font-mono">
                 {totalCantidad.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </td>
-              <td className="py-1.5 px-2 text-right font-mono">
+              <td className="py-1 px-1.5 text-right font-mono">
                 {totalPeso.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </td>
             </tr>

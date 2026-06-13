@@ -93,11 +93,12 @@ export default async function HojaRutaSimplePage({ params }: { params: { id: str
     <div className="min-h-screen bg-gray-50 print:bg-white">
       <style>{`
         @media print {
-          @page { size: A4 portrait; margin: 8mm; }
-          body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+          @page { size: A4 portrait; margin: 6mm; }
+          body { -webkit-print-color-adjust: exact; print-color-adjust: exact; line-height: 1.15; }
           .no-print { display: none !important; }
-          .simple-table { font-size: 9pt !important; }
-          .simple-table td, .simple-table th { padding: 1px 4px !important; }
+          .simple-table { font-size: 8.5pt !important; line-height: 1.1 !important; }
+          .simple-table td, .simple-table th { padding: 0px 3px !important; }
+          .simple-table tr { height: auto !important; }
         }
       `}</style>
 
@@ -144,30 +145,30 @@ export default async function HojaRutaSimplePage({ params }: { params: { id: str
         </div>
 
         {/* Tabla lista */}
-        <table className="simple-table w-full mt-2 text-[10.5pt]">
+        <table className="simple-table w-full mt-1 text-[9.5pt]" style={{ borderCollapse: 'collapse', lineHeight: 1.15 }}>
           <thead>
             <tr className="border-b border-gray-400">
-              <th className="text-left px-1 py-1 text-[8pt] font-bold text-gray-700">Pedido</th>
-              <th className="text-left px-1 py-1 text-[8pt] font-bold text-gray-700">Cod.Vend.</th>
-              <th className="text-left px-1 py-1 text-[8pt] font-bold text-gray-700">T.D.</th>
-              <th className="text-left px-1 py-1 text-[8pt] font-bold text-gray-700">Comprob.</th>
-              <th className="text-left px-1 py-1 text-[8pt] font-bold text-gray-700">Cliente</th>
-              <th className="text-right px-1 py-1 text-[8pt] font-bold text-gray-700">Total</th>
-              <th className="text-left px-1 py-1 text-[8pt] font-bold text-gray-700">Condic.</th>
-              <th className="text-left px-1 py-1 text-[8pt] font-bold text-gray-700">Observación</th>
+              <th className="text-left px-1 py-0.5 text-[7.5pt] font-bold text-gray-700">Pedido</th>
+              <th className="text-left px-1 py-0.5 text-[7.5pt] font-bold text-gray-700">Cod.Vend.</th>
+              <th className="text-left px-1 py-0.5 text-[7.5pt] font-bold text-gray-700">T.D.</th>
+              <th className="text-left px-1 py-0.5 text-[7.5pt] font-bold text-gray-700">Comprob.</th>
+              <th className="text-left px-1 py-0.5 text-[7.5pt] font-bold text-gray-700">Cliente</th>
+              <th className="text-right px-1 py-0.5 text-[7.5pt] font-bold text-gray-700">Total</th>
+              <th className="text-left px-1 py-0.5 text-[7.5pt] font-bold text-gray-700">Condic.</th>
+              <th className="text-left px-1 py-0.5 text-[7.5pt] font-bold text-gray-700">Observación</th>
             </tr>
           </thead>
           <tbody>
             {paradas.map((p: any, i: number) => (
-              <tr key={i} className="border-b border-dotted border-gray-200">
-                <td className="px-1 py-0.5 font-mono text-[9pt] text-gray-700">{p.pedido_numero}</td>
-                <td className="px-1 py-0.5 font-mono text-[9pt] text-gray-700">{String(p.secuencia).padStart(3, '0')}</td>
-                <td className="px-1 py-0.5 font-mono text-[9pt] text-gray-700">{p.tipo_doc}</td>
-                <td className="px-1 py-0.5 font-mono text-[9pt] text-gray-700">{p.comprobante}</td>
-                <td className="px-1 py-0.5 text-[9pt] text-gray-900 uppercase">{p.cliente}</td>
-                <td className="px-1 py-0.5 text-[9pt] text-right font-semibold">{p.total.toFixed(2)}</td>
-                <td className="px-1 py-0.5 text-[9pt] text-gray-700">{p.condicion}</td>
-                <td className="px-1 py-0.5 text-[9pt] text-gray-600 border-b border-dotted border-gray-400 min-w-[120px]"></td>
+              <tr key={i} className="border-b border-dotted border-gray-200" style={{ lineHeight: 1.1 }}>
+                <td className="px-1 py-0 font-mono text-[8.5pt] text-gray-700">{p.pedido_numero}</td>
+                <td className="px-1 py-0 font-mono text-[8.5pt] text-gray-700">{String(p.secuencia).padStart(3, '0')}</td>
+                <td className="px-1 py-0 font-mono text-[8.5pt] text-gray-700">{p.tipo_doc}</td>
+                <td className="px-1 py-0 font-mono text-[8.5pt] text-gray-700">{p.comprobante}</td>
+                <td className="px-1 py-0 text-[8.5pt] text-gray-900 uppercase">{p.cliente}</td>
+                <td className="px-1 py-0 text-[8.5pt] text-right font-semibold">{p.total.toFixed(2)}</td>
+                <td className="px-1 py-0 text-[8.5pt] text-gray-700">{p.condicion}</td>
+                <td className="px-1 py-0 text-[8.5pt] text-gray-600 border-b border-dotted border-gray-400 min-w-[120px]"></td>
               </tr>
             ))}
           </tbody>
