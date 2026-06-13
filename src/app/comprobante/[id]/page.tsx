@@ -148,23 +148,38 @@ export default async function ComprobantePage({
 
   // Toggle de formato (oculto al imprimir)
   const ToggleFormato = () => (
-    <div className="max-w-4xl mx-auto mb-4 px-4 print:hidden">
-      <div className="flex items-center gap-2 bg-white border border-gray-200 rounded-lg p-2 shadow-sm">
+    <div className="max-w-4xl mx-auto mb-3 px-4 print:hidden">
+      <div className="flex items-center gap-2 bg-white border border-gray-200 rounded-lg p-2 shadow-sm flex-wrap">
         <span className="text-xs text-gray-600 px-2">Formato:</span>
         <a
           href={`/comprobante/${id}`}
           className={`px-3 py-1.5 text-xs font-semibold rounded transition-colors ${!esA4 ? 'bg-[#FBE600] text-black' : 'text-gray-600 hover:bg-gray-50'}`}
+          title="Para ticketera térmica de 80mm"
         >
           🧾 Ticket (80mm)
         </a>
         <a
           href={`/comprobante/${id}?formato=a4`}
           className={`px-3 py-1.5 text-xs font-semibold rounded transition-colors ${esA4 ? 'bg-[#FBE600] text-black' : 'text-gray-600 hover:bg-gray-50'}`}
+          title="Para impresora normal o PDF"
         >
           📄 A4 SUNAT
         </a>
         <div className="ml-auto"><PrintButton /></div>
       </div>
+      {!esA4 && (
+        <div className="mt-2 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-xs text-amber-900 flex items-start gap-2">
+          <span className="text-amber-600 shrink-0">⚠</span>
+          <div>
+            <p className="font-semibold">Este formato es para ticketera térmica de 80mm.</p>
+            <p className="mt-0.5">
+              Si va a imprimir en impresora normal (A4 / Carta), use el formato{' '}
+              <a href={`/comprobante/${id}?formato=a4`} className="underline font-semibold">📄 A4 SUNAT</a>
+              {' '}para que no salga la hoja casi vacía.
+            </p>
+          </div>
+        </div>
+      )}
     </div>
   )
 
@@ -349,9 +364,18 @@ export default async function ComprobantePage({
     <div className="min-h-dvh bg-gray-200 py-6 print:bg-white print:py-0">
       <style>{`
         @media print {
+          /* Pide al navegador papel de 80mm para ticketera térmica.
+             Si la impresora es A4 normal y no soporta 80mm, el ticket
+             quedará en la esquina superior izquierda — para esos casos
+             el usuario debe usar el formato A4 SUNAT (avisado en pantalla). */
           @page { size: 80mm auto; margin: 0; }
           body { margin: 0; }
           .no-print { display: none !important; }
+          .ticket {
+            margin: 0 auto !important;
+            box-shadow: none !important;
+            page-break-inside: avoid;
+          }
         }
       `}</style>
 
