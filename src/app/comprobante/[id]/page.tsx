@@ -37,10 +37,10 @@ export default async function ComprobantePage({
   const esA4 = formato === 'a4'
   const supabase = createAdminClient()
 
-  const { data: comp } = await supabase
+  const { data: comp } = await (supabase as any)
     .from('comprobantes')
     .select(`
-      id, tipo, serie, numero, fecha_emision, subtotal, igv, total, moneda, estado, pedido_id, created_at,
+      id, tipo, serie, numero, fecha_emision, fecha_despacho, subtotal, igv, total, moneda, estado, pedido_id, created_at,
       cliente_externo_nombre, cliente_externo_doc,
       clientes(id, razon_social, ruc, dni, direccion, telefono),
       profiles!comprobantes_facturador_id_fkey(full_name)
@@ -106,9 +106,16 @@ export default async function ComprobantePage({
   const igvNum = Number(comp.igv ?? 0)
   const condicion = totalCobrado >= totalNum && totalNum > 0 ? 'CONTADO' : 'CREDITO'
 
-  const fechaEmision = new Date(comp.fecha_emision).toLocaleDateString('es-PE', {
+  const fechaEmision = new Date(comp.fecha_emision + 'T12:00:00-05:00').toLocaleDateString('es-PE', {
     day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'America/Lima',
   })
+  // Fecha de despacho: cuándo se entrega la mercadería al cliente. Por requerimiento
+  // del cliente, este es el dato que más le importa ver en el comprobante.
+  const fechaDespacho = (comp as any).fecha_despacho
+    ? new Date((comp as any).fecha_despacho + 'T12:00:00-05:00').toLocaleDateString('es-PE', {
+        day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'America/Lima',
+      })
+    : null
   const horaEmision = new Date(comp.created_at).toLocaleTimeString('es-PE', {
     hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'America/Lima',
   })
@@ -232,7 +239,14 @@ export default async function ComprobantePage({
                   <td style={{ padding: '2px 4px', fontWeight: 'bold', width: 120 }}>Señor(es):</td>
                   <td style={{ padding: '2px 4px' }}>{clienteNombre}</td>
                   <td style={{ padding: '2px 4px', fontWeight: 'bold', width: 100 }}>Fecha emisión:</td>
-                  <td style={{ padding: '2px 4px' }}>{fechaEmision}</td>
+                  <td style={{ padding: '2px 4px' }}>
+                    {fechaEmision}
+                    {fechaDespacho && fechaDespacho !== fechaEmision && (
+                      <span style={{ marginLeft: 8, fontSize: 9, color: '#6b7280' }}>
+                        (Despacho: <strong style={{ color: '#000' }}>{fechaDespacho}</strong>)
+                      </span>
+                    )}
+                  </td>
                 </tr>
                 <tr>
                   <td style={{ padding: '2px 4px', fontWeight: 'bold' }}>{docCliente.label}:</td>
@@ -409,8 +423,13 @@ export default async function ComprobantePage({
         {/* Info cabecera */}
         <div>
           <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-            <span>FECHA:</span><span>{fechaEmision}</span>
+            <span>F. EMISION:</span><span>{fechaEmision}</span>
           </div>
+          {fechaDespacho && fechaDespacho !== fechaEmision && (
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'bold' }}>
+              <span>F. DESPACHO:</span><span>{fechaDespacho}</span>
+            </div>
+          )}
           <div style={{ display: 'flex', justifyContent: 'space-between' }}>
             <span>CONDICION:</span><span>{condicion}</span>
           </div>

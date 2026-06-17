@@ -42,7 +42,7 @@ export default async function ImprimirLotePage({
   const { data: comprobantes } = await supabase
     .from('comprobantes')
     .select(`
-      id, tipo, serie, numero, fecha_emision, subtotal, igv, total, moneda, estado, pedido_id, created_at,
+      id, tipo, serie, numero, fecha_emision, fecha_despacho, subtotal, igv, total, moneda, estado, pedido_id, created_at,
       cliente_externo_nombre, cliente_externo_doc, editado, editado_at,
       clientes(id, razon_social, ruc, dni, direccion, telefono),
       profiles!comprobantes_facturador_id_fkey(full_name)
@@ -130,7 +130,12 @@ export default async function ImprimirLotePage({
                   : { label: 'DOC', valor: externoDoc ?? '—' }
           const totalLetras = numeroALetras(totalNum)
           const monedaLabel = comp.moneda === 'USD' ? 'DOLARES AMERICANOS' : 'SOLES'
-          const fechaEmision = new Date(comp.fecha_emision).toLocaleDateString('es-PE', {
+          const fechaDespacho = (comp as any).fecha_despacho
+            ? new Date((comp as any).fecha_despacho + 'T12:00:00-05:00').toLocaleDateString('es-PE', {
+                day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'America/Lima',
+              })
+            : null
+          const fechaEmision = new Date(comp.fecha_emision + 'T12:00:00-05:00').toLocaleDateString('es-PE', {
             day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'America/Lima',
           })
           const qrData = `AGROCAR|20519883296|${comp.tipo}|${correlativo}|${totalNum.toFixed(2)}|${comp.fecha_emision}|${docCliente.valor}`
@@ -192,7 +197,14 @@ export default async function ImprimirLotePage({
                           <td style={{ padding: '2px 4px', fontWeight: 'bold', width: 120 }}>Señor(es):</td>
                           <td style={{ padding: '2px 4px' }}>{clienteNombre}</td>
                           <td style={{ padding: '2px 4px', fontWeight: 'bold', width: 100 }}>Fecha emisión:</td>
-                          <td style={{ padding: '2px 4px' }}>{fechaEmision}</td>
+                          <td style={{ padding: '2px 4px' }}>
+                            {fechaEmision}
+                            {fechaDespacho && fechaDespacho !== fechaEmision && (
+                              <span style={{ marginLeft: 6, fontSize: 8.5, color: '#6b7280' }}>
+                                (Desp: <strong style={{ color: '#000' }}>{fechaDespacho}</strong>)
+                              </span>
+                            )}
+                          </td>
                         </tr>
                         <tr>
                           <td style={{ padding: '2px 4px', fontWeight: 'bold' }}>{docCliente.label}:</td>
@@ -307,7 +319,10 @@ export default async function ImprimirLotePage({
                     <div style={{ textAlign: 'center', fontSize: 9, color: '#92400e', fontWeight: 'bold' }}>⚠ EDITADO</div>
                   )}
                   <div style={{ borderTop: '1px dashed #000', margin: '6px 0' }} />
-                  <div>Fecha: {fechaEmision}</div>
+                  <div>F. Emisión: {fechaEmision}</div>
+                  {fechaDespacho && fechaDespacho !== fechaEmision && (
+                    <div style={{ fontWeight: 'bold' }}>F. Despacho: {fechaDespacho}</div>
+                  )}
                   <div>{docCliente.label}: {docCliente.valor}</div>
                   <div>Cliente: {clienteNombre}</div>
                   <div style={{ borderTop: '1px dashed #000', margin: '6px 0' }} />
