@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next"
 import { Inter, Great_Vibes } from "next/font/google"
 import "./globals.css"
 import { Toaster } from "@/components/ui/toaster"
+import ServiceWorkerRegister from "@/components/sw-register"
 
 const inter = Inter({ subsets: ["latin"] })
 // Fuente script para el slogan "Pasión hecha a mano" — similar al logo de AGROCAR
@@ -26,6 +27,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body className={inter.className}>
         {children}
         <Toaster />
+        <ServiceWorkerRegister />
       </body>
     </html>
   )

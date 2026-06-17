@@ -11,6 +11,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { EMPRESA } from '@/lib/empresa'
+import PwaInstallBanner from '@/components/pwa-install-banner'
 import type { UserRole } from '@/types'
 
 const roleRedirects: Record<UserRole, string> = {
@@ -202,6 +203,11 @@ export default function LoginPage() {
             </form>
           </CardContent>
         </Card>
+
+        {/* Banner de instalación PWA (visible solo si el navegador soporta y no está instalada) */}
+        <div className="mt-3">
+          <PwaInstallBanner variant="login" />
+        </div>
 
         <p className="text-center text-xs text-gray-400 mt-6">
           {EMPRESA.razon_social} &middot; Tacna, Perú &middot; {new Date().getFullYear()}
