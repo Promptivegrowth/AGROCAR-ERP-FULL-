@@ -935,8 +935,53 @@ export default function FacturacionPage() {
                     </tbody>
                   </table>
                 </div>
-                <p className="text-[10px] text-gray-500 mt-1">
-                  Los totales del comprobante se recalculan automáticamente al guardar (incluyendo IGV proporcional).
+
+                {/* Bloque de totales en vivo */}
+                {editComp && editItems.length > 0 && (() => {
+                  const tieneIgv = Number(editComp.igv ?? 0) > 0 || Number(editComp.subtotal ?? 0) !== Number(editComp.total ?? 0)
+                  const sumaItems = editItems.reduce((acc, it) => {
+                    const c = parseFloat(it._cantidad) || 0
+                    const p = parseFloat(it._precio) || 0
+                    return acc + (c * p)
+                  }, 0)
+                  // sumaItems está CON IGV (la misma asunción que la BD)
+                  const totalCalc = sumaItems
+                  const igvCalc = tieneIgv ? totalCalc - (totalCalc / 1.18) : 0
+                  const subtotalCalc = totalCalc - igvCalc
+                  const totalOriginal = Number(editComp.total ?? 0)
+                  const cambioTotal = totalCalc - totalOriginal
+                  return (
+                    <div className="mt-2 bg-gray-50 border border-gray-200 rounded-lg p-3 space-y-1 text-sm">
+                      <div className="flex justify-between">
+                        <span className="text-gray-500">Subtotal</span>
+                        <span className="font-mono">{formatCurrency(subtotalCalc)}</span>
+                      </div>
+                      {tieneIgv && (
+                        <div className="flex justify-between text-gray-600">
+                          <span>IGV (18%)</span>
+                          <span className="font-mono">{formatCurrency(igvCalc)}</span>
+                        </div>
+                      )}
+                      <div className="flex justify-between border-t border-gray-200 pt-1 mt-1">
+                        <span className="font-semibold text-gray-900">Total</span>
+                        <span className="font-mono font-bold text-lg text-black">
+                          {formatCurrency(totalCalc)}
+                        </span>
+                      </div>
+                      {Math.abs(cambioTotal) > 0.01 && (
+                        <div className={`flex justify-between text-xs pt-1 border-t border-gray-100 ${cambioTotal > 0 ? 'text-green-700' : 'text-red-700'}`}>
+                          <span>Cambio vs original ({formatCurrency(totalOriginal)})</span>
+                          <span className="font-mono font-semibold">
+                            {cambioTotal > 0 ? '+' : ''}{formatCurrency(cambioTotal)}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  )
+                })()}
+
+                <p className="text-[10px] text-gray-500 mt-2">
+                  Vista previa en vivo. Los totales se persisten al pulsar &ldquo;Guardar con trazabilidad&rdquo;.
                 </p>
               </div>
 

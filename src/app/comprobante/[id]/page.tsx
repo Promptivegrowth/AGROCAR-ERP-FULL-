@@ -202,61 +202,65 @@ export default async function ComprobantePage({
         `}</style>
         <ToggleFormato />
         <div className="a4-doc mx-auto bg-white shadow-lg print:shadow-none p-8" style={{ maxWidth: 800, fontFamily: '"Helvetica Neue", Arial, sans-serif', fontSize: 11, color: '#111' }}>
-          {/* Encabezado A4 */}
-          <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: 16 }}>
+          {/* Encabezado A4 — compactado */}
+          <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: 10 }}>
             <tbody>
               <tr>
-                <td style={{ width: '40%', verticalAlign: 'top' }}>
+                <td style={{ width: '45%', verticalAlign: 'top' }}>
                   {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src="/logo-agrocar.png" alt="AGROCAR" style={{ maxWidth: 160 }} />
-                  <div style={{ fontFamily: SLOGAN_FONT_STACK, fontSize: 16, color: '#1f2937', marginTop: 2, marginLeft: 4 }}>
+                  <img src="/logo-agrocar.png" alt="AGROCAR" style={{ maxWidth: 150 }} />
+                  <div style={{ fontFamily: SLOGAN_FONT_STACK, fontSize: 15, color: '#1f2937', marginTop: 1, marginLeft: 4 }}>
                     {EMPRESA.slogan}
                   </div>
-                  <div style={{ marginTop: 6, fontSize: 11, lineHeight: 1.5 }}>
-                    <div style={{ fontWeight: 'bold', fontSize: 14 }}>{EMPRESA.razon_social}</div>
-                    <div>{EMPRESA.rubro}</div>
+                  <div style={{ marginTop: 4, fontSize: 10.5, lineHeight: 1.3 }}>
+                    <div style={{ fontWeight: 'bold', fontSize: 13 }}>{EMPRESA.razon_social}</div>
                     <div>{EMPRESA.direccion_comercial}</div>
-                    <div style={{ fontSize: 10, color: '#6b7280' }}>{EMPRESA.direccion_fundo}</div>
+                    <div>{EMPRESA.direccion_fundo}</div>
                     <div>Tel. {EMPRESA.telefono} · {EMPRESA.correo}</div>
                   </div>
                 </td>
-                <td style={{ width: '60%', verticalAlign: 'top', textAlign: 'right' }}>
-                  <div style={{ border: '2px solid #000', borderRadius: 4, padding: 12, display: 'inline-block', minWidth: 280, textAlign: 'center' }}>
-                    <div style={{ fontSize: 11, fontWeight: 'bold', marginBottom: 4 }}>R.U.C. 20519883296</div>
-                    <div style={{ fontSize: 14, fontWeight: 'bold', textTransform: 'uppercase', marginBottom: 6, lineHeight: 1.2 }}>{titulo}</div>
-                    <div style={{ fontSize: 16, fontWeight: 'bold', fontFamily: 'monospace' }}>{correlativo}</div>
+                <td style={{ width: '55%', verticalAlign: 'top', textAlign: 'right' }}>
+                  <div style={{ border: '2px solid #000', borderRadius: 4, padding: 10, display: 'inline-block', minWidth: 260, textAlign: 'center' }}>
+                    <div style={{ fontSize: 11, fontWeight: 'bold', marginBottom: 3 }}>R.U.C. {EMPRESA.ruc}</div>
+                    <div style={{ fontSize: 13, fontWeight: 'bold', textTransform: 'uppercase', marginBottom: 4, lineHeight: 1.2 }}>{titulo}</div>
+                    <div style={{ fontSize: 15, fontWeight: 'bold', fontFamily: 'monospace' }}>{correlativo}</div>
                   </div>
                 </td>
               </tr>
             </tbody>
           </table>
 
-          {/* Datos del cliente */}
-          <div style={{ border: '1px solid #999', borderRadius: 4, padding: 10, marginBottom: 12, background: '#fafafa' }}>
-            <table style={{ width: '100%', fontSize: 11 }}>
+          {/* Datos del cliente — compactado */}
+          <div style={{ border: '1px solid #999', borderRadius: 4, padding: 6, marginBottom: 8, background: '#fafafa' }}>
+            <table style={{ width: '100%', fontSize: 10.5 }}>
               <tbody>
                 <tr>
-                  <td style={{ padding: '2px 4px', fontWeight: 'bold', width: 120 }}>Señor(es):</td>
-                  <td style={{ padding: '2px 4px' }}>{clienteNombre}</td>
-                  <td style={{ padding: '2px 4px', fontWeight: 'bold', width: 100 }}>Fecha emisión:</td>
-                  <td style={{ padding: '2px 4px' }}>
-                    {fechaEmision}
-                    {fechaDespacho && fechaDespacho !== fechaEmision && (
-                      <span style={{ marginLeft: 8, fontSize: 9, color: '#6b7280' }}>
-                        (Despacho: <strong style={{ color: '#000' }}>{fechaDespacho}</strong>)
-                      </span>
-                    )}
+                  <td style={{ padding: '1px 4px', fontWeight: 'bold', width: 90 }}>Señor(es):</td>
+                  <td style={{ padding: '1px 4px' }}>{clienteNombre}</td>
+                  <td style={{ padding: '1px 4px', fontWeight: 'bold', width: 90 }}>F. Emisión:</td>
+                  <td style={{ padding: '1px 4px' }}>{fechaEmision}</td>
+                </tr>
+                <tr>
+                  <td style={{ padding: '1px 4px', fontWeight: 'bold' }}>{docCliente.label}:</td>
+                  <td style={{ padding: '1px 4px' }}>{docCliente.valor}</td>
+                  <td style={{ padding: '1px 4px', fontWeight: 'bold' }}>
+                    {fechaDespacho && fechaDespacho !== fechaEmision ? 'F. Despacho:' : 'Condición:'}
+                  </td>
+                  <td style={{ padding: '1px 4px' }}>
+                    {fechaDespacho && fechaDespacho !== fechaEmision ? (
+                      <strong>{fechaDespacho}</strong>
+                    ) : condicion}
                   </td>
                 </tr>
+                {fechaDespacho && fechaDespacho !== fechaEmision && (
+                  <tr>
+                    <td style={{ padding: '1px 4px', fontWeight: 'bold' }}>Condición:</td>
+                    <td style={{ padding: '1px 4px' }} colSpan={3}>{condicion}</td>
+                  </tr>
+                )}
                 <tr>
-                  <td style={{ padding: '2px 4px', fontWeight: 'bold' }}>{docCliente.label}:</td>
-                  <td style={{ padding: '2px 4px' }}>{docCliente.valor}</td>
-                  <td style={{ padding: '2px 4px', fontWeight: 'bold' }}>Condición:</td>
-                  <td style={{ padding: '2px 4px' }}>{condicion}</td>
-                </tr>
-                <tr>
-                  <td style={{ padding: '2px 4px', fontWeight: 'bold' }}>Dirección:</td>
-                  <td style={{ padding: '2px 4px' }} colSpan={3}>{clienteDireccion}</td>
+                  <td style={{ padding: '1px 4px', fontWeight: 'bold' }}>Dirección:</td>
+                  <td style={{ padding: '1px 4px' }} colSpan={3}>{clienteDireccion}</td>
                 </tr>
                 {vendedorNombre !== '—' && (
                   <tr>
@@ -312,28 +316,40 @@ export default async function ComprobantePage({
             </tbody>
           </table>
 
-          {/* Total en letras + cuadro de totales */}
-          <table style={{ width: '100%', marginBottom: 12, fontSize: 10 }}>
+          {/* QR + Totales en negrita lado a lado + leyenda SUNAT compactada */}
+          <table style={{ width: '100%', marginBottom: 6, fontSize: 10 }}>
             <tbody>
               <tr>
-                <td style={{ verticalAlign: 'top', padding: 8, border: '1px solid #999', background: '#fafafa', width: '60%' }}>
-                  <div style={{ fontWeight: 'bold', fontSize: 10, marginBottom: 4 }}>SON:</div>
-                  <div style={{ fontSize: 11, textTransform: 'uppercase' }}>{totalLetras} {monedaLabel}</div>
+                {/* QR pequeño a la izquierda */}
+                <td style={{ verticalAlign: 'top', width: 90 }}>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={qrUrl} alt="QR" style={{ width: 80, height: 80 }} />
                 </td>
-                <td style={{ verticalAlign: 'top', width: '40%', paddingLeft: 8 }}>
+                {/* SON + leyenda SUNAT compacta al centro */}
+                <td style={{ verticalAlign: 'top', padding: '0 8px', fontSize: 9.5, color: '#333' }}>
+                  <div style={{ fontWeight: 'bold', fontSize: 10 }}>SON:</div>
+                  <div style={{ textTransform: 'uppercase', fontSize: 10, marginBottom: 4 }}>{totalLetras} {monedaLabel}</div>
+                  <div style={{ fontSize: 8.5, color: '#666' }}>
+                    Representación impresa del comprobante electrónico.<br/>
+                    Consulte en <strong>www.sunat.gob.pe</strong>
+                    {facturador?.full_name && <><br/>Emitido por: {facturador.full_name}</>}
+                  </div>
+                </td>
+                {/* Totales en NEGRITA al lado derecho */}
+                <td style={{ verticalAlign: 'top', width: 220, paddingLeft: 6 }}>
                   <table style={{ width: '100%', fontSize: 11 }}>
                     <tbody>
                       <tr>
-                        <td style={{ padding: '4px 8px', border: '1px solid #ccc', background: '#fafafa' }}>OP. GRAVADA</td>
-                        <td style={{ padding: '4px 8px', border: '1px solid #ccc', textAlign: 'right', fontFamily: 'monospace' }}>S/ {fmtNum(subtotalNum)}</td>
+                        <td style={{ padding: '3px 8px', fontWeight: 'bold' }}>OP. GRAVADA</td>
+                        <td style={{ padding: '3px 8px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 'bold' }}>S/ {fmtNum(subtotalNum)}</td>
                       </tr>
                       <tr>
-                        <td style={{ padding: '4px 8px', border: '1px solid #ccc', background: '#fafafa' }}>IGV (18%)</td>
-                        <td style={{ padding: '4px 8px', border: '1px solid #ccc', textAlign: 'right', fontFamily: 'monospace' }}>S/ {fmtNum(igvNum)}</td>
+                        <td style={{ padding: '3px 8px', fontWeight: 'bold' }}>IGV (18%)</td>
+                        <td style={{ padding: '3px 8px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 'bold' }}>S/ {fmtNum(igvNum)}</td>
                       </tr>
                       <tr>
-                        <td style={{ padding: '6px 8px', border: '2px solid #000', background: '#000', color: '#fff', fontWeight: 'bold' }}>TOTAL</td>
-                        <td style={{ padding: '6px 8px', border: '2px solid #000', background: '#000', color: '#fff', textAlign: 'right', fontFamily: 'monospace', fontWeight: 'bold', fontSize: 13 }}>S/ {fmtNum(totalNum)}</td>
+                        <td style={{ padding: '6px 8px', border: '2px solid #000', background: '#000', color: '#fff', fontWeight: 'bold' }}>IMPORTE TOTAL</td>
+                        <td style={{ padding: '6px 8px', border: '2px solid #000', background: '#000', color: '#fff', textAlign: 'right', fontFamily: 'monospace', fontWeight: 'bold', fontSize: 14 }}>S/ {fmtNum(totalNum)}</td>
                       </tr>
                     </tbody>
                   </table>
@@ -342,32 +358,17 @@ export default async function ComprobantePage({
             </tbody>
           </table>
 
-          {/* QR + leyenda SUNAT */}
-          <table style={{ width: '100%', marginTop: 12 }}>
-            <tbody>
-              <tr>
-                <td style={{ verticalAlign: 'top', width: 150 }}>
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={qrUrl} alt="QR" style={{ width: 110, height: 110 }} />
-                </td>
-                <td style={{ verticalAlign: 'top', fontSize: 10, paddingLeft: 12, color: '#555' }}>
-                  <p style={{ marginBottom: 6 }}>Representación impresa del comprobante electrónico.</p>
-                  <p style={{ marginBottom: 6 }}>Consulte la validez del comprobante en:<br/><strong>www.sunat.gob.pe</strong></p>
-                  <p style={{ marginTop: 8, fontSize: 9 }}>
-                    Autorizado mediante Resolución de Intendencia Nº 034-005-0007698/SUNAT.<br/>
-                    Bienes y servicios afectos al IGV.
-                  </p>
-                  {facturador?.full_name && (
-                    <p style={{ marginTop: 6, fontSize: 9 }}>Emitido por: {facturador.full_name}</p>
-                  )}
-                </td>
-              </tr>
-            </tbody>
-          </table>
-
-          {/* Footer */}
-          <div style={{ marginTop: 24, textAlign: 'center', fontSize: 9, color: '#777', borderTop: '1px solid #ddd', paddingTop: 8 }}>
-            Impreso el {impreso} · AGROCAR S.R.L.
+          {/* Footer: gracias + VDR en una línea */}
+          <div style={{ marginTop: 8, textAlign: 'center', fontWeight: 'bold', fontSize: 11 }}>
+            ¡ GRACIAS POR SU COMPRA !
+            {vendedorNombre && vendedorNombre !== '—' && (
+              <span style={{ fontWeight: 'normal', fontSize: 9, color: '#666', marginLeft: 12 }}>
+                · Vendedor: {vendedorNombre}
+              </span>
+            )}
+          </div>
+          <div style={{ marginTop: 4, textAlign: 'center', fontSize: 8.5, color: '#888' }}>
+            Impreso el {impreso}
           </div>
         </div>
       </div>
@@ -395,126 +396,100 @@ export default async function ComprobantePage({
 
       <ToggleFormato />
 
-      <div className="ticket mx-auto bg-white shadow-lg print:shadow-none" style={{ maxWidth: 350, width: '100%', padding: 12, fontFamily: 'ui-monospace, "Courier New", monospace', fontSize: 11, lineHeight: 1.35, color: '#000' }}>
-        {/* Logo + encabezado */}
+      <div className="ticket mx-auto bg-white shadow-lg print:shadow-none" style={{ maxWidth: 350, width: '100%', padding: 10, fontFamily: 'ui-monospace, "Courier New", monospace', fontSize: 10.5, lineHeight: 1.25, color: '#000' }}>
+        {/* Logo + encabezado compactado */}
         <div style={{ textAlign: 'center' }}>
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/logo-agrocar.png" alt="AGROCAR" style={{ maxWidth: 140, margin: '0 auto 2px', display: 'block' }} />
-          <div style={{ fontFamily: SLOGAN_FONT_STACK, fontSize: 15, color: '#000', marginBottom: 4 }}>
+          <img src="/logo-agrocar.png" alt="AGROCAR" style={{ maxWidth: 130, margin: '0 auto 1px', display: 'block' }} />
+          <div style={{ fontFamily: SLOGAN_FONT_STACK, fontSize: 14, color: '#000', marginBottom: 2 }}>
             {EMPRESA.slogan}
           </div>
-          <div style={{ fontWeight: 'bold', fontSize: 13 }}>{EMPRESA.razon_social}</div>
-          <div>RUC: {EMPRESA.ruc}</div>
-          <div>CALLE EMILIO FORERO 553-A</div>
-          <div>PARA GRANDE - TACNA</div>
-          <div>FUNDO PARA GRANDE PARCELA 31</div>
-          <div>SUB LT 1 - TACNA</div>
-          <div>TELEFONO: {EMPRESA.telefono}</div>
-          <div style={{ fontSize: 10 }}>{EMPRESA.correo}</div>
+          <div style={{ fontWeight: 'bold', fontSize: 12 }}>{EMPRESA.razon_social} · RUC {EMPRESA.ruc}</div>
+          <div style={{ fontSize: 9.5 }}>{EMPRESA.direccion_comercial}</div>
+          <div style={{ fontSize: 9.5 }}>{EMPRESA.direccion_fundo}</div>
+          <div style={{ fontSize: 9.5 }}>Tel. {EMPRESA.telefono} · {EMPRESA.correo}</div>
         </div>
 
-        <div style={{ borderTop: '1px dashed #000', margin: '8px 0' }} />
+        {/* Título y correlativo */}
+        <div style={{ textAlign: 'center', fontWeight: 'bold', fontSize: 11, marginTop: 5 }}>{titulo}</div>
+        <div style={{ textAlign: 'center', fontWeight: 'bold', fontSize: 13 }}>{correlativo}</div>
 
-        <div style={{ textAlign: 'center', fontWeight: 'bold', fontSize: 12 }}>{titulo}</div>
-        <div style={{ textAlign: 'center', fontWeight: 'bold', fontSize: 14, marginTop: 2 }}>{correlativo}</div>
-
-        <div style={{ borderTop: '1px dashed #000', margin: '8px 0' }} />
-
-        {/* Info cabecera */}
-        <div>
+        {/* Info cabecera (sin separadores) */}
+        <div style={{ marginTop: 4, fontSize: 10 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-            <span>F. EMISION:</span><span>{fechaEmision}</span>
+            <span>F. Emisión: {fechaEmision}</span>
+            <span>Cond: {condicion}</span>
           </div>
           {fechaDespacho && fechaDespacho !== fechaEmision && (
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'bold' }}>
-              <span>F. DESPACHO:</span><span>{fechaDespacho}</span>
-            </div>
+            <div style={{ fontWeight: 'bold' }}>F. Despacho: {fechaDespacho}</div>
           )}
-          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-            <span>CONDICION:</span><span>{condicion}</span>
-          </div>
-          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-            <span>{docCliente.label}:</span><span>{docCliente.valor}</span>
-          </div>
-          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-            <span>TELEFONO:</span><span>{clienteTelefono}</span>
-          </div>
-          <div>
-            <span>NOMBRE: </span><span>{clienteNombre}</span>
-          </div>
-          <div>
-            <span>DIRECCION: </span><span>{clienteDireccion}</span>
-          </div>
+          <div>{docCliente.label}: {docCliente.valor}{clienteTelefono && clienteTelefono !== '—' ? ` · Tel: ${clienteTelefono}` : ''}</div>
+          <div>Cliente: {clienteNombre}</div>
+          {clienteDireccion && clienteDireccion !== '—' && (
+            <div>Dirección: {clienteDireccion}</div>
+          )}
         </div>
 
-        <div style={{ borderTop: '1px dashed #000', margin: '8px 0' }} />
-
         {/* Tabla items */}
-        <table style={{ width: '100%', fontSize: 10, borderCollapse: 'collapse' }}>
+        <table style={{ width: '100%', fontSize: 9.5, borderCollapse: 'collapse', marginTop: 4 }}>
           <thead>
-            <tr style={{ borderBottom: '1px dashed #000' }}>
-              <th style={{ textAlign: 'left', padding: '2px 0' }}>COD</th>
-              <th style={{ textAlign: 'left', padding: '2px 0' }}>PRODUCTO</th>
-              <th style={{ textAlign: 'right', padding: '2px 0' }}>CANT</th>
-              <th style={{ textAlign: 'right', padding: '2px 0' }}>P.U</th>
-              <th style={{ textAlign: 'right', padding: '2px 0' }}>TOTAL</th>
+            <tr style={{ borderTop: '1px solid #000', borderBottom: '1px solid #000' }}>
+              <th style={{ textAlign: 'left', padding: '1px 0' }}>COD</th>
+              <th style={{ textAlign: 'left', padding: '1px 0' }}>PRODUCTO</th>
+              <th style={{ textAlign: 'right', padding: '1px 0' }}>CANT</th>
+              <th style={{ textAlign: 'right', padding: '1px 0' }}>P.U</th>
+              <th style={{ textAlign: 'right', padding: '1px 0' }}>TOTAL</th>
             </tr>
           </thead>
           <tbody>
             {(items ?? []).map((it: any) => (
               <tr key={it.id} style={{ verticalAlign: 'top' }}>
-                <td style={{ padding: '2px 2px 2px 0' }}>{it.productos?.codigo ?? '—'}</td>
-                <td style={{ padding: '2px 2px' }}>{truncar(it.descripcion ?? it.productos?.descripcion ?? it.productos?.nombre ?? '', 18)}</td>
-                <td style={{ textAlign: 'right', padding: '2px 2px' }}>{Number(it.cantidad).toFixed(0)}</td>
-                <td style={{ textAlign: 'right', padding: '2px 2px' }}>{fmtNum(Number(it.precio_unitario))}</td>
-                <td style={{ textAlign: 'right', padding: '2px 0 2px 2px' }}>{fmtNum(Number(it.subtotal))}</td>
+                <td style={{ padding: '1px 2px 1px 0' }}>{it.productos?.codigo ?? '—'}</td>
+                <td style={{ padding: '1px 2px' }}>{truncar(it.descripcion ?? it.productos?.descripcion ?? it.productos?.nombre ?? '', 18)}</td>
+                <td style={{ textAlign: 'right', padding: '1px 2px' }}>{Number(it.cantidad).toFixed(0)}</td>
+                <td style={{ textAlign: 'right', padding: '1px 2px' }}>{fmtNum(Number(it.precio_unitario))}</td>
+                <td style={{ textAlign: 'right', padding: '1px 0 1px 2px' }}>{fmtNum(Number(it.subtotal))}</td>
               </tr>
             ))}
           </tbody>
         </table>
 
-        <div style={{ borderTop: '1px dashed #000', margin: '8px 0' }} />
-
-        {/* Totales */}
-        <div>
-          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-            <span>OP. GRAVADAS:</span><span>S/ {fmtNum(subtotalNum)}</span>
-          </div>
-          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-            <span>IGV (18%):</span><span>S/ {fmtNum(igvNum)}</span>
-          </div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'bold', fontSize: 13, marginTop: 4 }}>
-            <span>IMPORTE TOTAL:</span><span>S/ {fmtNum(totalNum)}</span>
+        {/* QR + totales lado a lado, totales en negrita */}
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 6, marginTop: 6, borderTop: '1px solid #000', paddingTop: 4 }}>
+          {/* QR pequeño a la izquierda */}
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={qrUrl} alt="QR" style={{ width: 65, height: 65, flexShrink: 0 }} />
+          {/* Totales a la derecha en negrita */}
+          <div style={{ flex: 1, fontSize: 10 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'bold' }}>
+              <span>OP. GRAVADA:</span><span>S/ {fmtNum(subtotalNum)}</span>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'bold' }}>
+              <span>IGV 18%:</span><span>S/ {fmtNum(igvNum)}</span>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'bold', fontSize: 12, borderTop: '1px solid #000', paddingTop: 1, marginTop: 1 }}>
+              <span>IMPORTE TOTAL:</span><span>S/ {fmtNum(totalNum)}</span>
+            </div>
           </div>
         </div>
 
-        <div style={{ borderTop: '1px dashed #000', margin: '8px 0' }} />
-
-        <div style={{ fontSize: 10 }}>
+        <div style={{ fontSize: 9.5, marginTop: 3 }}>
           <strong>SON:</strong> {totalLetras} {monedaLabel}
         </div>
 
-        <div style={{ borderTop: '1px dashed #000', margin: '8px 0' }} />
-
-        <div style={{ fontSize: 10 }}>
-          <div>USUARIO: {facturador?.full_name ?? '—'}</div>
-          <div>IMPRESO: {impreso}</div>
-          <div>VDR: {vendedorNombre}</div>
+        {/* Usuario + Vendedor en una línea */}
+        <div style={{ fontSize: 9, marginTop: 4, display: 'flex', justifyContent: 'space-between' }}>
+          <span>Usuario: {facturador?.full_name ?? '—'}</span>
+          <span>VDR: {vendedorNombre}</span>
         </div>
+        <div style={{ fontSize: 9 }}>Impreso: {impreso}</div>
 
-        <div style={{ textAlign: 'center', margin: '10px 0' }}>
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={qrUrl} alt="QR" style={{ width: 120, height: 120, margin: '0 auto', display: 'block' }} />
-        </div>
-
-        <div style={{ textAlign: 'center', fontWeight: 'bold', marginTop: 8 }}>
+        {/* "GRACIAS POR SU COMPRA" + leyenda SUNAT compactada */}
+        <div style={{ textAlign: 'center', fontWeight: 'bold', marginTop: 4 }}>
           ** GRACIAS POR SU COMPRA **
         </div>
-
-        <div style={{ textAlign: 'center', fontSize: 9, marginTop: 8, color: '#555' }}>
-          Representación impresa del comprobante electrónico.
-          <br />
-          Consulta: www.sunat.gob.pe
+        <div style={{ textAlign: 'center', fontSize: 8, color: '#555' }}>
+          Representación impresa · Consulta www.sunat.gob.pe
         </div>
       </div>
 
