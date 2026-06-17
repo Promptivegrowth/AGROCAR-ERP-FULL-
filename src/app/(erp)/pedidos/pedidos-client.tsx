@@ -472,6 +472,11 @@ export default function PedidosClient({ pedidosIniciales }: { pedidosIniciales: 
                           <AlertTriangle className="w-3 h-3" /> Requiere autorización
                         </div>
                       )}
+                      {(p as any).solicitud_mayorista && (
+                        <div className="mt-1 inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-orange-100 text-orange-800 border border-orange-300">
+                          🏭 Solicitud precio mayorista
+                        </div>
+                      )}
                     </button>
                   )
                 })}
@@ -496,11 +501,21 @@ export default function PedidosClient({ pedidosIniciales }: { pedidosIniciales: 
                         <tr key={p.id} className="hover:bg-gray-50/50 transition-colors">
                           <td className="py-3 px-4 font-mono text-xs text-gray-600">{p.numero}</td>
                           <td className="py-3 px-4 text-gray-500 text-xs">{formatDate(p.fecha_pedido)}</td>
-                          <td className="py-3 px-4 font-medium text-gray-900 max-w-[220px] truncate">
-                            {p.clientes?.razon_social ?? '—'}
-                            {p.requiere_autorizacion && (
-                              <AlertTriangle className="inline w-3 h-3 ml-1 text-amber-500" />
-                            )}
+                          <td className="py-3 px-4 font-medium text-gray-900 max-w-[260px]">
+                            <div className="truncate">{p.clientes?.razon_social ?? '—'}</div>
+                            <div className="flex items-center gap-1 flex-wrap mt-0.5">
+                              {p.requiere_autorizacion && (
+                                <AlertTriangle className="inline w-3 h-3 text-amber-500" />
+                              )}
+                              {(p as any).solicitud_mayorista && (
+                                <span
+                                  className="inline-flex items-center gap-0.5 px-1.5 py-0 rounded text-[9px] font-bold bg-orange-100 text-orange-800 border border-orange-300"
+                                  title="Solicitud de precio MAYORISTA por el vendedor"
+                                >
+                                  🏭 MAYORISTA
+                                </span>
+                              )}
+                            </div>
                           </td>
                           <td className="py-3 px-4 text-gray-600 text-xs">{p.profiles?.full_name ?? '—'}</td>
                           <td className="py-3 px-4 text-gray-600 text-xs">
@@ -583,6 +598,22 @@ export default function PedidosClient({ pedidosIniciales }: { pedidosIniciales: 
                     <span>
                       Este pedido <strong>requiere autorización</strong> (descuento {selected.descuento_porcentaje}%).
                     </span>
+                  </div>
+                )}
+
+                {(selected as any).solicitud_mayorista && (
+                  <div className="bg-orange-50 border-2 border-orange-300 rounded-lg p-3 text-sm">
+                    <div className="flex items-start gap-2">
+                      <span className="text-lg shrink-0">🏭</span>
+                      <div>
+                        <p className="font-bold text-orange-900">Solicitud de precio MAYORISTA</p>
+                        <p className="text-xs text-orange-800 mt-1 leading-snug">
+                          El vendedor activó el botón <strong>&ldquo;Solicitar precio mayorista&rdquo;</strong> al armar este pedido.
+                          Los precios fueron tomados de la lista <strong>MAYORISTA</strong> aunque el cliente esté registrado en otra lista.
+                          Verifica antes de facturar.
+                        </p>
+                      </div>
+                    </div>
                   </div>
                 )}
 

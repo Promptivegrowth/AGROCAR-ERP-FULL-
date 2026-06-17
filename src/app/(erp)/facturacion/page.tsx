@@ -63,12 +63,12 @@ export default function FacturacionPage() {
     setLoading(true)
 
     const [{ data: pedidos }, { data: comp }, { data: tc }] = await Promise.all([
-      supabase
+      (supabase as any)
         .from('pedidos')
         .select(`
           id, numero, subtotal, igv, incluir_igv, total, estado, created_at, cliente_id,
-          fecha_pedido, fecha_despacho,
-          clientes(razon_social, ruc, dni, tipo_comprobante_preferido, credito_dias)
+          fecha_pedido, fecha_despacho, solicitud_mayorista, lista_precio_aplicada, notas,
+          clientes(razon_social, ruc, dni, tipo_comprobante_preferido, credito_dias, lista_precio_id)
         `)
         .eq('estado', 'enviado')
         .order('created_at', { ascending: true }),
@@ -562,7 +562,19 @@ export default function FacturacionPage() {
                               {tipoCfg.label}
                             </span>
                           </td>
-                          <td className="py-3 px-4 font-medium text-gray-900">{pedido.clientes?.razon_social ?? '—'}</td>
+                          <td className="py-3 px-4 font-medium text-gray-900">
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span>{pedido.clientes?.razon_social ?? '—'}</span>
+                              {pedido.solicitud_mayorista && (
+                                <span
+                                  className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-orange-100 text-orange-800 border border-orange-300"
+                                  title="El vendedor solicitó tratar este pedido con precios MAYORISTA. Verificar antes de facturar."
+                                >
+                                  🏭 SOLICITUD MAYORISTA
+                                </span>
+                              )}
+                            </div>
+                          </td>
                           <td className="py-3 px-4 text-gray-500 font-mono text-xs">
                             {pedido.clientes?.ruc ?? pedido.clientes?.dni ?? '—'}
                           </td>
@@ -771,6 +783,26 @@ export default function FacturacionPage() {
           </DialogHeader>
           {pedidoSeleccionado && (
             <div className="space-y-4 mt-2">
+              {/* Aviso de solicitud mayorista — siempre arriba del todo */}
+              {pedidoSeleccionado.solicitud_mayorista && (
+                <div className="bg-orange-50 border-2 border-orange-300 rounded-lg p-3 text-xs">
+                  <div className="flex items-start gap-2">
+                    <span className="text-lg">🏭</span>
+                    <div className="flex-1">
+                      <p className="font-bold text-orange-900">
+                        Solicitud de precio MAYORISTA
+                      </p>
+                      <p className="text-orange-800 mt-1 leading-snug">
+                        El vendedor solicitó tratar este pedido con precios de lista <strong>MAYORISTA</strong>,
+                        aunque el cliente esté registrado normalmente en otra lista.
+                      </p>
+                      <p className="text-orange-700 mt-1 text-[10px] italic">
+                        Verifica los precios antes de facturar. Si no apruebas, contacta al vendedor o ajusta los precios editando el pedido.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
               <div className="bg-gray-50 rounded-lg p-4 space-y-1.5 text-sm">
                 <div className="flex justify-between">
                   <span className="text-gray-500">Pedido:</span>

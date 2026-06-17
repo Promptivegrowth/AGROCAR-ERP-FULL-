@@ -12,6 +12,7 @@ async function getPedidosData() {
       id, numero, cliente_id, vendedor_id, fecha_pedido, fecha_despacho,
       estado, subtotal, total, descuento_porcentaje, descuento_monto,
       requiere_autorizacion, notas, created_at,
+      solicitud_mayorista, lista_precio_aplicada,
       clientes(id, razon_social, ruc, dni, tipo_comprobante_preferido, direccion, telefono, zonas(nombre)),
       profiles!pedidos_vendedor_id_fkey(id, full_name)
     `)

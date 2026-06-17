@@ -62,6 +62,12 @@ export default function PedidosPage() {
   const [mensajeExito, setMensajeExito] = useState<string | null>(null)
   const [mensajeError, setMensajeError] = useState<string | null>(null)
 
+  // Solicitud de precio mayorista (caso: cliente registrado en otra lista
+  // pide al por mayor en este pedido específico)
+  const [solicitudMayorista, setSolicitudMayorista] = useState(false)
+  const [listaMayoristaId, setListaMayoristaId] = useState<string | null>(null)
+  const [listaActualNombre, setListaActualNombre] = useState<string | null>(null)
+
   // Override de stock insuficiente (mismo modelo que ERP)
   const [stockDialogOpen, setStockDialogOpen] = useState(false)
   const [stockInsuficientes, setStockInsuficientes] = useState<Array<{
@@ -111,6 +117,15 @@ export default function PedidosPage() {
 
       const role = (profile as any)?.role ?? null
       if (profile) setUserRole(role)
+
+      // Cargar ID de la lista MAYORISTA (lista A en AGROCAR — mayorista / distribuidores)
+      const { data: listaMay } = await (supabase as any)
+        .from('listas_precio')
+        .select('id')
+        .eq('nombre', 'A')
+        .eq('activo', true)
+        .maybeSingle()
+      if (listaMay) setListaMayoristaId((listaMay as any).id)
 
       if (clientesData) {
         // Mostrar TODOS los clientes activos al vendedor. Los de SUS zonas
@@ -188,18 +203,38 @@ export default function PedidosPage() {
     setShowProductoDropdown(true)
   }, [debouncedProductoSearch, productosDisponibles])
 
+  // Recarga los precios de los productos usando una lista de precio específica.
+  // Si listaId es null, no carga precios (precio queda en 0).
+  async function recargarPreciosConLista(listaId: string | null) {
+    if (!listaId) return new Map<string, number>()
+    const { data } = await supabase
+      .from('lista_precio_items')
+      .select('producto_id, precio')
+      .eq('lista_precio_id', listaId)
+      .eq('activo', true)
+    const map = new Map<string, number>()
+    ;(data as any[] ?? []).forEach((it: any) => {
+      map.set(it.producto_id, Number(it.precio ?? 0))
+    })
+    return map
+  }
+
   async function seleccionarCliente(cliente: Cliente) {
     setClienteSeleccionado(cliente)
     setClienteSearch(cliente.razon_social)
     setShowClienteDropdown(false)
     setSeleccionados([])
+    // Reset del flag al cambiar de cliente
+    setSolicitudMayorista(false)
+    setListaActualNombre(null)
 
-    // Ejecutar en paralelo: comprobantes (facturado), cobros (cobrado), productos, items lista
+    // Ejecutar en paralelo: comprobantes (facturado), cobros (cobrado), productos, items lista, nombre lista
     const [
       { data: comprobantes },
       { data: cobros },
       { data: allProductos },
       itemsResult,
+      listaInfo,
     ] = await Promise.all([
       supabase
         .from('comprobantes')
@@ -222,6 +257,13 @@ export default function PedidosPage() {
             .eq('lista_precio_id', cliente.lista_precio_id)
             .eq('activo', true)
         : Promise.resolve({ data: null as any }),
+      cliente.lista_precio_id
+        ? supabase
+            .from('listas_precio')
+            .select('nombre')
+            .eq('id', cliente.lista_precio_id)
+            .maybeSingle()
+        : Promise.resolve({ data: null as any }),
     ])
 
     const facturado = comprobantes?.reduce((acc, c) => acc + Number((c as any).total ?? 0), 0) ?? 0
@@ -229,7 +271,9 @@ export default function PedidosPage() {
     const deuda = Math.max(0, facturado - cobrado)
     setDeudaCliente(deuda)
 
-    // Si el cliente tiene lista de precios asignada, mapear precios específicos
+    setListaActualNombre((listaInfo?.data as any)?.nombre ?? null)
+
+    // Mapear precios de la lista del cliente
     const precioMap = new Map<string, number>()
     if (cliente.lista_precio_id && itemsResult?.data) {
       ;(itemsResult.data as any[]).forEach((item: any) => {
@@ -321,6 +365,47 @@ export default function PedidosPage() {
   const pedidoMinimo = totalFinal >= MINIMO_PEDIDO || seleccionados.length === 0
 
   // Detecta productos cuya cantidad pedida supera el stock disponible real
+  // Alterna entre precios del cliente y precios MAYORISTA.
+  // Importante: solo se afecta el precio de productos, NO se persisten los
+  // cambios en la BD. La marca queda en pedidos.solicitud_mayorista al enviar.
+  async function toggleSolicitudMayorista() {
+    if (!clienteSeleccionado) return
+    setLoadingEnvio(true)
+    try {
+      const nuevoFlag = !solicitudMayorista
+      const listaParaUsar = nuevoFlag
+        ? listaMayoristaId
+        : (clienteSeleccionado.lista_precio_id ?? null)
+      if (nuevoFlag && !listaMayoristaId) {
+        toast.error('Lista MAYORISTA no configurada', {
+          description: 'Pídele al administrador que cree o active la lista de precios "MAYORISTA".',
+        })
+        return
+      }
+      const map = await recargarPreciosConLista(listaParaUsar)
+      // Actualizar precios de productos disponibles y los del carrito
+      setProductosDisponibles((prev) => prev.map((p) => ({ ...p, precio: map.get(p.id) ?? 0 })))
+      setSeleccionados((prev) =>
+        prev.map((s) => {
+          const nuevoPrecio = map.get(s.producto.id) ?? 0
+          return {
+            ...s,
+            producto: { ...s.producto, precio: nuevoPrecio },
+            subtotal: nuevoPrecio * s.cantidad,
+          }
+        }),
+      )
+      setSolicitudMayorista(nuevoFlag)
+      toast.success(nuevoFlag
+        ? '🏭 Precios MAYORISTA aplicados'
+        : `Precios restaurados (lista ${listaActualNombre ?? 'del cliente'})`)
+    } catch (err: any) {
+      toast.error('No se pudo aplicar la lista', { description: err?.message })
+    } finally {
+      setLoadingEnvio(false)
+    }
+  }
+
   async function detectarInsuficientesPwa() {
     const ids = seleccionados.map((s) => s.producto.id)
     if (ids.length === 0) return []
@@ -376,6 +461,16 @@ export default function PedidosPage() {
         }
       }
 
+      // Lista de precios aplicada: si solicitudMayorista=true → lista MAYORISTA;
+      // si no, la lista habitual del cliente.
+      const listaAplicada = solicitudMayorista
+        ? listaMayoristaId
+        : (clienteSeleccionado.lista_precio_id ?? null)
+      const notasPedido = [
+        requiereAutorizacion ? `Descuento ${descuentoPct}% requiere autorización` : null,
+        solicitudMayorista ? '⚠ SOLICITUD DE PRECIO MAYORISTA por el vendedor' : null,
+      ].filter(Boolean).join(' · ') || null
+
       const pedidoPayload = {
         numero,
         cliente_id: clienteSeleccionado.id,
@@ -393,7 +488,9 @@ export default function PedidosPage() {
         incluir_igv: incluirIgv,
         total: totalFinal,
         requiere_autorizacion: requiereAutorizacion,
-        notas: requiereAutorizacion ? `Descuento ${descuentoPct}% requiere autorización` : null,
+        notas: notasPedido,
+        solicitud_mayorista: solicitudMayorista,
+        lista_precio_aplicada: listaAplicada,
       }
 
       const itemsPayload = seleccionados.map((s) => ({
@@ -470,6 +567,8 @@ export default function PedidosPage() {
       setTipoPago('contado')
       setDireccionesCliente([])
       setDireccionEntregaId('')
+      setSolicitudMayorista(false)
+      setListaActualNombre(null)
       setTab('mis-pedidos')
       cargarMisPedidos()
       return true
@@ -690,6 +789,36 @@ export default function PedidosPage() {
                         <span className="text-xs font-medium">
                           Deuda pendiente: {formatCurrency(deudaCliente)}
                         </span>
+                      </div>
+                    )}
+
+                    {/* Botón "Solicitar precio mayorista" — solo si el cliente NO está ya en la lista A (mayorista) */}
+                    {listaActualNombre && listaActualNombre !== 'A' && (
+                      <div className="mt-2">
+                        <button
+                          type="button"
+                          onClick={toggleSolicitudMayorista}
+                          disabled={loadingEnvio}
+                          className={`w-full flex items-center justify-between gap-2 px-3 py-2 rounded-lg border-2 text-xs font-semibold transition-colors ${
+                            solicitudMayorista
+                              ? 'bg-orange-500 text-white border-orange-600 hover:bg-orange-600'
+                              : 'bg-white text-orange-700 border-orange-300 hover:bg-orange-50'
+                          }`}
+                        >
+                          <span className="flex items-center gap-1.5">
+                            <span className="text-base">🏭</span>
+                            <span>
+                              {solicitudMayorista
+                                ? 'Precio MAYORISTA aplicado · pulsa para restaurar'
+                                : 'Solicitar precio MAYORISTA'}
+                            </span>
+                          </span>
+                          {solicitudMayorista && <span className="text-[10px] bg-white text-orange-700 px-1.5 py-0.5 rounded-full font-bold">ACTIVO</span>}
+                        </button>
+                        <p className="text-[10px] text-gray-500 mt-1 leading-tight">
+                          Cliente con lista <strong>{listaActualNombre}</strong> (minorista/intermedio). Si pide al por mayor, activa para aplicar precio MAYORISTA (Lista A).
+                          El pedido llegará marcado a la plataforma central para aprobación.
+                        </p>
                       </div>
                     )}
                   </div>
