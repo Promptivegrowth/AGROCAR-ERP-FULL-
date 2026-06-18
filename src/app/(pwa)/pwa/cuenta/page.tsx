@@ -22,11 +22,19 @@ interface ResumenDia {
 }
 
 interface ComisionMes {
-  porcentaje: number
-  monto_base: number
+  porcentaje: number  // promedio si hay varias familias
+  monto_base: number  // total ventas (facturado real)
   comision_calculada: number
   meta: number | null
   porcentaje_meta: number | null
+  desglose?: Array<{
+    familia_nombre: string
+    monto_ventas: number
+    porcentaje_promedio: number | null
+    monto_comision: number
+    tiene_regla: boolean
+  }>
+  lineas_sin_regla?: number
 }
 
 export default function CuentaPage() {
@@ -105,37 +113,51 @@ export default function CuentaPage() {
         clientesProgramadosHoy: programados?.length ?? 0,
       })
 
-      // Comisiones del mes
+      // Comisiones del mes con desglose por familia (nueva RPC)
       const inicioMes = new Date()
       inicioMes.setDate(1)
       const inicioMesStr = inicioMes.toISOString().split('T')[0]
+      const finMes = new Date()
+      finMes.setMonth(finMes.getMonth() + 1)
+      finMes.setDate(0)
+      const finMesStr = finMes.toISOString().split('T')[0]
 
-      const { data: pedidosMes } = await supabase
-        .from('pedidos')
-        .select('total')
+      const { data: rpcCom } = await (supabase.rpc as any)(
+        'calcular_comision_vendedor',
+        { p_vendedor_id: user.id, p_desde: inicioMesStr, p_hasta: finMesStr },
+      )
+
+      // Meta del mes (si existe)
+      const { data: metaRow } = await (supabase as any)
+        .from('metas_vendedor')
+        .select('monto_meta')
         .eq('vendedor_id', user.id)
-        .gte('created_at', inicioMesStr)
-        .in('estado', ['validado', 'facturado', 'despachado', 'entregado'])
+        .eq('periodo', 'mensual')
+        .eq('anio', inicioMes.getFullYear())
+        .eq('mes', inicioMes.getMonth() + 1)
+        .maybeSingle()
+      const meta = metaRow ? Number(metaRow.monto_meta ?? 0) : null
 
-      const montoMes = pedidosMes?.reduce((acc, p) => acc + ((p as { total?: number }).total ?? 0), 0) ?? 0
-
-      // Buscar regla de comisión
-      const { data: regla } = await (supabase as any)
-        .from('comision_reglas')
-        .select('*')
-        .eq('rol', 'vendedor')
-        .eq('activo', true)
-        .single()
-
-      if (regla && montoMes > 0) {
-        const pct = (regla as { porcentaje?: number }).porcentaje ?? 0
-        const meta = (regla as { meta_mensual?: number }).meta_mensual ?? null
+      if (rpcCom) {
+        const ventas = Number(rpcCom.total_ventas ?? 0)
+        const comision = Number(rpcCom.total_comision ?? 0)
+        const desglose = (rpcCom.desglose ?? []) as any[]
+        // Porcentaje promedio ponderado
+        const pct = ventas > 0 ? (comision / ventas) * 100 : 0
         setComision({
           porcentaje: pct,
-          monto_base: montoMes,
-          comision_calculada: montoMes * (pct / 100),
+          monto_base: ventas,
+          comision_calculada: comision,
           meta,
-          porcentaje_meta: meta ? Math.round((montoMes / meta) * 100) : null,
+          porcentaje_meta: meta ? Math.round((ventas / meta) * 100) : null,
+          desglose: desglose.map((d) => ({
+            familia_nombre: d.familia_nombre,
+            monto_ventas: Number(d.monto_ventas ?? 0),
+            porcentaje_promedio: d.porcentaje_promedio !== null ? Number(d.porcentaje_promedio) : null,
+            monto_comision: Number(d.monto_comision ?? 0),
+            tiene_regla: !!d.tiene_regla,
+          })),
+          lineas_sin_regla: Number(rpcCom.lineas_sin_regla ?? 0),
         })
       }
 
@@ -270,9 +292,45 @@ export default function CuentaPage() {
                   <span className="font-semibold text-gray-900">{formatCurrency(comision.monto_base)}</span>
                 </div>
                 <div className="flex justify-between text-sm">
-                  <span className="text-gray-600">Porcentaje ({comision.porcentaje}%)</span>
+                  <span className="text-gray-600">
+                    Promedio {comision.porcentaje.toFixed(2)}% (por familia)
+                  </span>
                   <span className="font-semibold text-green-700">{formatCurrency(comision.comision_calculada)}</span>
                 </div>
+
+                {/* Desglose por familia */}
+                {comision.desglose && comision.desglose.length > 0 && (
+                  <div className="bg-gray-50 border border-gray-100 rounded-lg p-2 -mx-1">
+                    <p className="text-[10px] font-semibold text-gray-500 uppercase mb-1.5">
+                      Desglose por familia
+                    </p>
+                    <div className="divide-y divide-gray-200">
+                      {comision.desglose.map((d, i) => (
+                        <div key={i} className="flex items-center justify-between py-1 text-xs">
+                          <div className="min-w-0 flex-1">
+                            <p className="font-medium text-gray-800 truncate">{d.familia_nombre}</p>
+                            <p className="text-[10px] text-gray-500">
+                              {formatCurrency(d.monto_ventas)}
+                              {d.porcentaje_promedio !== null
+                                ? ` · ${d.porcentaje_promedio.toFixed(2)}%`
+                                : ' · sin regla'}
+                            </p>
+                          </div>
+                          <span className={`font-mono font-bold text-xs ${
+                            d.tiene_regla ? 'text-green-700' : 'text-gray-400'
+                          }`}>
+                            {formatCurrency(d.monto_comision)}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                    {comision.lineas_sin_regla && comision.lineas_sin_regla > 0 ? (
+                      <p className="text-[9px] text-amber-700 mt-1 italic">
+                        ⚠ {comision.lineas_sin_regla} líneas sin regla configurada
+                      </p>
+                    ) : null}
+                  </div>
+                )}
                 {comision.meta && (
                   <div>
                     <div className="flex justify-between text-sm mb-1.5">

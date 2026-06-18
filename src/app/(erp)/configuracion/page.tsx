@@ -383,9 +383,17 @@ export default function ConfiguracionPage() {
 
   return (
     <div className="space-y-5">
-      <div>
-        <h1 className="text-2xl font-bold text-gray-900">Configuración del Sistema</h1>
-        <p className="text-sm text-gray-500 mt-0.5">Empresa, usuarios, series y parámetros</p>
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">Configuración del Sistema</h1>
+          <p className="text-sm text-gray-500 mt-0.5">Empresa, usuarios, series y parámetros</p>
+        </div>
+        <a
+          href="/configuracion/comisiones"
+          className="inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold bg-blue-600 hover:bg-blue-700 text-white rounded-lg shadow-sm"
+        >
+          📊 Comisiones por Familia
+        </a>
       </div>
 
       {msg && (

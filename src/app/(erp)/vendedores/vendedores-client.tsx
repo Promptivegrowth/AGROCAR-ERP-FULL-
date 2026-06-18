@@ -192,11 +192,23 @@ export default function VendedoresClient({
     periodo_fin: hoyLima(),
     notas: '',
   })
-  const [liqCalc, setLiqCalc] = useState({
-    total_ventas: 0,
-    total_cobrado: 0,
-    comision: 0,
-    base: 'ventas' as 'ventas' | 'cobrado' | 'fijo',
+  const [liqCalc, setLiqCalc] = useState<{
+    total_ventas: number
+    total_cobrado: number
+    comision: number
+    base: 'ventas' | 'cobrado' | 'fijo'
+    desglose?: Array<{
+      familia_id: string | null
+      familia_nombre: string
+      monto_ventas: number
+      porcentaje_promedio: number | null
+      monto_comision: number
+      tiene_regla: boolean
+    }>
+    lineas_sin_regla?: number
+    monto_sin_regla?: number
+  }>({
+    total_ventas: 0, total_cobrado: 0, comision: 0, base: 'ventas',
   })
 
   // ---------- Apertura de modales ----------
@@ -264,23 +276,20 @@ export default function VendedoresClient({
   }
 
   const recalcularLiq = async (v: VendedorData, inicio: string, fin: string) => {
-    // Traer pedidos del vendedor en el rango + comprobantes no anulados
-    const { data: pedidos } = await supabase
-      .from('pedidos')
-      .select('id')
-      .eq('vendedor_id', v.id)
-      .gte('fecha_pedido', inicio)
-      .lte('fecha_pedido', fin)
-    const pedidoIds = (pedidos ?? []).map((p: any) => p.id)
-    let total_ventas = 0
-    if (pedidoIds.length > 0) {
-      const { data: comps } = await supabase
-        .from('comprobantes')
-        .select('total, estado')
-        .in('pedido_id', pedidoIds)
-        .neq('estado', 'anulado')
-      total_ventas = (comps ?? []).reduce((a: number, c: any) => a + Number(c.total ?? 0), 0)
+    // Nuevo método: usa la RPC calcular_comision_vendedor que desglosa por familia
+    const { data: rpc, error } = await (supabase.rpc as any)(
+      'calcular_comision_vendedor',
+      { p_vendedor_id: v.id, p_desde: inicio, p_hasta: fin },
+    )
+    if (error) {
+      console.error('Error calculando comisión:', error)
+      setLiqCalc({ total_ventas: 0, total_cobrado: 0, comision: 0, base: 'ventas' })
+      return
     }
+    const total_ventas = Number(rpc?.total_ventas ?? 0)
+    const comision = Number(rpc?.total_comision ?? 0)
+
+    // Cobros aparte (no usamos para comisión pero sí para mostrar)
     const { data: cobros } = await supabase
       .from('cobros')
       .select('total')
@@ -289,20 +298,15 @@ export default function VendedoresClient({
       .lte('fecha', fin)
     const total_cobrado = (cobros ?? []).reduce((a: number, c: any) => a + Number(c.total ?? 0), 0)
 
-    let comision = 0
-    let base: 'ventas' | 'cobrado' | 'fijo' = 'ventas'
-    if (v.regla) {
-      const porc = Number(v.regla.porcentaje ?? 0)
-      const fijo = Number(v.regla.monto_fijo ?? 0)
-      if (fijo > 0) {
-        comision = fijo
-        base = 'fijo'
-      } else if (porc > 0) {
-        comision = (total_ventas * porc) / 100
-        base = 'ventas'
-      }
-    }
-    setLiqCalc({ total_ventas, total_cobrado, comision, base })
+    setLiqCalc({
+      total_ventas,
+      total_cobrado,
+      comision,
+      base: 'ventas',
+      desglose: (rpc?.desglose ?? []) as any[],
+      lineas_sin_regla: Number(rpc?.lineas_sin_regla ?? 0),
+      monto_sin_regla: Number(rpc?.monto_sin_regla ?? 0),
+    } as any)
   }
 
   // ---------- Operaciones ----------
@@ -1124,9 +1128,54 @@ export default function VendedoresClient({
                 </div>
               </div>
               <div className="p-3 rounded bg-yellow-50 border border-yellow-200 flex items-center justify-between">
-                <span className="text-sm font-medium">Comisión calculada</span>
+                <span className="text-sm font-medium">Comisión calculada (suma por familia)</span>
                 <span className="text-lg font-bold">{formatCurrency(liqCalc.comision)}</span>
               </div>
+
+              {/* Desglose por familia */}
+              {liqCalc.desglose && liqCalc.desglose.length > 0 && (
+                <div>
+                  <p className="text-xs font-semibold text-gray-600 uppercase mb-1.5">Desglose por familia</p>
+                  <div className="border border-gray-200 rounded-lg overflow-hidden">
+                    <table className="w-full text-xs">
+                      <thead className="bg-gray-50 border-b border-gray-200">
+                        <tr>
+                          <th className="text-left p-2">Familia</th>
+                          <th className="text-right p-2">Ventas</th>
+                          <th className="text-right p-2">% aplicado</th>
+                          <th className="text-right p-2">Comisión</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {liqCalc.desglose.map((d, i) => (
+                          <tr key={i} className={`border-b border-gray-100 last:border-0 ${
+                            !d.tiene_regla ? 'bg-red-50/40' : ''
+                          }`}>
+                            <td className="p-2">
+                              {d.familia_nombre}
+                              {!d.tiene_regla && (
+                                <span className="ml-1 text-[9px] text-red-700 font-bold">SIN REGLA</span>
+                              )}
+                            </td>
+                            <td className="p-2 text-right font-mono">{formatCurrency(d.monto_ventas)}</td>
+                            <td className="p-2 text-right font-mono text-gray-600">
+                              {d.porcentaje_promedio !== null ? `${Number(d.porcentaje_promedio).toFixed(2)}%` : '—'}
+                            </td>
+                            <td className="p-2 text-right font-mono font-semibold">{formatCurrency(d.monto_comision)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  {liqCalc.lineas_sin_regla && liqCalc.lineas_sin_regla > 0 ? (
+                    <p className="text-[10px] text-red-700 mt-1.5">
+                      ⚠ {liqCalc.lineas_sin_regla} líneas ({formatCurrency(liqCalc.monto_sin_regla ?? 0)}) sin
+                      regla configurada — no generan comisión.{' '}
+                      <a href="/configuracion/comisiones" className="underline">Configurar comisiones</a>
+                    </p>
+                  ) : null}
+                </div>
+              )}
               <div>
                 <Label>Notas</Label>
                 <Textarea
