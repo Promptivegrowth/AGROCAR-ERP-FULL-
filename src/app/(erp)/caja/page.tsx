@@ -75,7 +75,7 @@ async function getCajaData() {
   if (sesionAbierta?.id) {
     const { data: movRaw } = await supabase
       .from('caja_movimientos')
-      .select('id, sesion_id, tipo, categoria, descripcion, monto, created_at, cobrador_id')
+      .select('id, sesion_id, tipo, categoria, descripcion, monto, created_at, cobrador_id, cobro_id')
       .eq('sesion_id', sesionAbierta.id)
       .order('created_at', { ascending: false })
     movimientos = (movRaw ?? []).map((m: any) => ({
@@ -87,6 +87,7 @@ async function getCajaData() {
       monto: Number(m.monto ?? 0),
       created_at: m.created_at,
       cobrador_id: m.cobrador_id,
+      cobro_id: m.cobro_id,
     }))
   }
 

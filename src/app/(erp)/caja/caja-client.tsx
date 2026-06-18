@@ -62,6 +62,9 @@ export interface MovimientoCaja {
   monto: number
   created_at: string
   cobrador_id: string | null
+  // Si el movimiento corresponde a un cobro, este es el id del cobro.
+  // Para egresos manuales es null.
+  cobro_id: string | null
 }
 
 export interface SesionHistorial {
@@ -208,7 +211,7 @@ export default function CajaClient({
       if (nuevaSesion?.id) {
         const { data: movRaw } = await supabase
           .from('caja_movimientos')
-          .select('id, sesion_id, tipo, categoria, descripcion, monto, created_at, cobrador_id')
+          .select('id, sesion_id, tipo, categoria, descripcion, monto, created_at, cobrador_id, cobro_id')
           .eq('sesion_id', nuevaSesion.id)
           .order('created_at', { ascending: false })
         setMovimientos(
@@ -221,6 +224,7 @@ export default function CajaClient({
             monto: Number(m.monto ?? 0),
             created_at: m.created_at,
             cobrador_id: m.cobrador_id,
+            cobro_id: m.cobro_id ?? null,
           })),
         )
       } else {
@@ -309,15 +313,23 @@ export default function CajaClient({
   })
 
   // ─── Cálculos de la sesión actual ────────────────────────────────────────
+  // Usamos caja_movimientos.sesion_id como fuente de verdad (incluye los
+  // retroactivos que el cajero migró al abrir caja). Filtrar cobros por
+  // fecha_apertura excluiría los retroactivos porque tienen created_at viejo.
   const ingresosCobros = useMemo(() => {
-    // Solo contamos cobros realizados durante la ventana de la sesión abierta
     if (!sesion) {
       return { efectivo: 0, yape: 0, plin: 0, transferencia: 0, total: 0, count: 0 }
     }
-    const aperturaMs = new Date(sesion.fecha_apertura).getTime()
-    const cobrosSesion = cobros.filter(
-      (c) => new Date(c.created_at).getTime() >= aperturaMs
+    // Mapa de cobros por id para acceder a los desgloses (yape/plin/transfer)
+    const cobroById = new Map(cobros.map((c) => [c.id, c]))
+    // Movimientos de ingreso de esta sesión
+    const movsIngreso = movimientos.filter(
+      (m) => m.tipo === 'ingreso' && (m as any).cobro_id
     )
+    const ids = new Set(movsIngreso.map((m: any) => m.cobro_id))
+    const cobrosSesion = Array.from(ids)
+      .map((id) => cobroById.get(id as string))
+      .filter((c): c is NonNullable<typeof c> => !!c)
     return cobrosSesion.reduce(
       (acc, c) => ({
         efectivo: acc.efectivo + c.efectivo,
@@ -329,7 +341,7 @@ export default function CajaClient({
       }),
       { efectivo: 0, yape: 0, plin: 0, transferencia: 0, total: 0, count: 0 }
     )
-  }, [sesion, cobros])
+  }, [sesion, cobros, movimientos])
 
   // Ingresos del DÍA completo (para KPIs y tab cobros)
   const ingresosDia = useMemo(() => {

@@ -101,9 +101,9 @@ export default function CobrosPage() {
   // En modo manual: facturas seleccionadas con su monto a aplicar
   const [aplicacionesManuales, setAplicacionesManuales] = useState<Record<string, string>>({})
 
-  // Estado de caja: si está cerrada, los cobros se registran pero quedan
-  // huérfanos del movimiento de caja hasta que se abra una nueva sesión.
-  const [cajaAbierta, setCajaAbierta] = useState<boolean | null>(null)
+  // (Removed: estado cajaAbierta — el banner asociado fue retirado a
+  // pedido del cliente. El flujo de migración al abrir caja basta para
+  // garantizar trazabilidad sin avisar al vendedor.)
 
   // Cobros del día
   const [cobrosDia, setCobrosDia] = useState<Cobro[]>([])
@@ -122,22 +122,13 @@ export default function CobrosPage() {
 
       // Para cobranzas: cargar TODOS los clientes activos (no solo los del vendedor),
       // porque el vendedor también cumple rol de cobrador para cualquier cliente.
-      const [{ data: clientesData }, { data: cajas }] = await Promise.all([
-        supabase
-          .from('clientes')
-          .select('*')
-          .eq('estado', 'activo')
-          .order('razon_social'),
-        (supabase as any)
-          .from('caja_sesiones')
-          .select('id, estado')
-          .eq('estado', 'abierta')
-          .order('fecha_apertura', { ascending: false })
-          .limit(1),
-      ])
+      const { data: clientesData } = await supabase
+        .from('clientes')
+        .select('*')
+        .eq('estado', 'activo')
+        .order('razon_social')
 
       setClientes(clientesData ?? [])
-      setCajaAbierta((cajas?.length ?? 0) > 0)
     }
     init()
   }, [])
@@ -439,15 +430,6 @@ export default function CobrosPage() {
       .on('postgres_changes' as any, { event: '*', schema: 'public', table: 'comprobantes' }, () => {
         if (clienteSeleccionado) cargarEstadoCuenta(clienteSeleccionado)
       })
-      .on('postgres_changes' as any, { event: '*', schema: 'public', table: 'caja_sesiones' }, async () => {
-        // Si abrieron o cerraron una caja, refrescar el banner
-        const { data: cajas } = await (supabase as any)
-          .from('caja_sesiones')
-          .select('id, estado')
-          .eq('estado', 'abierta')
-          .limit(1)
-        setCajaAbierta((cajas?.length ?? 0) > 0)
-      })
       .subscribe()
     return () => { void supabase.removeChannel(channel) }
   }, [supabase, userId, tab, clienteSeleccionado, cargarCobrosDia, cargarEstadoCuenta])
@@ -483,21 +465,9 @@ export default function CobrosPage() {
       <div className="p-4 space-y-4">
         {tab === 'registrar' && (
           <>
-            {cajaAbierta === false && (
-              <div className="bg-blue-50 border-2 border-blue-200 rounded-xl p-3 flex items-start gap-2">
-                <span className="text-lg shrink-0">ℹ️</span>
-                <div className="flex-1">
-                  <p className="font-semibold text-blue-900 text-sm">
-                    Caja todavía no abierta hoy
-                  </p>
-                  <p className="text-xs text-blue-800 leading-snug mt-0.5">
-                    Puedes registrar el cobro normalmente. El cajero verá tu cobro
-                    al abrir la caja y lo cargará a esa sesión con un solo click
-                    (queda con trazabilidad completa, sin perderse).
-                  </p>
-                </div>
-              </div>
-            )}
+            {/* Banner caja cerrada removido a pedido del cliente — el flujo
+                de migración al abrir caja es suficiente para garantizar
+                trazabilidad, y el aviso confundía al vendedor. */}
             {mensajeExito && (
               <div className="bg-green-50 border border-green-200 text-green-800 rounded-xl p-4 space-y-3">
                 <div className="flex items-center gap-2">
