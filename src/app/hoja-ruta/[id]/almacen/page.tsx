@@ -147,9 +147,11 @@ export default async function HojaRutaAlmacenPage({ params }: { params: Promise<
         </div>
       </div>
 
-      {/* Ancho reducido en print para dejar espacio en blanco a la derecha
-          que el almacenero pueda usar para anotaciones a lapicero. */}
-      <div className="max-w-5xl mx-auto px-6 py-8 print:mx-0 print:ml-0 print:max-w-[150mm] print:px-0 print:py-0">
+      {/* Aprovechamos todo el ancho de la hoja A4 — la columna Observación
+          al final reemplaza el espacio en blanco que antes quedaba a la
+          derecha. Daniel pidió que el almacenero anote ahí, una observación
+          por línea de producto. */}
+      <div className="max-w-5xl mx-auto px-6 py-8 print:max-w-full print:mx-0 print:px-0 print:py-0">
         {/* Membrete empresa */}
         <div className="text-center pb-1 border-b border-gray-200 mb-3">
           <div className="font-bold text-[12pt]">{EMPRESA.razon_social} · RUC {EMPRESA.ruc}</div>
@@ -195,39 +197,44 @@ export default async function HojaRutaAlmacenPage({ params }: { params: Promise<
         <table className="w-full almacen-table border-collapse" style={{ lineHeight: 1.15 }}>
           <thead>
             <tr className="border-b-2 border-gray-700 text-[9pt]">
-              <th className="text-left py-0.5 px-1.5 font-bold w-20">Codigo</th>
+              <th className="text-left py-0.5 px-1.5 font-bold w-16">Código</th>
               <th className="text-left py-0.5 px-1.5 font-bold">Descripción</th>
-              <th className="text-left py-0.5 px-1.5 font-bold w-14">UDM</th>
-              <th className="text-right py-0.5 px-1.5 font-bold w-20">Cantidad</th>
-              <th className="text-right py-0.5 px-1.5 font-bold w-20">Peso</th>
+              <th className="text-left py-0.5 px-1.5 font-bold w-12">UDM</th>
+              <th className="text-right py-0.5 px-1.5 font-bold w-16">Cant.</th>
+              <th className="text-right py-0.5 px-1.5 font-bold w-16">Peso</th>
+              <th className="text-left py-0.5 px-1.5 font-bold border-l border-gray-400" style={{ width: '38%' }}>
+                Observación
+              </th>
             </tr>
           </thead>
           <tbody>
             {filas.length === 0 ? (
               <tr>
-                <td colSpan={5} className="py-6 text-center text-gray-400 italic">
+                <td colSpan={6} className="py-6 text-center text-gray-400 italic">
                   No hay productos asignados a este despacho.
                 </td>
               </tr>
             ) : filas.map((r) => (
-              <tr key={r.producto_id} className="border-b border-gray-100 text-[9pt]" style={{ lineHeight: 1.1 }}>
+              <tr key={r.producto_id} className="border-b border-gray-300 text-[9pt]" style={{ lineHeight: 1.1, height: 22 }}>
                 <td className="py-0 px-1.5 font-mono text-gray-700">{r.codigo}</td>
                 <td className="py-0 px-1.5 text-gray-900">{r.descripcion}</td>
                 <td className="py-0 px-1.5 text-gray-700 uppercase">{r.udm}</td>
                 <td className="py-0 px-1.5 text-right font-mono">{r.cantidad.toFixed(2)}</td>
                 <td className="py-0 px-1.5 text-right font-mono">{r.peso_total.toFixed(2)}</td>
+                <td className="py-0 px-1.5 border-l border-gray-300">&nbsp;</td>
               </tr>
             ))}
           </tbody>
           <tfoot>
             <tr className="border-t-2 border-gray-700 text-[9pt] font-bold">
-              <td colSpan={3} className="py-1 px-1.5 text-right">TOTALES DE PRODUCTOS:</td>
+              <td colSpan={3} className="py-1 px-1.5 text-right">TOTALES:</td>
               <td className="py-1 px-1.5 text-right font-mono">
                 {totalCantidad.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </td>
               <td className="py-1 px-1.5 text-right font-mono">
                 {totalPeso.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </td>
+              <td className="border-l border-gray-400">&nbsp;</td>
             </tr>
           </tfoot>
         </table>

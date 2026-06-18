@@ -201,6 +201,51 @@ export default function FacturacionPage() {
     setEditHistorial(hist ?? [])
   }
 
+  // ── Eliminar una línea del comprobante (no editar a 0, borrar de verdad)
+  async function eliminarLineaComprobante(item: any) {
+    if (!editComp) return
+    if (editItems.length <= 1) {
+      toast.error('No puedes eliminar la última línea', {
+        description: 'Si quieres dejar el comprobante vacío, anúlalo completo.',
+      })
+      return
+    }
+    const desc = item.descripcion ?? item.productos?.nombre ?? 'esta línea'
+    if (!confirm(`¿Eliminar "${desc}" del comprobante?\n\nEsta acción queda registrada en el historial.`)) return
+    setEditSaving(true)
+    const motivo = editNota.trim() || 'Producto retirado del comprobante'
+    const { error } = await (supabase.rpc as any)('eliminar_item_comprobante', {
+      p_item_id: item.id,
+      p_motivo: motivo,
+    })
+    setEditSaving(false)
+    if (error) {
+      toast.error('No se pudo eliminar la línea', { description: error.message })
+      return
+    }
+    toast.success('Línea eliminada', { description: 'Totales recalculados' })
+    // Refrescar items y comprobante
+    const { data: items } = await (supabase as any)
+      .from('comprobantes_items')
+      .select('*, productos(codigo, nombre)')
+      .eq('comprobante_id', editComp.id)
+    setEditItems((items ?? []).map((it: any) => ({ ...it, _cantidad: String(it.cantidad), _precio: String(it.precio_unitario) })))
+    const { data: compRefresh } = await (supabase as any)
+      .from('comprobantes')
+      .select('subtotal, igv, total, editado, editado_at')
+      .eq('id', editComp.id)
+      .single()
+    if (compRefresh) setEditComp({ ...editComp, ...compRefresh })
+    // Refrescar historial
+    const { data: hist } = await (supabase as any)
+      .from('comprobantes_ediciones')
+      .select('*')
+      .eq('comprobante_id', editComp.id)
+      .order('created_at', { ascending: false })
+    setEditHistorial(hist ?? [])
+    loadData()
+  }
+
   // ── Anulación de comprobante (mantiene correlativo, libera pedido para re-facturar)
   function abrirAnular(comp: any) {
     setAnularComp(comp)
@@ -1091,11 +1136,12 @@ export default function FacturacionPage() {
                         <th className="text-right py-2 px-3 font-semibold text-gray-600 w-24">Cantidad</th>
                         <th className="text-right py-2 px-3 font-semibold text-gray-600 w-28">P. Unit.</th>
                         <th className="text-right py-2 px-3 font-semibold text-gray-600 w-28">Subtotal</th>
+                        <th className="w-10"></th>
                       </tr>
                     </thead>
                     <tbody>
                       {editItems.length === 0 ? (
-                        <tr><td colSpan={4} className="py-4 text-center text-gray-400 italic">Sin items para editar</td></tr>
+                        <tr><td colSpan={5} className="py-4 text-center text-gray-400 italic">Sin items para editar</td></tr>
                       ) : editItems.map((it, idx) => {
                         const subtotalCalc = (parseFloat(it._cantidad) || 0) * (parseFloat(it._precio) || 0)
                         return (
@@ -1133,6 +1179,19 @@ export default function FacturacionPage() {
                             </td>
                             <td className="py-1.5 px-3 text-right font-mono">
                               {formatCurrency(subtotalCalc)}
+                            </td>
+                            <td className="py-1.5 px-1 text-center">
+                              <button
+                                type="button"
+                                onClick={() => eliminarLineaComprobante(it)}
+                                disabled={editSaving || editItems.length <= 1}
+                                title={editItems.length <= 1
+                                  ? 'No se puede eliminar la única línea — mejor anula el comprobante'
+                                  : 'Eliminar esta línea del comprobante'}
+                                className="text-red-600 hover:bg-red-50 disabled:text-gray-300 disabled:hover:bg-transparent rounded p-1 transition-colors"
+                              >
+                                <span className="text-base leading-none">🗑️</span>
+                              </button>
                             </td>
                           </tr>
                         )
