@@ -172,15 +172,39 @@ export default function ReportesPage() {
           <h1 className="text-2xl font-bold text-gray-900">Reportes y KPIs</h1>
           <p className="text-sm text-gray-500 mt-0.5">Análisis de ventas, cobranzas y comisiones</p>
         </div>
-        <a
-          href="/reportes/rendicion-diaria"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold bg-amber-100 text-amber-900 border border-amber-300 rounded-md hover:bg-amber-200"
-          title="Rendición diaria por vendedor y repartidor (imprimible)"
-        >
-          📊 Rendición diaria por persona
-        </a>
+        <div className="flex flex-wrap gap-2">
+          <a
+            href="/reportes/rendicion-diaria"
+            target="_blank" rel="noopener noreferrer"
+            className="inline-flex items-center gap-2 px-3 py-2 text-xs font-semibold bg-amber-100 text-amber-900 border border-amber-300 rounded-md hover:bg-amber-200"
+            title="Rendición diaria por vendedor y repartidor"
+          >
+            📊 Rendición diaria
+          </a>
+          <a
+            href="/reportes/ventas-productos"
+            target="_blank" rel="noopener noreferrer"
+            className="inline-flex items-center gap-2 px-3 py-2 text-xs font-semibold bg-purple-100 text-purple-900 border border-purple-300 rounded-md hover:bg-purple-200"
+            title="Productos y familias más vendidos"
+          >
+            🏆 Productos más vendidos
+          </a>
+          <a
+            href="/reportes/catalogo"
+            target="_blank" rel="noopener noreferrer"
+            className="inline-flex items-center gap-2 px-3 py-2 text-xs font-semibold bg-blue-100 text-blue-900 border border-blue-300 rounded-md hover:bg-blue-200"
+            title="Catálogo completo con precios A/B/C"
+          >
+            📦 Catálogo de productos
+          </a>
+        </div>
+      </div>
+
+      {/* Aviso: cómo acceder a reportes de cliente o persona individual */}
+      <div className="bg-blue-50 border border-blue-200 rounded-lg px-3 py-2 text-xs text-blue-800">
+        💡 <strong>Reportes individuales</strong>:
+        <a href="/clientes" className="underline ml-1">Clientes</a> (botón 📊 en la ficha del cliente) ·
+        Vendedores: en <a href="/reportes/rendicion-diaria" className="underline">Rendición diaria</a> click sobre el nombre.
       </div>
 
       {/* Filtros */}
