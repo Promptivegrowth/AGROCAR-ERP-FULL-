@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState, useCallback } from 'react'
-import { FileText, Loader2, CheckCircle, AlertCircle, DollarSign, Receipt, Eye, ExternalLink } from 'lucide-react'
+import { FileText, Loader2, CheckCircle, AlertCircle, DollarSign, Receipt, Eye, ExternalLink, Search } from 'lucide-react'
 import Link from 'next/link'
 import VentaDirectaDialog from './venta-directa-dialog'
 import { toast } from 'sonner'
@@ -37,6 +37,9 @@ export default function FacturacionPage() {
   const [filtroDesde, setFiltroDesde] = useState<string>('')
   const [filtroHasta, setFiltroHasta] = useState<string>('')
   const [filtroTipo, setFiltroTipo] = useState<'todos' | 'factura' | 'boleta' | 'nota_pedido_interna'>('todos')
+  // Búsqueda libre: número/serie de comprobante, número de pedido, RUC/DNI,
+  // nombre del cliente o nombre del vendedor — para ubicar facturas rápido.
+  const [filtroBusqueda, setFiltroBusqueda] = useState<string>('')
   // Edición controlada
   const [editarOpen, setEditarOpen] = useState(false)
   const [editComp, setEditComp] = useState<any>(null)
@@ -91,10 +94,12 @@ export default function FacturacionPage() {
         .from('comprobantes')
         .select(`
           id, serie, numero, tipo, fecha_emision, total, estado, editado, editado_at, enviado_sunat,
-          clientes(razon_social)
+          cliente_externo_nombre, cliente_externo_doc,
+          clientes(razon_social, ruc, dni),
+          pedidos(numero, profiles!pedidos_vendedor_id_fkey(full_name))
         `)
         .order('fecha_emision', { ascending: false })
-        .limit(200),
+        .limit(1000),
       // TC más reciente disponible (si hoy no hay, usa el último día hábil)
       supabase
         .from('tipo_cambio')
@@ -148,6 +153,25 @@ export default function FacturacionPage() {
     if (filtroTipo !== 'todos' && c.tipo !== filtroTipo) return false
     if (filtroDesde && c.fecha_emision < filtroDesde) return false
     if (filtroHasta && c.fecha_emision > filtroHasta) return false
+    // Búsqueda libre: número, serie-número, cliente (razón social, RUC, DNI),
+    // vendedor (full_name) o número de pedido.
+    const q = filtroBusqueda.trim().toLowerCase()
+    if (q.length > 0) {
+      const numeroPad = `${c.serie}-${String(c.numero).padStart(8, '0')}`.toLowerCase()
+      const numeroSimple = String(c.numero ?? '').toLowerCase()
+      const cliNombre = (c.clientes?.razon_social ?? c.cliente_externo_nombre ?? '').toLowerCase()
+      const cliDoc = (c.clientes?.ruc ?? c.clientes?.dni ?? c.cliente_externo_doc ?? '').toLowerCase()
+      const vend = (c.pedidos?.profiles?.full_name ?? '').toLowerCase()
+      const pedNum = (c.pedidos?.numero ?? '').toLowerCase()
+      const hit =
+        numeroPad.includes(q) ||
+        numeroSimple.includes(q) ||
+        cliNombre.includes(q) ||
+        cliDoc.includes(q) ||
+        vend.includes(q) ||
+        pedNum.includes(q)
+      if (!hit) return false
+    }
     return true
   })
 
@@ -804,32 +828,64 @@ export default function FacturacionPage() {
             </CardHeader>
             <CardContent className="p-0">
               {/* Barra de filtros + acciones por lote */}
-              <div className="px-4 pb-3 border-b border-gray-100 flex flex-wrap items-end gap-2">
-                <div>
-                  <Label className="text-[10px] uppercase tracking-wide text-gray-500">Desde</Label>
-                  <Input type="date" value={filtroDesde} onChange={(e) => setFiltroDesde(e.target.value)} className="h-8 text-xs w-36" />
+              <div className="px-4 pb-3 border-b border-gray-100 space-y-2">
+                {/* Búsqueda libre prominente */}
+                <div className="relative">
+                  <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                  <Input
+                    type="text"
+                    value={filtroBusqueda}
+                    onChange={(e) => setFiltroBusqueda(e.target.value)}
+                    placeholder="Buscar por número (F001-0000123, 98709, etc.), cliente (razón social/RUC/DNI), vendedor o N° de pedido"
+                    className="h-9 text-sm pl-9 pr-10 w-full"
+                  />
+                  {filtroBusqueda && (
+                    <button
+                      onClick={() => setFiltroBusqueda('')}
+                      type="button"
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-700 text-xs"
+                      title="Limpiar búsqueda"
+                    >
+                      ✕
+                    </button>
+                  )}
                 </div>
-                <div>
-                  <Label className="text-[10px] uppercase tracking-wide text-gray-500">Hasta</Label>
-                  <Input type="date" value={filtroHasta} onChange={(e) => setFiltroHasta(e.target.value)} className="h-8 text-xs w-36" />
-                </div>
-                <div>
-                  <Label className="text-[10px] uppercase tracking-wide text-gray-500">Tipo</Label>
-                  <select
-                    value={filtroTipo}
-                    onChange={(e) => setFiltroTipo(e.target.value as any)}
-                    className="h-8 text-xs px-2 border border-gray-300 rounded-md bg-white"
-                  >
-                    <option value="todos">Todos</option>
-                    <option value="factura">Facturas</option>
-                    <option value="boleta">Boletas</option>
-                    <option value="nota_pedido_interna">Internos</option>
-                  </select>
-                </div>
-                <div className="flex-1" />
-                <Button variant="outline" size="sm" onClick={seleccionarTodos} disabled={comprobantesFiltrados.length === 0} className="text-xs h-8">
-                  Seleccionar todos
-                </Button>
+                <div className="flex flex-wrap items-end gap-2">
+                  <div>
+                    <Label className="text-[10px] uppercase tracking-wide text-gray-500">Desde</Label>
+                    <Input type="date" value={filtroDesde} onChange={(e) => setFiltroDesde(e.target.value)} className="h-8 text-xs w-36" />
+                  </div>
+                  <div>
+                    <Label className="text-[10px] uppercase tracking-wide text-gray-500">Hasta</Label>
+                    <Input type="date" value={filtroHasta} onChange={(e) => setFiltroHasta(e.target.value)} className="h-8 text-xs w-36" />
+                  </div>
+                  <div>
+                    <Label className="text-[10px] uppercase tracking-wide text-gray-500">Tipo</Label>
+                    <select
+                      value={filtroTipo}
+                      onChange={(e) => setFiltroTipo(e.target.value as any)}
+                      className="h-8 text-xs px-2 border border-gray-300 rounded-md bg-white"
+                    >
+                      <option value="todos">Todos</option>
+                      <option value="factura">Facturas</option>
+                      <option value="boleta">Boletas</option>
+                      <option value="nota_pedido_interna">Internos</option>
+                    </select>
+                  </div>
+                  {(filtroDesde || filtroHasta || filtroTipo !== 'todos' || filtroBusqueda) && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => { setFiltroDesde(''); setFiltroHasta(''); setFiltroTipo('todos'); setFiltroBusqueda('') }}
+                      className="text-xs h-8 text-gray-600"
+                    >
+                      Limpiar filtros
+                    </Button>
+                  )}
+                  <div className="flex-1" />
+                  <Button variant="outline" size="sm" onClick={seleccionarTodos} disabled={comprobantesFiltrados.length === 0} className="text-xs h-8">
+                    Seleccionar todos
+                  </Button>
                 {seleccionados.size > 0 && (
                   <Button variant="outline" size="sm" onClick={limpiarSeleccion} className="text-xs h-8">
                     Limpiar
@@ -851,6 +907,7 @@ export default function FacturacionPage() {
                 >
                   🧾 Imprimir Tickets ({seleccionados.size})
                 </Button>
+                </div>
               </div>
 
               {loading ? (
@@ -874,7 +931,7 @@ export default function FacturacionPage() {
                             className="rounded"
                           />
                         </th>
-                        {['Serie-Número', 'Tipo', 'Cliente', 'Fecha', 'Total', 'Estado', 'Acciones'].map((h) => (
+                        {['Serie-Número', 'Tipo', 'Cliente', 'Vendedor', 'Fecha', 'Total', 'Estado', 'Acciones'].map((h) => (
                           <th key={h} className="text-left py-3 px-4 text-xs font-semibold text-gray-500 uppercase tracking-wide">
                             {h}
                           </th>
@@ -914,7 +971,17 @@ export default function FacturacionPage() {
                               )}
                             </td>
                             <td className="py-3 px-4 capitalize text-xs text-gray-600">{c.tipo}</td>
-                            <td className="py-3 px-4 text-gray-800">{(c.clientes as any)?.razon_social ?? '—'}</td>
+                            <td className="py-3 px-4 text-gray-800">
+                              <div className="truncate max-w-[220px]">
+                                {(c.clientes as any)?.razon_social ?? (c as any).cliente_externo_nombre ?? '—'}
+                              </div>
+                              <div className="text-[10px] text-gray-400 font-mono">
+                                {(c.clientes as any)?.ruc ?? (c.clientes as any)?.dni ?? (c as any).cliente_externo_doc ?? ''}
+                              </div>
+                            </td>
+                            <td className="py-3 px-4 text-xs text-gray-700 truncate max-w-[140px]">
+                              {(c as any).pedidos?.profiles?.full_name ?? '—'}
+                            </td>
                             <td className="py-3 px-4 text-gray-500 text-xs">{formatDate(c.fecha_emision)}</td>
                             <td className="py-3 px-4 font-semibold text-gray-800">{formatCurrency(c.total ?? 0)}</td>
                             <td className="py-3 px-4">
