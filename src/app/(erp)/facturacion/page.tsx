@@ -46,6 +46,11 @@ export default function FacturacionPage() {
   const [editClienteNombre, setEditClienteNombre] = useState('')
   const [editClienteDoc, setEditClienteDoc] = useState('')
   const [editClienteMotivo, setEditClienteMotivo] = useState('')
+  // ID del cliente registrado seleccionado (null = cliente externo / texto libre)
+  const [editClienteId, setEditClienteId] = useState<string | null>(null)
+  // Lista de clientes registrados (lazy load al abrir el dialog)
+  const [clientesLista, setClientesLista] = useState<Array<{ id: string; razon_social: string; ruc: string | null; dni: string | null }>>([])
+  const [showClienteDropdown, setShowClienteDropdown] = useState(false)
   // Anulación
   const [anularOpen, setAnularOpen] = useState(false)
   const [anularComp, setAnularComp] = useState<any>(null)
@@ -229,12 +234,43 @@ export default function FacturacionPage() {
   }
 
   // ── Cambio de cliente (reventa a otro cliente)
-  function abrirEditarCliente() {
+  async function abrirEditarCliente() {
     if (!editComp) return
     setEditClienteNombre(editComp.clientes?.razon_social ?? editComp.cliente_externo_nombre ?? '')
     setEditClienteDoc(editComp.clientes?.ruc ?? editComp.clientes?.dni ?? editComp.cliente_externo_doc ?? '')
     setEditClienteMotivo('')
+    setEditClienteId(editComp.cliente_id ?? null)
+    setShowClienteDropdown(false)
     setEditClienteOpen(true)
+    // Cargar lista de clientes activos para autocomplete (solo una vez)
+    if (clientesLista.length === 0) {
+      const { data } = await supabase
+        .from('clientes')
+        .select('id, razon_social, ruc, dni')
+        .eq('estado', 'activo')
+        .order('razon_social')
+      setClientesLista((data as any) ?? [])
+    }
+  }
+
+  // Filtro del dropdown según búsqueda en el input nombre
+  const clientesFiltrados = (() => {
+    const q = editClienteNombre.trim().toLowerCase()
+    if (q.length < 2) return []
+    return clientesLista
+      .filter((c) =>
+        c.razon_social.toLowerCase().includes(q) ||
+        (c.ruc ?? '').includes(q) ||
+        (c.dni ?? '').includes(q),
+      )
+      .slice(0, 8)
+  })()
+
+  function seleccionarClienteDropdown(c: { id: string; razon_social: string; ruc: string | null; dni: string | null }) {
+    setEditClienteId(c.id)
+    setEditClienteNombre(c.razon_social)
+    setEditClienteDoc(c.ruc ?? c.dni ?? '')
+    setShowClienteDropdown(false)
   }
 
   async function confirmarEditarCliente() {
@@ -244,11 +280,13 @@ export default function FacturacionPage() {
       return
     }
     setEditSaving(true)
+    // Si el usuario seleccionó del dropdown, pasamos cliente_id; sino, lo
+    // guardamos como cliente externo (texto libre) para casos no registrados.
     const { error } = await (supabase.rpc as any)('editar_cliente_comprobante', {
       p_comprobante_id: editComp.id,
-      p_cliente_id: null,  // editamos como externo (más flexible que reasignar a cliente_id)
-      p_cliente_externo_nombre: editClienteNombre.trim(),
-      p_cliente_externo_doc: editClienteDoc.trim() || null,
+      p_cliente_id: editClienteId,
+      p_cliente_externo_nombre: editClienteId ? null : editClienteNombre.trim(),
+      p_cliente_externo_doc: editClienteId ? null : (editClienteDoc.trim() || null),
       p_motivo: editClienteMotivo.trim() || 'Reventa / cambio de cliente',
     })
     setEditSaving(false)
@@ -258,7 +296,13 @@ export default function FacturacionPage() {
     }
     toast.success('Cliente del comprobante actualizado')
     setEditClienteOpen(false)
-    abrirEditar({ ...editComp, cliente_externo_nombre: editClienteNombre.trim(), clientes: null })
+    // Recargar el comprobante para reflejar el cliente nuevo
+    const { data: refresh } = await (supabase as any)
+      .from('comprobantes')
+      .select(`*, clientes(razon_social, ruc, dni), pedidos(vendedor_id)`)
+      .eq('id', editComp.id)
+      .single()
+    if (refresh) abrirEditar(refresh)
     loadData()
   }
 
@@ -1217,23 +1261,64 @@ export default function FacturacionPage() {
               <strong> Solo disponible si el comprobante NO se ha enviado a SUNAT.</strong> Queda
               registrado en el historial.
             </div>
-            <div>
-              <Label className="text-sm font-semibold">Nueva razón social / Nombre *</Label>
+            <div className="relative">
+              <Label className="text-sm font-semibold">
+                Nueva razón social / Nombre *
+                {editClienteId && (
+                  <span className="ml-2 inline-flex items-center gap-1 text-[10px] bg-green-100 text-green-800 px-1.5 py-0.5 rounded font-bold">
+                    ✓ Cliente registrado
+                  </span>
+                )}
+              </Label>
               <Input
                 value={editClienteNombre}
-                onChange={(e) => setEditClienteNombre(e.target.value)}
-                placeholder="Ej: PARRILLADAS TRADICION E.I.R.L."
+                onChange={(e) => {
+                  setEditClienteNombre(e.target.value)
+                  setEditClienteId(null) // si edita el texto, deja de ser "registrado"
+                  setShowClienteDropdown(true)
+                }}
+                onFocus={() => setShowClienteDropdown(true)}
+                onBlur={() => setTimeout(() => setShowClienteDropdown(false), 200)}
+                placeholder="Escribe para buscar entre clientes guardados"
                 className="mt-1"
+                autoComplete="off"
               />
+              {/* Dropdown de clientes filtrados */}
+              {showClienteDropdown && clientesFiltrados.length > 0 && (
+                <div className="absolute z-50 mt-1 left-0 right-0 bg-white border border-gray-300 rounded-lg shadow-lg max-h-56 overflow-y-auto">
+                  {clientesFiltrados.map((c) => (
+                    <button
+                      key={c.id}
+                      type="button"
+                      onMouseDown={(e) => { e.preventDefault(); seleccionarClienteDropdown(c) }}
+                      className="w-full text-left px-3 py-2 hover:bg-blue-50 border-b border-gray-100 last:border-0"
+                    >
+                      <p className="text-sm font-semibold text-gray-900 truncate">{c.razon_social}</p>
+                      <p className="text-[10px] text-gray-500 font-mono">
+                        {c.ruc ? `RUC ${c.ruc}` : c.dni ? `DNI ${c.dni}` : 'Sin documento'}
+                      </p>
+                    </button>
+                  ))}
+                </div>
+              )}
+              {showClienteDropdown && editClienteNombre.trim().length >= 2 && clientesFiltrados.length === 0 && (
+                <div className="absolute z-50 mt-1 left-0 right-0 bg-amber-50 border border-amber-200 rounded-lg p-2 text-[11px] text-amber-800">
+                  No coincide con clientes registrados. Se guardará como cliente externo (texto libre).
+                </div>
+              )}
             </div>
             <div>
-              <Label className="text-sm font-semibold">RUC o DNI</Label>
+              <Label className="text-sm font-semibold">
+                RUC o DNI
+                {editClienteId && <span className="text-[10px] text-gray-400 font-normal ml-1">(auto del cliente)</span>}
+              </Label>
               <Input
                 value={editClienteDoc}
                 onChange={(e) => setEditClienteDoc(e.target.value)}
                 placeholder="11 dígitos para RUC, 8 para DNI"
                 className="mt-1"
                 maxLength={11}
+                disabled={!!editClienteId}
               />
             </div>
             <div>
