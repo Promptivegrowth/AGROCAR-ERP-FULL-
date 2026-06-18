@@ -2,10 +2,11 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
-import { ArrowLeft, FileSpreadsheet, Printer, Loader2 } from 'lucide-react'
+import { ArrowLeft, FileSpreadsheet, Printer, Loader2, Calendar } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { hoyLima } from '@/lib/fechas-pe'
+import { EMPRESA, SLOGAN_FONT_STACK } from '@/lib/empresa'
 
 interface DiaRow {
   fecha: string
@@ -140,16 +141,40 @@ export default function MiReportePage() {
   }), { pedidos_count: 0, pedidos_monto: 0, comprobantes_count: 0, comprobantes_monto: 0,
        cobros_count: 0, efectivo: 0, yape: 0, plin: 0, transferencia: 0, cobros_total: 0 })
 
+  const ayer = (() => {
+    const d = new Date(hoy + 'T00:00:00-05:00')
+    d.setDate(d.getDate() - 1)
+    return d.toISOString().slice(0, 10)
+  })()
+  const semana = (() => {
+    const d = new Date(hoy + 'T00:00:00-05:00')
+    d.setDate(d.getDate() - 6)
+    return d.toISOString().slice(0, 10)
+  })()
+  const setSoloHoy = () => { setDesde(hoy); setHasta(hoy) }
+  const setSoloAyer = () => { setDesde(ayer); setHasta(ayer) }
+  const setUltimos7 = () => { setDesde(semana); setHasta(hoy) }
+
   return (
     <div className="min-h-full bg-gray-50 print:bg-white">
       <style>{`
         @media print {
-          @page { size: A4 portrait; margin: 10mm; }
+          @page { size: A4 portrait; margin: 12mm; }
+          html, body { background: white !important; }
+          body { -webkit-print-color-adjust: exact; print-color-adjust: exact;
+            font-family: 'Helvetica Neue', Arial, sans-serif !important; color: #111 !important; }
           .no-print { display: none !important; }
+          .print-only { display: block !important; }
+          .mi-reporte-doc { font-size: 11pt !important; line-height: 1.4 !important; }
+          .mi-reporte-doc table { font-size: 10pt !important; }
+          .mi-reporte-doc th, .mi-reporte-doc td { padding: 4px 6px !important; }
+          .mi-reporte-doc tr { page-break-inside: avoid; }
+          .mi-reporte-doc thead { display: table-header-group; }
         }
+        .print-only { display: none; }
       `}</style>
 
-      {/* Header */}
+      {/* Header — solo pantalla */}
       <div className="bg-black text-white px-4 pt-6 pb-4 border-b-4 border-[#FBE600] no-print">
         <div className="flex items-center gap-2 mb-3">
           <button
@@ -162,6 +187,44 @@ export default function MiReportePage() {
             <h1 className="text-lg font-bold">Mi Reporte</h1>
             <p className="text-xs text-gray-300">{userName} · {userRol}</p>
           </div>
+        </div>
+
+        {/* Atajos rápidos */}
+        <div className="flex gap-1.5 mb-2">
+          <button
+            type="button"
+            onClick={setSoloHoy}
+            className={`flex-1 inline-flex items-center justify-center gap-1 h-8 text-[11px] font-semibold rounded border ${
+              desde === hoy && hasta === hoy
+                ? 'bg-[#FBE600] text-black border-[#FBE600]'
+                : 'bg-white/10 text-white border-white/30 hover:bg-white/20'
+            }`}
+          >
+            <Calendar className="w-3 h-3" />
+            Hoy
+          </button>
+          <button
+            type="button"
+            onClick={setSoloAyer}
+            className={`flex-1 inline-flex items-center justify-center gap-1 h-8 text-[11px] font-semibold rounded border ${
+              desde === ayer && hasta === ayer
+                ? 'bg-[#FBE600] text-black border-[#FBE600]'
+                : 'bg-white/10 text-white border-white/30 hover:bg-white/20'
+            }`}
+          >
+            Ayer
+          </button>
+          <button
+            type="button"
+            onClick={setUltimos7}
+            className={`flex-1 inline-flex items-center justify-center gap-1 h-8 text-[11px] font-semibold rounded border ${
+              desde === semana && hasta === hoy
+                ? 'bg-[#FBE600] text-black border-[#FBE600]'
+                : 'bg-white/10 text-white border-white/30 hover:bg-white/20'
+            }`}
+          >
+            7 días
+          </button>
         </div>
 
         <div className="flex gap-2 items-center text-xs">
@@ -204,7 +267,29 @@ export default function MiReportePage() {
         </div>
       </div>
 
-      <div className="p-3 space-y-3">
+      {/* Cabecera brandeada — solo se ve al imprimir */}
+      <div className="print-only mb-4 px-2">
+        <div className="flex items-center justify-between border-b-2 border-black pb-3">
+          <div className="flex items-start gap-3">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/logo-agrocar.png" alt="AGROCAR" style={{ height: 50 }} />
+            <div>
+              <p className="font-bold text-base">{EMPRESA.razon_social}</p>
+              <p style={{ fontFamily: SLOGAN_FONT_STACK, fontSize: 15, lineHeight: 1 }}>{EMPRESA.slogan}</p>
+              <p className="text-[10px] text-gray-700">RUC {EMPRESA.ruc} · {EMPRESA.direccion_comercial}</p>
+              <p className="text-[10px] text-gray-700">Tel. {EMPRESA.telefono} · {EMPRESA.correo}</p>
+            </div>
+          </div>
+          <div className="text-right">
+            <p className="text-sm font-bold">Mi Reporte</p>
+            <p className="text-xs">{userName}</p>
+            <p className="text-[10px] text-gray-600">{userRol}</p>
+            <p className="text-[10px] text-gray-600">Del {formatDate(desde)} al {formatDate(hasta)}</p>
+          </div>
+        </div>
+      </div>
+
+      <div className="mi-reporte-doc p-3 space-y-3 print:p-0">
         {/* Totales del período */}
         <div className="bg-white border border-gray-200 rounded-xl p-3">
           <h2 className="text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-2">

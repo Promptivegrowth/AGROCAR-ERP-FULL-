@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   Search, Loader2, CreditCard, DollarSign, AlertTriangle, Users, CheckCircle2,
@@ -70,6 +70,18 @@ export default function CobranzasClient({
 
   const [search, setSearch] = useState('')
   const [filtroEstado, setFiltroEstado] = useState<'todos' | EstadoDeuda>('todos')
+
+  // Refresco en tiempo real: si llega un cobro o se aplica a una factura,
+  // refrescamos la página (router.refresh re-ejecuta el server component).
+  useEffect(() => {
+    const channel = supabase
+      .channel('cobranzas-realtime')
+      .on('postgres_changes' as any, { event: '*', schema: 'public', table: 'cobros' }, () => router.refresh())
+      .on('postgres_changes' as any, { event: '*', schema: 'public', table: 'cobros_aplicaciones' }, () => router.refresh())
+      .on('postgres_changes' as any, { event: '*', schema: 'public', table: 'comprobantes' }, () => router.refresh())
+      .subscribe()
+    return () => { void supabase.removeChannel(channel) }
+  }, [supabase, router])
 
   const [detailOpen, setDetailOpen] = useState(false)
   const [pagoOpen, setPagoOpen] = useState(false)

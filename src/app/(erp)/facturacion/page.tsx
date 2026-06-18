@@ -103,6 +103,17 @@ export default function FacturacionPage() {
 
   useEffect(() => { loadData() }, [loadData])
 
+  // Refresco en tiempo real: cuando un vendedor crea un pedido o se emite/edita
+  // un comprobante, la página se actualiza sola sin recargar.
+  useEffect(() => {
+    const channel = supabase
+      .channel('facturacion-realtime')
+      .on('postgres_changes' as any, { event: '*', schema: 'public', table: 'pedidos' }, () => loadData())
+      .on('postgres_changes' as any, { event: '*', schema: 'public', table: 'comprobantes' }, () => loadData())
+      .subscribe()
+    return () => { void supabase.removeChannel(channel) }
+  }, [supabase, loadData])
+
   // Cargar rol del usuario para gating de edición (solo admin/gerente/facturador editan)
   useEffect(() => {
     let active = true

@@ -425,6 +425,33 @@ export default function CobrosPage() {
     }
   }, [tab, userId, cargarCobrosDia])
 
+  // Realtime: si llega un cobro nuevo (yo u otro vendedor) o se aplica
+  // a una factura, refrescamos la pestaña "Cobros del Día" y el estado
+  // de cuenta del cliente seleccionado.
+  useEffect(() => {
+    if (!userId) return
+    const channel = supabase
+      .channel('pwa-cobros-realtime')
+      .on('postgres_changes' as any, { event: '*', schema: 'public', table: 'cobros' }, () => {
+        if (tab === 'del-dia') cargarCobrosDia()
+        if (clienteSeleccionado) cargarEstadoCuenta(clienteSeleccionado)
+      })
+      .on('postgres_changes' as any, { event: '*', schema: 'public', table: 'comprobantes' }, () => {
+        if (clienteSeleccionado) cargarEstadoCuenta(clienteSeleccionado)
+      })
+      .on('postgres_changes' as any, { event: '*', schema: 'public', table: 'caja_sesiones' }, async () => {
+        // Si abrieron o cerraron una caja, refrescar el banner
+        const { data: cajas } = await (supabase as any)
+          .from('caja_sesiones')
+          .select('id, estado')
+          .eq('estado', 'abierta')
+          .limit(1)
+        setCajaAbierta((cajas?.length ?? 0) > 0)
+      })
+      .subscribe()
+    return () => { void supabase.removeChannel(channel) }
+  }, [supabase, userId, tab, clienteSeleccionado, cargarCobrosDia, cargarEstadoCuenta])
+
   const totalDia = cobrosDia.reduce((acc, c) => acc + (c.total ?? 0), 0)
 
   return (
@@ -457,16 +484,16 @@ export default function CobrosPage() {
         {tab === 'registrar' && (
           <>
             {cajaAbierta === false && (
-              <div className="bg-amber-50 border-2 border-amber-300 rounded-xl p-3 flex items-start gap-2">
-                <span className="text-lg shrink-0">⚠️</span>
+              <div className="bg-blue-50 border-2 border-blue-200 rounded-xl p-3 flex items-start gap-2">
+                <span className="text-lg shrink-0">ℹ️</span>
                 <div className="flex-1">
-                  <p className="font-semibold text-amber-900 text-sm">
-                    Caja cerrada
+                  <p className="font-semibold text-blue-900 text-sm">
+                    Caja todavía no abierta hoy
                   </p>
-                  <p className="text-xs text-amber-800 leading-snug mt-0.5">
-                    No hay una sesión de caja abierta. El cobro se registrará igual y
-                    se asociará a la próxima sesión cuando se abra. Coordina con el
-                    cajero para abrir la caja del día.
+                  <p className="text-xs text-blue-800 leading-snug mt-0.5">
+                    Puedes registrar el cobro normalmente. El cajero verá tu cobro
+                    al abrir la caja y lo cargará a esa sesión con un solo click
+                    (queda con trazabilidad completa, sin perderse).
                   </p>
                 </div>
               </div>
@@ -632,7 +659,7 @@ export default function CobrosPage() {
                         </p>
                       ) : (
                         <div>
-                          {/* Selector de modo: FIFO automático vs manual touch */}
+                          {/* Selector de modo: Automático vs Manual touch */}
                           <div className="flex items-center justify-between mb-1.5">
                             <p className="text-[11px] font-medium text-gray-500 uppercase">
                               Pendientes ({estadoCuenta.comprobantes.length})
@@ -641,29 +668,31 @@ export default function CobrosPage() {
                               <button
                                 type="button"
                                 onClick={() => setModoAplicacion('fifo')}
+                                title="El cliente paga sin especificar factura. El sistema aplica el cobro a las más antiguas primero."
                                 className={`px-2.5 py-0.5 text-[10px] font-semibold rounded-full transition-colors ${
                                   modoAplicacion === 'fifo' ? 'bg-white text-black shadow-sm' : 'text-gray-500'
                                 }`}
                               >
-                                🤖 FIFO
+                                🤖 Automático
                               </button>
                               <button
                                 type="button"
                                 onClick={() => setModoAplicacion('manual')}
+                                title="El cliente dice 'esto es para la factura X'. Eliges manualmente a qué factura y cuánto."
                                 className={`px-2.5 py-0.5 text-[10px] font-semibold rounded-full transition-colors ${
                                   modoAplicacion === 'manual' ? 'bg-white text-black shadow-sm' : 'text-gray-500'
                                 }`}
                               >
-                                ✋ Manual
+                                ✋ Elegir factura
                               </button>
                             </div>
                           </div>
 
-                          {modoAplicacion === 'manual' && (
-                            <p className="text-[10px] text-gray-500 mb-1.5 leading-tight">
-                              Marca las facturas que vas a pagar y el monto. Si dejas el monto en blanco, se aplicará el saldo completo de esa factura.
-                            </p>
-                          )}
+                          <p className="text-[10px] text-gray-500 mb-1.5 leading-tight italic">
+                            {modoAplicacion === 'fifo'
+                              ? 'Cliente paga sin especificar — el sistema aplica al más antiguo primero (recomendado).'
+                              : 'Cliente especifica qué factura pagar. Marca abajo y pon el monto a aplicar.'}
+                          </p>
 
                           <div className="max-h-[260px] overflow-y-auto divide-y divide-gray-100 border border-gray-100 rounded-lg">
                             {estadoCuenta.comprobantes.map((comp) => {
