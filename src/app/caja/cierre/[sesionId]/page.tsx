@@ -91,11 +91,20 @@ export default async function CierreCajaReporte({
     <div className="min-h-screen bg-gray-50 print:bg-white">
       <style>{`
         @media print {
-          @page { size: A4 portrait; margin: 10mm; }
-          body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+          @page { size: A4 portrait; margin: 12mm; }
+          html, body { background: white !important; }
+          body { -webkit-print-color-adjust: exact; print-color-adjust: exact;
+            font-family: 'Helvetica Neue', Arial, sans-serif !important; color: #111 !important; }
           .no-print { display: none !important; }
-          .cierre-table { font-size: 9pt !important; }
-          .cierre-table td, .cierre-table th { padding: 2px 5px !important; }
+          /* Tipos legibles en impresión */
+          .cierre-doc { font-size: 11pt !important; line-height: 1.4 !important; }
+          .cierre-table { font-size: 10pt !important; }
+          .cierre-table td, .cierre-table th { padding: 4px 6px !important; }
+          .cierre-table thead th { background: #f3f4f6 !important; color: #000 !important;
+            border: 1px solid #999 !important; font-weight: 700 !important; }
+          .cierre-table tbody td { border: 1px solid #d1d5db !important; }
+          .cierre-table tr { page-break-inside: avoid; }
+          .cierre-table thead { display: table-header-group; }
         }
       `}</style>
 
@@ -111,7 +120,7 @@ export default async function CierreCajaReporte({
         </div>
       </div>
 
-      <div className="max-w-5xl mx-auto px-6 py-8 print:px-0 print:py-0">
+      <div className="cierre-doc max-w-5xl mx-auto px-6 py-8 print:px-0 print:py-0 print:max-w-full">
         {/* Cabecera */}
         <div className="text-center mb-4">
           <h2 className="text-[16pt] font-bold tracking-wide">{EMPRESA.razon_social}</h2>

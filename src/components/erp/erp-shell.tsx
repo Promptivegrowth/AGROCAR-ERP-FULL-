@@ -20,7 +20,7 @@ export default function ErpShell({ userRole, user, children }: ErpShellProps) {
   }, [pathname])
 
   return (
-    <div className="flex h-dvh bg-[#f9fafb] overflow-hidden">
+    <div className="flex h-dvh bg-[#f9fafb] overflow-hidden print:block print:overflow-visible print:h-auto print:bg-white">
       {/* Overlay móvil */}
       {sidebarOpen && (
         <div
@@ -30,9 +30,9 @@ export default function ErpShell({ userRole, user, children }: ErpShellProps) {
         />
       )}
 
-      {/* Sidebar: fijo en desktop, deslizable en móvil */}
+      {/* Sidebar: fijo en desktop, deslizable en móvil. Oculto al imprimir. */}
       <div
-        className={`fixed lg:static inset-y-0 left-0 z-50 transform transition-transform lg:transform-none ${
+        className={`fixed lg:static inset-y-0 left-0 z-50 transform transition-transform lg:transform-none print:hidden ${
           sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
         }`}
       >
@@ -40,9 +40,9 @@ export default function ErpShell({ userRole, user, children }: ErpShellProps) {
       </div>
 
       {/* Contenido principal */}
-      <div className="flex flex-col flex-1 min-w-0 overflow-hidden">
+      <div className="flex flex-col flex-1 min-w-0 overflow-hidden print:overflow-visible print:block">
         <Topbar user={user} onMenuClick={() => setSidebarOpen(true)} />
-        <main className="flex-1 overflow-y-auto p-4 sm:p-6">
+        <main className="flex-1 overflow-y-auto p-4 sm:p-6 print:p-0 print:overflow-visible">
           {children}
         </main>
       </div>

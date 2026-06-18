@@ -166,7 +166,7 @@ export default function Topbar({ user, onMenuClick }: TopbarProps) {
     .toUpperCase()
 
   return (
-    <header className="h-14 bg-white border-b border-gray-200 flex items-center justify-between px-4 sm:px-6 flex-shrink-0 z-10">
+    <header className="h-14 bg-white border-b border-gray-200 flex items-center justify-between px-4 sm:px-6 flex-shrink-0 z-10 print:hidden">
       {/* Hamburger + Breadcrumb */}
       <div className="flex items-center gap-2 min-w-0">
         <button

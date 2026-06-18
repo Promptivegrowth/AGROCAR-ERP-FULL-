@@ -291,6 +291,16 @@ export default function CajaClient({
 
   // Formularios
   const [formApertura, setFormApertura] = useState({ monto: '', notas: '' })
+  // Cobros huérfanos detectados al abrir el dialog (hechos sin caja abierta)
+  const [huerfanos, setHuerfanos] = useState<{
+    count: number
+    total: number
+    efectivo_total: number
+    fecha_minima: string | null
+    fecha_maxima: string | null
+    cobros: Array<{ id: string; numero: string; total: number; efectivo: number; cliente: string | null; cobrador: string | null; created_at: string }>
+  } | null>(null)
+  const [cargarHuerfanos, setCargarHuerfanos] = useState(true)
   const [formCierre, setFormCierre] = useState({ monto: '', notas: '' })
   const [formEgreso, setFormEgreso] = useState({
     categoria: 'gasto_operativo' as CategoriaCajaMovimiento | 'gasto_operativo' | 'pago_proveedor',
@@ -406,6 +416,20 @@ export default function CajaClient({
   }, [cobros, cobradorSeleccionado])
 
   // ─── Acciones ────────────────────────────────────────────────────────────
+
+  // Al abrir el dialog de apertura, detectar cobros que se hicieron sin caja
+  // (vendedores cobrando con caja cerrada). El cajero/admin decide si los
+  // carga a la nueva sesión o no — manteniendo trazabilidad.
+  useEffect(() => {
+    if (!abrirOpen) return
+    let cancel = false
+    ;(async () => {
+      const { data } = await (supabase.rpc as any)('contar_cobros_huerfanos')
+      if (!cancel && data) setHuerfanos(data as any)
+    })()
+    return () => { cancel = true }
+  }, [abrirOpen, supabase])
+
   const abrirCaja = async () => {
     const monto = parseFloat(formApertura.monto)
     if (isNaN(monto) || monto < 0) {
@@ -414,36 +438,16 @@ export default function CajaClient({
     }
     setSaving(true)
 
-    // Validación: ninguna sesión abierta en toda la BD (política general)
-    const { data: yaAbierta } = await supabase
-      .from('caja_sesiones')
-      .select('id')
-      .eq('estado', 'abierta')
-      .limit(1)
-      .maybeSingle()
-
-    if (yaAbierta) {
-      setSaving(false)
-      toast.error('Ya hay una sesión abierta', {
-        description: 'Cierra la caja actual antes de abrir una nueva.',
-      })
-      return
-    }
-
-    const { data: auth } = await supabase.auth.getUser()
-    const userId = auth.user?.id
-    if (!userId) {
-      setSaving(false)
-      toast.error('Sesión expirada', { description: 'Vuelve a iniciar sesión.' })
-      return
-    }
-
-    const { error } = await supabase.from('caja_sesiones').insert({
-      cajero_id: userId,
-      fecha_apertura: new Date().toISOString(),
-      saldo_inicial: monto,
-      estado: 'abierta',
-    })
+    // Usamos la RPC abrir_caja_con_huerfanos para mantener atomicidad:
+    // crea la sesión y migra los huérfanos en una sola transacción.
+    const { data: result, error } = await (supabase.rpc as any)(
+      'abrir_caja_con_huerfanos',
+      {
+        p_saldo_inicial: monto,
+        p_cargar_huerfanos: cargarHuerfanos && (huerfanos?.count ?? 0) > 0,
+        p_notas: formApertura.notas || null,
+      },
+    )
 
     setSaving(false)
 
@@ -452,11 +456,20 @@ export default function CajaClient({
       return
     }
 
-    toast.success('Caja aperturada', {
-      description: `Saldo inicial: ${formatCurrency(monto)}`,
-    })
+    const migrados = result?.huerfanos_migrados ?? 0
+    if (migrados > 0) {
+      toast.success('Caja aperturada con cobros retroactivos', {
+        description: `Saldo inicial: ${formatCurrency(monto)} · Migrados ${migrados} cobros (S/${(result.total_migrado ?? 0).toFixed(2)})`,
+      })
+    } else {
+      toast.success('Caja aperturada', {
+        description: `Saldo inicial: ${formatCurrency(monto)}`,
+      })
+    }
     setAbrirOpen(false)
     setFormApertura({ monto: '', notas: '' })
+    setHuerfanos(null)
+    setCargarHuerfanos(true)
     await reloadAll()
   }
 
@@ -1329,6 +1342,85 @@ export default function CajaClient({
                 )}
               </div>
 
+              {/* Detalle de movimientos del día (Daniel pidió incluirlo) */}
+              <div>
+                <h3 className="text-sm font-semibold text-gray-800 mb-2 flex items-center gap-2">
+                  <Clock className="w-4 h-4 text-gray-600" /> Detalle de movimientos del día
+                  <span className="text-xs font-normal text-gray-500">
+                    ({cobros.length} cobros · {movimientos.filter((m) => m.tipo === 'egreso').length} egresos)
+                  </span>
+                </h3>
+                {cobros.length === 0 && movimientos.filter((m) => m.tipo === 'egreso').length === 0 ? (
+                  <p className="text-xs text-gray-400 py-2">Sin movimientos hoy</p>
+                ) : (
+                  <div className="border border-gray-200 rounded-lg overflow-hidden max-h-96 overflow-y-auto">
+                    <table className="w-full text-xs">
+                      <thead className="bg-gray-50 sticky top-0">
+                        <tr className="border-b border-gray-200">
+                          <th className="text-left px-2 py-1.5 font-semibold text-gray-600">Hora</th>
+                          <th className="text-left px-2 py-1.5 font-semibold text-gray-600">Tipo</th>
+                          <th className="text-left px-2 py-1.5 font-semibold text-gray-600">Doc.</th>
+                          <th className="text-left px-2 py-1.5 font-semibold text-gray-600">Descripción</th>
+                          <th className="text-left px-2 py-1.5 font-semibold text-gray-600">Cobrador / Autor</th>
+                          <th className="text-right px-2 py-1.5 font-semibold text-gray-600">Monto</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {(() => {
+                          type Mov = { hora: string; tipo: 'ingreso' | 'egreso'; doc: string; desc: string; quien: string; monto: number }
+                          const items: Mov[] = []
+                          cobros.forEach((c) => {
+                            items.push({
+                              hora: new Date(c.created_at).toLocaleTimeString('es-PE', {
+                                hour: '2-digit', minute: '2-digit', timeZone: 'America/Lima',
+                              }),
+                              tipo: 'ingreso',
+                              doc: (c as any).numero ?? '—',
+                              desc: c.cliente_nombre,
+                              quien: c.cobrador_nombre,
+                              monto: Number(c.total ?? 0),
+                            })
+                          })
+                          movimientos.filter((m) => m.tipo === 'egreso').forEach((m) => {
+                            items.push({
+                              hora: new Date(m.created_at).toLocaleTimeString('es-PE', {
+                                hour: '2-digit', minute: '2-digit', timeZone: 'America/Lima',
+                              }),
+                              tipo: 'egreso',
+                              doc: '—',
+                              desc: `${m.categoria ?? ''} · ${m.descripcion ?? '—'}`,
+                              quien: (m as any).cobrador_nombre ?? '—',
+                              monto: Number(m.monto ?? 0),
+                            })
+                          })
+                          items.sort((a, b) => a.hora.localeCompare(b.hora))
+                          return items.map((m, i) => (
+                            <tr key={i} className="border-b border-gray-100 last:border-0 hover:bg-gray-50/60">
+                              <td className="px-2 py-1.5 font-mono text-gray-600">{m.hora}</td>
+                              <td className="px-2 py-1.5">
+                                <span className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${
+                                  m.tipo === 'ingreso' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
+                                }`}>
+                                  {m.tipo === 'ingreso' ? '+ COBRO' : '− EGRESO'}
+                                </span>
+                              </td>
+                              <td className="px-2 py-1.5 font-mono text-gray-700">{m.doc}</td>
+                              <td className="px-2 py-1.5 text-gray-700">{m.desc}</td>
+                              <td className="px-2 py-1.5 text-gray-600">{m.quien}</td>
+                              <td className={`px-2 py-1.5 text-right font-mono font-semibold ${
+                                m.tipo === 'ingreso' ? 'text-green-700' : 'text-red-700'
+                              }`}>
+                                {m.tipo === 'ingreso' ? '+' : '−'}{formatCurrency(m.monto)}
+                              </td>
+                            </tr>
+                          ))
+                        })()}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+
               {/* Saldo teórico */}
               <div className="p-4 rounded-lg bg-yellow-50 border-2 border-yellow-200">
                 <div className="flex items-center justify-between">
@@ -1480,6 +1572,66 @@ export default function CajaClient({
                 Efectivo disponible en caja al momento de abrir.
               </p>
             </div>
+
+            {/* Banner de cobros huérfanos detectados (hechos sin caja abierta) */}
+            {huerfanos && huerfanos.count > 0 && (
+              <div className="border-2 border-amber-300 bg-amber-50 rounded-lg p-3 space-y-2">
+                <div className="flex items-start gap-2">
+                  <span className="text-lg shrink-0">⚠️</span>
+                  <div className="flex-1">
+                    <p className="text-sm font-bold text-amber-900">
+                      {huerfanos.count} cobros fueron registrados con la caja cerrada
+                    </p>
+                    <p className="text-xs text-amber-800 mt-0.5 leading-snug">
+                      Suman {formatCurrency(huerfanos.total)} ({formatCurrency(huerfanos.efectivo_total)} en efectivo).
+                      Si los cargas a esta caja, aparecerán en el cierre y reportes.
+                    </p>
+                  </div>
+                </div>
+                <div className="max-h-32 overflow-y-auto bg-white border border-amber-200 rounded">
+                  <table className="w-full text-[10px]">
+                    <thead className="bg-amber-100/60 sticky top-0">
+                      <tr>
+                        <th className="text-left px-2 py-1">Recibo</th>
+                        <th className="text-left px-2 py-1">Cliente</th>
+                        <th className="text-left px-2 py-1">Cobrador</th>
+                        <th className="text-right px-2 py-1">Efectivo</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {huerfanos.cobros.slice(0, 20).map((c) => (
+                        <tr key={c.id} className="border-t border-amber-100">
+                          <td className="px-2 py-1 font-mono">{c.numero}</td>
+                          <td className="px-2 py-1 truncate max-w-[140px]">{c.cliente ?? 'CF'}</td>
+                          <td className="px-2 py-1 truncate max-w-[100px]">{c.cobrador}</td>
+                          <td className="px-2 py-1 text-right font-mono">
+                            {Number(c.efectivo).toFixed(2)}
+                          </td>
+                        </tr>
+                      ))}
+                      {huerfanos.cobros.length > 20 && (
+                        <tr>
+                          <td colSpan={4} className="px-2 py-1 text-center text-amber-700 italic">
+                            … y {huerfanos.cobros.length - 20} más
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={cargarHuerfanos}
+                    onChange={(e) => setCargarHuerfanos(e.target.checked)}
+                    className="w-4 h-4 accent-amber-600"
+                  />
+                  <span className="text-xs font-semibold text-amber-900">
+                    Cargar estos cobros a esta sesión (recomendado para trazabilidad)
+                  </span>
+                </label>
+              </div>
+            )}
             <div>
               <Label>Notas (opcional)</Label>
               <Textarea

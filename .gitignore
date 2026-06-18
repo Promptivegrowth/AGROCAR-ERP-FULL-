@@ -35,8 +35,8 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
-# PWA
-**/public/sw.js
+# PWA — sw.js es source-controlled (lo escribimos a mano).
+# Solo ignoramos los workbox-* que next-pwa autogeneraría al build (no se usa).
 **/public/workbox-*.js
 **/public/worker-*.js
 **/public/sw.js.map
