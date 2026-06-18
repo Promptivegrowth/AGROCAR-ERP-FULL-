@@ -77,9 +77,12 @@ export default function CobrosPage() {
   })
   const [ultimoCobro, setUltimoCobro] = useState<{
     id: string
+    numero: string | null
     total: number
     cliente: string
     telefono: string | null
+    aplicaciones: Array<{ codigo: string; monto: number }>
+    saldoRestante: number | null
   } | null>(null)
   const [voucherFile, setVoucherFile] = useState<File | null>(null)
   const [voucherPreview, setVoucherPreview] = useState<string | null>(null)
@@ -92,6 +95,11 @@ export default function CobrosPage() {
   // Estado de cuenta del cliente seleccionado
   const [estadoCuenta, setEstadoCuenta] = useState<EstadoCuentaCliente | null>(null)
   const [loadingEstadoCuenta, setLoadingEstadoCuenta] = useState(false)
+
+  // Modo aplicación: 'fifo' (automático) | 'manual' (selección touch)
+  const [modoAplicacion, setModoAplicacion] = useState<'fifo' | 'manual'>('fifo')
+  // En modo manual: facturas seleccionadas con su monto a aplicar
+  const [aplicacionesManuales, setAplicacionesManuales] = useState<Record<string, string>>({})
 
   // Cobros del día
   const [cobrosDia, setCobrosDia] = useState<Cobro[]>([])
@@ -263,57 +271,101 @@ export default function CobrosPage() {
         }
       }
 
-      const { data: cobroData, error: cobroError } = await (supabase as any)
-        .from('cobros')
-        .insert({
-          cliente_id: clienteSeleccionado.id,
-          cobrador_id: userId,
-          tipo: 'cobranza',
-          efectivo: montos.efectivo,
-          yape: montos.yape,
-          plin: montos.plin,
-          transferencia: montos.transferencia,
-          total: totalCobro,
-          voucher_url: voucherUrl,
-          nro_operacion: nroOperacion.trim() || null,
-          notas: notas || null,
-          fecha: hoyLima(),
-        })
-        .select('id')
-        .single()
+      // Construir aplicaciones manuales si el vendedor las eligió
+      let aplicacionesPayload: Array<{ comprobante_id: string; monto_aplicado: number }> | null = null
+      if (modoAplicacion === 'manual') {
+        const aps = Object.entries(aplicacionesManuales)
+          .map(([compId, montoStr]) => ({
+            comprobante_id: compId,
+            monto_aplicado: parseFloat(montoStr) || 0,
+          }))
+          .filter((a) => a.monto_aplicado > 0)
+        if (aps.length === 0) {
+          const msg = 'Selecciona al menos una factura con monto a aplicar, o cambia a modo automático FIFO.'
+          setMensajeError(msg)
+          toast.error('Sin facturas seleccionadas', { description: msg })
+          return
+        }
+        const sumaAplic = aps.reduce((acc, a) => acc + a.monto_aplicado, 0)
+        if (sumaAplic > totalCobro + 0.001) {
+          const msg = `La suma de aplicaciones (${formatCurrency(sumaAplic)}) excede el total cobrado (${formatCurrency(totalCobro)}).`
+          setMensajeError(msg)
+          toast.error('Aplicaciones inválidas', { description: msg })
+          return
+        }
+        aplicacionesPayload = aps
+      }
 
-      if (cobroError || !cobroData) {
+      const { data: cobroData, error: cobroError } = await (supabase.rpc as any)(
+        'registrar_cobro_atomico',
+        {
+          p_cobro: {
+            cliente_id: clienteSeleccionado.id,
+            cobrador_id: userId,
+            tipo: 'cobranza',
+            efectivo: montos.efectivo,
+            yape: montos.yape,
+            plin: montos.plin,
+            transferencia: montos.transferencia,
+            total: totalCobro,
+            voucher_url: voucherUrl,
+            nro_operacion: nroOperacion.trim() || null,
+            notas: notas || null,
+            fecha: hoyLima(),
+          },
+          p_aplicaciones: aplicacionesPayload,
+        },
+      )
+
+      if (cobroError || !cobroData?.id) {
         setMensajeError('Error al registrar el cobro: ' + (cobroError?.message ?? ''))
         toast.error('No se pudo registrar el cobro', { description: cobroError?.message ?? '' })
         return
       }
 
-      // Cálculo FIFO informativo para el toast
-      let toastDescripcion = `${formatCurrency(totalCobro)} · ${clienteSeleccionado.razon_social}`
-      if (estadoCuenta && estadoCuenta.comprobantes.length > 0) {
-        let restante = totalCobro
-        const aplicaciones: string[] = []
+      // Calcular aplicaciones reales (manuales o FIFO simulado) para el mensaje y toast
+      const aplicacionesDetalle: Array<{ codigo: string; monto: number }> = []
+      let restante = totalCobro
+      if (modoAplicacion === 'manual' && aplicacionesPayload) {
+        // Buscar el código de cada factura aplicada en el estado de cuenta
+        for (const ap of aplicacionesPayload) {
+          const comp = estadoCuenta?.comprobantes.find((c) => c.id === ap.comprobante_id)
+          if (comp) {
+            aplicacionesDetalle.push({
+              codigo: `${comp.serie}-${comp.numero}`,
+              monto: ap.monto_aplicado,
+            })
+          }
+          restante -= ap.monto_aplicado
+        }
+      } else if (estadoCuenta && estadoCuenta.comprobantes.length > 0) {
         for (const comp of estadoCuenta.comprobantes) {
           if (restante <= 0.0001) break
           const aplicar = Math.min(restante, comp.saldo)
           restante -= aplicar
-          aplicaciones.push(
-            `S/${aplicar.toFixed(2)} → ${comp.serie}-${comp.numero}`
-          )
-        }
-        if (aplicaciones.length > 0) {
-          toastDescripcion = aplicaciones.slice(0, 3).join(' · ')
-          if (aplicaciones.length > 3) {
-            toastDescripcion += ` (+${aplicaciones.length - 3} más)`
-          }
+          aplicacionesDetalle.push({
+            codigo: `${comp.serie}-${comp.numero}`,
+            monto: aplicar,
+          })
         }
       }
+      // Saldo restante del cliente DESPUÉS de este pago (deuda pendiente)
+      const saldoPrevio = estadoCuenta?.saldo ?? 0
+      const saldoRestante = Math.max(0, saldoPrevio - totalCobro)
+
+      const toastDescripcion = aplicacionesDetalle.length > 0
+        ? aplicacionesDetalle.slice(0, 3).map((a) => `S/${a.monto.toFixed(2)} → ${a.codigo}`).join(' · ')
+          + (aplicacionesDetalle.length > 3 ? ` (+${aplicacionesDetalle.length - 3} más)` : '')
+        : `${formatCurrency(totalCobro)} · ${clienteSeleccionado.razon_social}`
 
       setUltimoCobro({
         id: cobroData.id,
+        numero: cobroData.numero ?? null,
         total: totalCobro,
         cliente: clienteSeleccionado.razon_social,
         telefono: (clienteSeleccionado as any).telefono ?? null,
+        aplicaciones: aplicacionesDetalle,
+        saldoRestante,
       })
       setMensajeExito(`Cobro de ${formatCurrency(totalCobro)} registrado correctamente`)
       toast.success('Cobro registrado', {
@@ -327,6 +379,8 @@ export default function CobrosPage() {
       setNotas('')
       setVoucherFile(null)
       setVoucherPreview(null)
+      setModoAplicacion('fifo')
+      setAplicacionesManuales({})
       cargarCobrosDia()
     } catch {
       setMensajeError('Error inesperado al registrar el cobro')
@@ -402,9 +456,12 @@ export default function CobrosPage() {
                     ? linkEnviarBoletaPago({
                         baseUrl,
                         cobroId: ultimoCobro.id,
+                        numeroCobro: ultimoCobro.numero,
                         clienteNombre: ultimoCobro.cliente,
                         total: ultimoCobro.total,
                         telefonoCliente: ultimoCobro.telefono!,
+                        aplicaciones: ultimoCobro.aplicaciones,
+                        saldoRestante: ultimoCobro.saldoRestante,
                       })
                     : null
                   return (
@@ -547,10 +604,40 @@ export default function CobrosPage() {
                         </p>
                       ) : (
                         <div>
-                          <p className="text-[11px] font-medium text-gray-500 uppercase mb-1.5">
-                            Pendientes ({estadoCuenta.comprobantes.length}) — FIFO
-                          </p>
-                          <div className="max-h-[200px] overflow-y-auto divide-y divide-gray-100 border border-gray-100 rounded-lg">
+                          {/* Selector de modo: FIFO automático vs manual touch */}
+                          <div className="flex items-center justify-between mb-1.5">
+                            <p className="text-[11px] font-medium text-gray-500 uppercase">
+                              Pendientes ({estadoCuenta.comprobantes.length})
+                            </p>
+                            <div className="flex gap-1 bg-gray-100 rounded-full p-0.5">
+                              <button
+                                type="button"
+                                onClick={() => setModoAplicacion('fifo')}
+                                className={`px-2.5 py-0.5 text-[10px] font-semibold rounded-full transition-colors ${
+                                  modoAplicacion === 'fifo' ? 'bg-white text-black shadow-sm' : 'text-gray-500'
+                                }`}
+                              >
+                                🤖 FIFO
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setModoAplicacion('manual')}
+                                className={`px-2.5 py-0.5 text-[10px] font-semibold rounded-full transition-colors ${
+                                  modoAplicacion === 'manual' ? 'bg-white text-black shadow-sm' : 'text-gray-500'
+                                }`}
+                              >
+                                ✋ Manual
+                              </button>
+                            </div>
+                          </div>
+
+                          {modoAplicacion === 'manual' && (
+                            <p className="text-[10px] text-gray-500 mb-1.5 leading-tight">
+                              Marca las facturas que vas a pagar y el monto. Si dejas el monto en blanco, se aplicará el saldo completo de esa factura.
+                            </p>
+                          )}
+
+                          <div className="max-h-[260px] overflow-y-auto divide-y divide-gray-100 border border-gray-100 rounded-lg">
                             {estadoCuenta.comprobantes.map((comp) => {
                               const badgeClass =
                                 comp.estado_deuda === 'vencido'
@@ -564,35 +651,124 @@ export default function CobrosPage() {
                                   : comp.estado_deuda === 'por_vencer'
                                   ? 'Por vencer'
                                   : 'Al día'
+                              const seleccionada = aplicacionesManuales[comp.id] !== undefined
                               return (
-                                <div key={comp.id} className="p-2.5 flex items-center justify-between gap-2">
-                                  <div className="min-w-0 flex-1">
-                                    <div className="flex items-center gap-1.5">
-                                      <span className="text-xs font-mono font-semibold text-gray-800">
-                                        {comp.serie}-{comp.numero}
-                                      </span>
-                                      <span className={`text-[9px] px-1.5 py-0.5 rounded border font-medium ${badgeClass}`}>
-                                        {badgeLabel}
-                                      </span>
-                                    </div>
-                                    <p className="text-[11px] text-gray-500 mt-0.5">
-                                      {formatDate(comp.fecha_emision)} · {comp.dias_transcurridos}d
-                                    </p>
-                                  </div>
-                                  <div className="text-right shrink-0">
-                                    <p className="text-xs font-bold text-gray-900">
-                                      {formatCurrency(comp.saldo)}
-                                    </p>
-                                    {comp.saldo < comp.total && (
-                                      <p className="text-[10px] text-gray-400">
-                                        de {formatCurrency(comp.total)}
-                                      </p>
+                                <div
+                                  key={comp.id}
+                                  className={`p-2.5 ${
+                                    modoAplicacion === 'manual' && seleccionada ? 'bg-green-50/60' : ''
+                                  }`}
+                                >
+                                  <div className="flex items-center justify-between gap-2">
+                                    {modoAplicacion === 'manual' && (
+                                      <input
+                                        type="checkbox"
+                                        checked={seleccionada}
+                                        onChange={(e) => {
+                                          setAplicacionesManuales((prev) => {
+                                            const next = { ...prev }
+                                            if (e.target.checked) {
+                                              next[comp.id] = comp.saldo.toFixed(2)
+                                            } else {
+                                              delete next[comp.id]
+                                            }
+                                            return next
+                                          })
+                                        }}
+                                        className="w-5 h-5 shrink-0 accent-green-600 cursor-pointer"
+                                      />
                                     )}
+                                    <div className="min-w-0 flex-1">
+                                      <div className="flex items-center gap-1.5 flex-wrap">
+                                        <span className="text-xs font-mono font-semibold text-gray-800">
+                                          {comp.serie}-{comp.numero}
+                                        </span>
+                                        <span className={`text-[9px] px-1.5 py-0.5 rounded border font-medium ${badgeClass}`}>
+                                          {badgeLabel}
+                                        </span>
+                                      </div>
+                                      <p className="text-[11px] text-gray-500 mt-0.5">
+                                        {formatDate(comp.fecha_emision)} · {comp.dias_transcurridos}d
+                                      </p>
+                                    </div>
+                                    <div className="text-right shrink-0">
+                                      <p className="text-xs font-bold text-gray-900">
+                                        {formatCurrency(comp.saldo)}
+                                      </p>
+                                      {comp.saldo < comp.total && (
+                                        <p className="text-[10px] text-gray-400">
+                                          de {formatCurrency(comp.total)}
+                                        </p>
+                                      )}
+                                    </div>
                                   </div>
+
+                                  {/* Input de monto en modo manual cuando está seleccionada */}
+                                  {modoAplicacion === 'manual' && seleccionada && (
+                                    <div className="flex items-center gap-2 mt-2 pl-7">
+                                      <span className="text-[11px] text-gray-500">Aplicar:</span>
+                                      <span className="text-xs text-gray-400">S/</span>
+                                      <input
+                                        type="number"
+                                        inputMode="decimal"
+                                        step="0.01"
+                                        min="0"
+                                        max={comp.saldo}
+                                        value={aplicacionesManuales[comp.id]}
+                                        onChange={(e) =>
+                                          setAplicacionesManuales((prev) => ({
+                                            ...prev,
+                                            [comp.id]: e.target.value,
+                                          }))
+                                        }
+                                        className="flex-1 h-8 px-2 text-sm font-mono border border-gray-200 rounded-md focus:outline-none focus:border-green-500 focus:ring-1 focus:ring-green-500"
+                                        placeholder={comp.saldo.toFixed(2)}
+                                      />
+                                      <button
+                                        type="button"
+                                        onClick={() =>
+                                          setAplicacionesManuales((prev) => ({
+                                            ...prev,
+                                            [comp.id]: comp.saldo.toFixed(2),
+                                          }))
+                                        }
+                                        className="text-[10px] text-green-700 font-semibold underline"
+                                      >
+                                        Total
+                                      </button>
+                                    </div>
+                                  )}
                                 </div>
                               )
                             })}
                           </div>
+
+                          {/* Resumen aplicación manual */}
+                          {modoAplicacion === 'manual' && Object.keys(aplicacionesManuales).length > 0 && (() => {
+                            const sumaAplic = Object.values(aplicacionesManuales)
+                              .reduce((acc, v) => acc + (parseFloat(v) || 0), 0)
+                            const diferencia = totalCobro - sumaAplic
+                            return (
+                              <div className="mt-2 p-2 bg-gray-50 rounded-lg text-xs space-y-0.5">
+                                <div className="flex justify-between">
+                                  <span className="text-gray-500">Suma aplicada:</span>
+                                  <span className="font-mono font-semibold">{formatCurrency(sumaAplic)}</span>
+                                </div>
+                                <div className="flex justify-between">
+                                  <span className="text-gray-500">Total cobrado:</span>
+                                  <span className="font-mono">{formatCurrency(totalCobro)}</span>
+                                </div>
+                                {Math.abs(diferencia) > 0.001 && (
+                                  <div className={`flex justify-between font-semibold ${
+                                    diferencia > 0 ? 'text-amber-700' : 'text-red-700'
+                                  }`}>
+                                    <span>{diferencia > 0 ? 'A cuenta:' : '⚠ Sobra-aplicado:'}</span>
+                                    <span className="font-mono">{formatCurrency(Math.abs(diferencia))}</span>
+                                  </div>
+                                )}
+                              </div>
+                            )
+                          })()}
                         </div>
                       )}
                     </>

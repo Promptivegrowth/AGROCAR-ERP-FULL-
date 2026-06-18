@@ -35,6 +35,9 @@ export function construirLinkWhatsapp(telefono: string, mensaje: string): string
 /**
  * Link para enviar una boleta de pago al cliente.
  * `baseUrl` debe incluir el protocolo (ej. https://agrocar-erp-full.vercel.app).
+ *
+ * Si se pasan aplicaciones, el mensaje incluye el detalle de facturas
+ * pagadas con su código y monto aplicado.
  */
 export function linkEnviarBoletaPago(params: {
   baseUrl: string
@@ -42,12 +45,35 @@ export function linkEnviarBoletaPago(params: {
   clienteNombre: string
   total: number
   telefonoCliente: string
+  numeroCobro?: string | null
+  aplicaciones?: Array<{ codigo: string; monto: number }>
+  saldoRestante?: number | null
 }): string | null {
   const moneda = 'S/'
-  const mensaje =
-    `Hola ${params.clienteNombre}, gracias por tu pago.\n` +
-    `Monto: ${moneda} ${params.total.toFixed(2)}\n` +
-    `Boleta digital: ${params.baseUrl}/boleta/${params.cobroId}\n\n` +
-    `— AGROCAR S.R.L.`
-  return construirLinkWhatsapp(params.telefonoCliente, mensaje)
+  const lineas: string[] = [
+    `Hola ${params.clienteNombre}, gracias por tu pago.`,
+    `Monto total: ${moneda} ${params.total.toFixed(2)}`,
+  ]
+  if (params.numeroCobro) {
+    lineas.push(`Recibo: ${params.numeroCobro}`)
+  }
+  if (params.aplicaciones && params.aplicaciones.length > 0) {
+    lineas.push('')
+    lineas.push('Aplicado a:')
+    for (const a of params.aplicaciones) {
+      lineas.push(`• ${a.codigo}: ${moneda} ${a.monto.toFixed(2)}`)
+    }
+  }
+  if (typeof params.saldoRestante === 'number' && params.saldoRestante > 0.001) {
+    lineas.push('')
+    lineas.push(`Saldo pendiente: ${moneda} ${params.saldoRestante.toFixed(2)}`)
+  } else if (typeof params.saldoRestante === 'number' && params.saldoRestante <= 0.001) {
+    lineas.push('')
+    lineas.push('✅ Cuenta saldada — gracias!')
+  }
+  lineas.push('')
+  lineas.push(`Boleta digital: ${params.baseUrl}/boleta/${params.cobroId}`)
+  lineas.push('')
+  lineas.push('— AGROCAR S.R.L.')
+  return construirLinkWhatsapp(params.telefonoCliente, lineas.join('\n'))
 }
