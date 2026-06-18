@@ -80,6 +80,7 @@ const NAV_ITEMS: NavItem[] = [
     icon: Warehouse,
     children: [
       { label: 'Inventario', href: '/almacen', icon: ClipboardList },
+      { label: 'Movimientos del día', href: '/almacen/movimientos-dia', icon: Package },
       { label: 'Lotes', href: '/almacen/lotes', icon: Boxes },
       { label: 'Compras', href: '/almacen/compras', icon: ShoppingCart },
       { label: 'Notas de Crédito', href: '/almacen/notas-credito', icon: FileMinus },

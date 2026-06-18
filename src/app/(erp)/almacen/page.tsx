@@ -502,6 +502,13 @@ export default function AlmacenPage() {
           <p className="text-sm text-gray-500 mt-0.5">Stock actual de productos</p>
         </div>
         <div className="flex flex-wrap gap-2">
+          <Link
+            href="/almacen/movimientos-dia"
+            className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold rounded-lg transition-colors shadow-sm"
+            title="Productos que salieron del almacén — para cuadrar"
+          >
+            📋 Movimientos del día
+          </Link>
           <Button
             onClick={() => setExportOpen(true)}
             disabled={exportando || stocks.length === 0}
