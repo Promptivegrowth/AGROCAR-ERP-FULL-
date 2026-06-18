@@ -402,7 +402,18 @@ export default function FacturacionPage() {
         cambios++
       }
       if (cambios === 0) {
-        toast.info('Sin cambios', { description: 'No modificaste ningún campo.' })
+        // Si solo hubo eliminaciones (que se aplican al instante via la RPC
+        // eliminar_item_comprobante), el comprobante YA está actualizado.
+        // editComp.editado se setea al eliminar — usamos eso como pista.
+        if (editComp?.editado) {
+          toast.success('Comprobante actualizado', {
+            description: 'Los cambios (eliminaciones de líneas) ya se aplicaron y los totales se recalcularon.',
+          })
+          setEditarOpen(false)
+          loadData()
+        } else {
+          toast.info('Sin cambios', { description: 'No modificaste ningún campo.' })
+        }
       } else {
         toast.success(`Comprobante actualizado`, {
           description: `${cambios} línea${cambios === 1 ? '' : 's'} modificada${cambios === 1 ? '' : 's'}. Los totales se recalcularon.`,
