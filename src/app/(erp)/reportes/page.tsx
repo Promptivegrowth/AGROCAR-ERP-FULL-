@@ -200,11 +200,21 @@ export default function ReportesPage() {
         </div>
       </div>
 
-      {/* Aviso: cómo acceder a reportes de cliente o persona individual */}
-      <div className="bg-blue-50 border border-blue-200 rounded-lg px-3 py-2 text-xs text-blue-800">
-        💡 <strong>Reportes individuales</strong>:
-        <a href="/clientes" className="underline ml-1">Clientes</a> (botón 📊 en la ficha del cliente) ·
-        Vendedores: en <a href="/reportes/rendicion-diaria" className="underline">Rendición diaria</a> click sobre el nombre.
+      {/* Aviso: cómo acceder a reportes individuales */}
+      <div className="bg-blue-50 border border-blue-200 rounded-lg px-3 py-2 text-xs text-blue-800 space-y-1">
+        <p>
+          💡 <strong>Estado de cuenta del cliente</strong> (con WhatsApp):
+          <code className="bg-white px-1 py-0.5 rounded text-[10px] ml-1">/reportes/cobranzas-cliente/&lt;UUID-cliente&gt;</code>
+        </p>
+        <p>
+          📋 <strong>Cuentas por cobrar de un vendedor</strong>:
+          <code className="bg-white px-1 py-0.5 rounded text-[10px] ml-1">/reportes/cobranzas-vendedor/&lt;UUID-vendedor&gt;</code>
+          {' '}— accesible también desde la PWA del vendedor en /pwa/cobros
+        </p>
+        <p>
+          🎯 <strong>Por persona</strong> (ventas/cobros): desde
+          <a href="/reportes/rendicion-diaria" className="underline ml-1">Rendición diaria</a> click sobre el nombre.
+        </p>
       </div>
 
       {/* Filtros */}

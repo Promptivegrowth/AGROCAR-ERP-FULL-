@@ -463,6 +463,27 @@ export default function CobrosPage() {
       </div>
 
       <div className="p-4 space-y-4">
+        {/* Link al reporte de cobranzas a cargo del vendedor */}
+        {userId && (
+          <a
+            href={`/reportes/cobranzas-vendedor/${userId}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="block bg-gradient-to-r from-red-50 to-amber-50 border-2 border-red-200 rounded-xl p-3"
+          >
+            <div className="flex items-center gap-3">
+              <span className="text-2xl">📋</span>
+              <div className="flex-1 min-w-0">
+                <p className="font-bold text-red-900 text-sm">Reporte de cobranzas</p>
+                <p className="text-[11px] text-red-700 leading-tight">
+                  Mis clientes con deuda · totales y días vencidos · listo para imprimir
+                </p>
+              </div>
+              <span className="text-red-700 text-lg">→</span>
+            </div>
+          </a>
+        )}
+
         {tab === 'registrar' && (
           <>
             {/* Banner caja cerrada removido a pedido del cliente — el flujo
