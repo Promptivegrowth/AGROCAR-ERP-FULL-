@@ -75,7 +75,7 @@ export default function CuentaPage() {
           .gte('created_at', hoy),
         supabase
           .from('cobros')
-          .select('monto_total')
+          .select('total')
           .eq('cobrador_id', user.id)
           .gte('created_at', hoy),
         supabase
@@ -94,7 +94,7 @@ export default function CuentaPage() {
 
       const clientesUnicosDia = new Set(checkins?.map((c) => c.cliente_id) ?? []).size
       const montoPedidos = pedidos?.reduce((acc, p) => acc + ((p as { total?: number }).total ?? 0), 0) ?? 0
-      const montoCobros = cobros?.reduce((acc, c) => acc + ((c as { monto_total?: number }).monto_total ?? 0), 0) ?? 0
+      const montoCobros = cobros?.reduce((acc, c) => acc + ((c as { total?: number }).total ?? 0), 0) ?? 0
 
       setResumen({
         pedidosEnviados: pedidos?.length ?? 0,
@@ -320,6 +320,16 @@ export default function CuentaPage() {
             </CardContent>
           </Card>
         )}
+
+        {/* Mi Reporte (historial + descargas) */}
+        <Button
+          onClick={() => router.push('/pwa/mi-reporte')}
+          variant="outline"
+          className="w-full h-12 border-gray-200 text-gray-800 hover:bg-gray-50 font-semibold"
+        >
+          <TrendingUp className="w-4 h-4" />
+          Mi Reporte (historial + Excel/PDF)
+        </Button>
 
         {/* Cerrar sesión */}
         <Button

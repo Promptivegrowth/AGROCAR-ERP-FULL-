@@ -101,6 +101,10 @@ export default function CobrosPage() {
   // En modo manual: facturas seleccionadas con su monto a aplicar
   const [aplicacionesManuales, setAplicacionesManuales] = useState<Record<string, string>>({})
 
+  // Estado de caja: si está cerrada, los cobros se registran pero quedan
+  // huérfanos del movimiento de caja hasta que se abra una nueva sesión.
+  const [cajaAbierta, setCajaAbierta] = useState<boolean | null>(null)
+
   // Cobros del día
   const [cobrosDia, setCobrosDia] = useState<Cobro[]>([])
   const [loadingCobros, setLoadingCobros] = useState(false)
@@ -118,13 +122,22 @@ export default function CobrosPage() {
 
       // Para cobranzas: cargar TODOS los clientes activos (no solo los del vendedor),
       // porque el vendedor también cumple rol de cobrador para cualquier cliente.
-      const { data: clientesData } = await supabase
-        .from('clientes')
-        .select('*')
-        .eq('estado', 'activo')
-        .order('razon_social')
+      const [{ data: clientesData }, { data: cajas }] = await Promise.all([
+        supabase
+          .from('clientes')
+          .select('*')
+          .eq('estado', 'activo')
+          .order('razon_social'),
+        (supabase as any)
+          .from('caja_sesiones')
+          .select('id, estado')
+          .eq('estado', 'abierta')
+          .order('fecha_apertura', { ascending: false })
+          .limit(1),
+      ])
 
       setClientes(clientesData ?? [])
+      setCajaAbierta((cajas?.length ?? 0) > 0)
     }
     init()
   }, [])
@@ -443,6 +456,21 @@ export default function CobrosPage() {
       <div className="p-4 space-y-4">
         {tab === 'registrar' && (
           <>
+            {cajaAbierta === false && (
+              <div className="bg-amber-50 border-2 border-amber-300 rounded-xl p-3 flex items-start gap-2">
+                <span className="text-lg shrink-0">⚠️</span>
+                <div className="flex-1">
+                  <p className="font-semibold text-amber-900 text-sm">
+                    Caja cerrada
+                  </p>
+                  <p className="text-xs text-amber-800 leading-snug mt-0.5">
+                    No hay una sesión de caja abierta. El cobro se registrará igual y
+                    se asociará a la próxima sesión cuando se abra. Coordina con el
+                    cajero para abrir la caja del día.
+                  </p>
+                </div>
+              </div>
+            )}
             {mensajeExito && (
               <div className="bg-green-50 border border-green-200 text-green-800 rounded-xl p-4 space-y-3">
                 <div className="flex items-center gap-2">

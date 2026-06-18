@@ -107,7 +107,7 @@ export default async function CierreCajaReporte({
               Sesión {sesionId.slice(0, 8).toUpperCase()} · Cajero: {(sesion.profiles as any)?.full_name ?? '—'}
             </p>
           </div>
-          <CierreActions />
+          <CierreActions sesionId={sesionId} />
         </div>
       </div>
 

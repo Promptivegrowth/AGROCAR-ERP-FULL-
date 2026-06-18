@@ -177,7 +177,16 @@ export default async function RendicionDiariaPage({
           <tbody className="text-[9pt]">
             {filas.map((r) => (
               <tr key={r.id}>
-                <td className="py-1 px-2 border border-gray-200 font-medium">{r.nombre}</td>
+                <td className="py-1 px-2 border border-gray-200 font-medium">
+                  <a
+                    href={`/reportes/persona/${r.id}`}
+                    className="text-blue-700 hover:underline no-print"
+                    title="Ver historial detallado"
+                  >
+                    {r.nombre} →
+                  </a>
+                  <span className="hidden print:inline">{r.nombre}</span>
+                </td>
                 <td className="py-1 px-2 border border-gray-200 text-center font-mono">{r.comprobantes_count > 0 ? r.comprobantes_count : r.pedidos_count}</td>
                 <td className="py-1 px-2 border border-gray-200 text-right font-mono">{formatCurrency(r.comprobantes_monto || r.pedidos_monto)}</td>
                 <td className="py-1 px-2 border border-gray-200 text-center font-mono">{r.cobros_count}</td>
