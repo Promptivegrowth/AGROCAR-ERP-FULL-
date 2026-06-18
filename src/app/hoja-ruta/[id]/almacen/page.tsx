@@ -147,7 +147,9 @@ export default async function HojaRutaAlmacenPage({ params }: { params: Promise<
         </div>
       </div>
 
-      <div className="max-w-5xl mx-auto px-6 py-8 print:px-0 print:py-0">
+      {/* Ancho reducido en print para dejar espacio en blanco a la derecha
+          que el almacenero pueda usar para anotaciones a lapicero. */}
+      <div className="max-w-5xl mx-auto px-6 py-8 print:mx-0 print:ml-0 print:max-w-[150mm] print:px-0 print:py-0">
         {/* Membrete empresa */}
         <div className="text-center pb-1 border-b border-gray-200 mb-3">
           <div className="font-bold text-[12pt]">{EMPRESA.razon_social} · RUC {EMPRESA.ruc}</div>

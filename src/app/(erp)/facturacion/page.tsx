@@ -41,6 +41,16 @@ export default function FacturacionPage() {
   const [editarOpen, setEditarOpen] = useState(false)
   const [editComp, setEditComp] = useState<any>(null)
   const [editItems, setEditItems] = useState<any[]>([])
+  // Edición de cliente (razón social) en comprobantes — para reventa
+  const [editClienteOpen, setEditClienteOpen] = useState(false)
+  const [editClienteNombre, setEditClienteNombre] = useState('')
+  const [editClienteDoc, setEditClienteDoc] = useState('')
+  const [editClienteMotivo, setEditClienteMotivo] = useState('')
+  // Anulación
+  const [anularOpen, setAnularOpen] = useState(false)
+  const [anularComp, setAnularComp] = useState<any>(null)
+  const [anularMotivo, setAnularMotivo] = useState('')
+  const [anularSaving, setAnularSaving] = useState(false)
   const [editHistorial, setEditHistorial] = useState<any[]>([])
   const [editNota, setEditNota] = useState('')
   const [editSaving, setEditSaving] = useState(false)
@@ -186,6 +196,72 @@ export default function FacturacionPage() {
     setEditHistorial(hist ?? [])
   }
 
+  // ── Anulación de comprobante (mantiene correlativo, libera pedido para re-facturar)
+  function abrirAnular(comp: any) {
+    setAnularComp(comp)
+    setAnularMotivo('')
+    setAnularOpen(true)
+  }
+
+  async function confirmarAnulacion() {
+    if (!anularComp) return
+    if (anularMotivo.trim().length < 5) {
+      toast.error('Motivo muy corto', { description: 'Ingresa al menos 5 caracteres explicando el motivo de la anulación.' })
+      return
+    }
+    setAnularSaving(true)
+    const { error } = await (supabase.rpc as any)('anular_comprobante', {
+      p_comprobante_id: anularComp.id,
+      p_motivo: anularMotivo.trim(),
+    })
+    setAnularSaving(false)
+    if (error) {
+      toast.error('No se pudo anular', { description: error.message })
+      return
+    }
+    toast.success(`Comprobante ${anularComp.serie}-${String(anularComp.numero).padStart(8, '0')} anulado`, {
+      description: 'El correlativo se conserva. El pedido vuelve a "enviado" para re-facturar si quieres.',
+    })
+    setAnularOpen(false)
+    setAnularComp(null)
+    setAnularMotivo('')
+    loadData()
+  }
+
+  // ── Cambio de cliente (reventa a otro cliente)
+  function abrirEditarCliente() {
+    if (!editComp) return
+    setEditClienteNombre(editComp.clientes?.razon_social ?? editComp.cliente_externo_nombre ?? '')
+    setEditClienteDoc(editComp.clientes?.ruc ?? editComp.clientes?.dni ?? editComp.cliente_externo_doc ?? '')
+    setEditClienteMotivo('')
+    setEditClienteOpen(true)
+  }
+
+  async function confirmarEditarCliente() {
+    if (!editComp) return
+    if (editClienteNombre.trim().length < 3) {
+      toast.error('Nombre/razón social muy corta')
+      return
+    }
+    setEditSaving(true)
+    const { error } = await (supabase.rpc as any)('editar_cliente_comprobante', {
+      p_comprobante_id: editComp.id,
+      p_cliente_id: null,  // editamos como externo (más flexible que reasignar a cliente_id)
+      p_cliente_externo_nombre: editClienteNombre.trim(),
+      p_cliente_externo_doc: editClienteDoc.trim() || null,
+      p_motivo: editClienteMotivo.trim() || 'Reventa / cambio de cliente',
+    })
+    setEditSaving(false)
+    if (error) {
+      toast.error('No se pudo cambiar el cliente', { description: error.message })
+      return
+    }
+    toast.success('Cliente del comprobante actualizado')
+    setEditClienteOpen(false)
+    abrirEditar({ ...editComp, cliente_externo_nombre: editClienteNombre.trim(), clientes: null })
+    loadData()
+  }
+
   async function guardarEdicion() {
     if (!editComp) return
     setEditSaving(true)
@@ -277,7 +353,10 @@ export default function FacturacionPage() {
       p_tipo: tipo,
       p_serie: serieReal,
       p_numero: numero,
-      p_fecha_emision: hoyLima(),
+      // SUNAT acepta como fecha de emisión la fecha real de entrega de bienes.
+      // Daniel pidió que si el despacho es el día siguiente, la factura salga
+      // con esa fecha (no la de creación del comprobante).
+      p_fecha_emision: pedido.fecha_despacho || hoyLima(),
       p_subtotal: subtotalCalc,
       p_igv: igvCalc,
       p_total: pedTotal > 0 ? pedTotal : subtotalCalc + igvCalc,
@@ -361,7 +440,10 @@ export default function FacturacionPage() {
       p_tipo: tipoComprobante,
       p_serie: serieReal,
       p_numero: numero,
-      p_fecha_emision: hoyLima(),
+      // SUNAT acepta como fecha de emisión la fecha real de entrega de bienes.
+      // Daniel pidió que si el despacho es el día siguiente, la factura salga
+      // con esa fecha (no la de creación del comprobante).
+      p_fecha_emision: pedidoSeleccionado.fecha_despacho || hoyLima(),
       p_subtotal: subtotalCalc,
       p_igv: igvCalc,
       p_total: pedTotal > 0 ? pedTotal : subtotalCalc + igvCalc,
@@ -762,15 +844,30 @@ export default function FacturacionPage() {
                                   <Eye className="w-3.5 h-3.5" />
                                   Ver
                                 </Link>
-                                {puedeEditar && !c.enviado_sunat && (
-                                  <button
-                                    type="button"
-                                    onClick={() => abrirEditar(c)}
-                                    className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-amber-700 hover:text-amber-900 hover:bg-amber-50 rounded transition-colors"
-                                    title="Editar comprobante (con auditoría)"
-                                  >
-                                    ✏️ Editar
-                                  </button>
+                                {puedeEditar && !c.enviado_sunat && c.estado !== 'anulado' && (
+                                  <>
+                                    <button
+                                      type="button"
+                                      onClick={() => abrirEditar(c)}
+                                      className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-amber-700 hover:text-amber-900 hover:bg-amber-50 rounded transition-colors"
+                                      title="Editar comprobante (con auditoría)"
+                                    >
+                                      ✏️ Editar
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => abrirAnular(c)}
+                                      className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-red-700 hover:text-red-900 hover:bg-red-50 rounded transition-colors"
+                                      title="Anular comprobante (mantiene correlativo)"
+                                    >
+                                      🚫 Anular
+                                    </button>
+                                  </>
+                                )}
+                                {c.estado === 'anulado' && (
+                                  <span className="inline-flex items-center gap-1 px-2 py-1 text-[10px] font-bold text-red-700 bg-red-50 border border-red-200 rounded">
+                                    ANULADO
+                                  </span>
                                 )}
                               </div>
                             </td>
@@ -917,6 +1014,27 @@ export default function FacturacionPage() {
               <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-xs text-amber-900">
                 <strong>Trazabilidad activa.</strong> Cada modificación queda registrada con tu nombre, fecha y los valores anteriores/nuevos.
                 Solo puedes editar mientras el comprobante NO esté enviado a SUNAT.
+              </div>
+
+              {/* Cliente actual + botón cambiar cliente (caso reventa) */}
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 flex items-center justify-between gap-3">
+                <div className="flex-1 min-w-0">
+                  <p className="text-[10px] font-semibold text-blue-700 uppercase">Cliente del comprobante</p>
+                  <p className="text-sm font-bold text-blue-900 truncate">
+                    {editComp.clientes?.razon_social ?? editComp.cliente_externo_nombre ?? 'Sin cliente'}
+                  </p>
+                  <p className="text-[10px] text-blue-700">
+                    {editComp.clientes?.ruc ?? editComp.clientes?.dni ?? editComp.cliente_externo_doc ?? '—'}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={abrirEditarCliente}
+                  className="px-3 py-1.5 text-xs font-bold rounded-md border border-blue-400 text-blue-700 hover:bg-blue-100 shrink-0"
+                  title="Cambiar la razón social (útil cuando el cliente original devuelve y se revende a otro)"
+                >
+                  Cambiar cliente
+                </button>
               </div>
 
               <div>
@@ -1080,6 +1198,114 @@ export default function FacturacionPage() {
                 >
                   {editSaving && <Loader2 className="w-4 h-4 animate-spin" />}
                   Guardar con trazabilidad
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialog: Cambiar cliente del comprobante (reventa) */}
+      <Dialog open={editClienteOpen} onOpenChange={(o) => { if (!editSaving) setEditClienteOpen(o) }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Cambiar cliente del comprobante</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 mt-2">
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-xs text-blue-900">
+              Útil cuando el cliente original devuelve la mercadería y se la revendes a otro.
+              <strong> Solo disponible si el comprobante NO se ha enviado a SUNAT.</strong> Queda
+              registrado en el historial.
+            </div>
+            <div>
+              <Label className="text-sm font-semibold">Nueva razón social / Nombre *</Label>
+              <Input
+                value={editClienteNombre}
+                onChange={(e) => setEditClienteNombre(e.target.value)}
+                placeholder="Ej: PARRILLADAS TRADICION E.I.R.L."
+                className="mt-1"
+              />
+            </div>
+            <div>
+              <Label className="text-sm font-semibold">RUC o DNI</Label>
+              <Input
+                value={editClienteDoc}
+                onChange={(e) => setEditClienteDoc(e.target.value)}
+                placeholder="11 dígitos para RUC, 8 para DNI"
+                className="mt-1"
+                maxLength={11}
+              />
+            </div>
+            <div>
+              <Label className="text-sm font-semibold">
+                Motivo <span className="text-gray-400 font-normal text-xs">(opcional, recomendado)</span>
+              </Label>
+              <Input
+                value={editClienteMotivo}
+                onChange={(e) => setEditClienteMotivo(e.target.value)}
+                placeholder='Ej: "Cliente original rechazó mercadería, se vendió a tercero"'
+                className="mt-1"
+                maxLength={200}
+              />
+            </div>
+            <div className="flex justify-end gap-2 pt-2 border-t border-gray-100">
+              <Button variant="outline" onClick={() => setEditClienteOpen(false)} disabled={editSaving}>
+                Cancelar
+              </Button>
+              <Button
+                onClick={confirmarEditarCliente}
+                disabled={editSaving || editClienteNombre.trim().length < 3}
+                className="bg-blue-600 hover:bg-blue-700 text-white"
+              >
+                {editSaving && <Loader2 className="w-4 h-4 animate-spin mr-1" />}
+                Cambiar cliente
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialog: Anular comprobante */}
+      <Dialog open={anularOpen} onOpenChange={(o) => { if (!anularSaving) setAnularOpen(o) }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-red-700">🚫 Anular comprobante</DialogTitle>
+          </DialogHeader>
+          {anularComp && (
+            <div className="space-y-3 mt-2">
+              <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-xs text-red-900">
+                Vas a anular <strong className="font-mono">{anularComp.serie}-{String(anularComp.numero).padStart(8, '0')}</strong>.
+                <ul className="list-disc list-inside mt-1.5 space-y-0.5">
+                  <li>El correlativo se conserva (SUNAT lo exige).</li>
+                  <li>El comprobante queda marcado como <strong>ANULADO</strong>.</li>
+                  <li>El pedido asociado vuelve a estado <strong>&ldquo;enviado&rdquo;</strong> para que puedas re-facturarlo.</li>
+                  <li>Esta acción queda registrada con tu nombre y fecha.</li>
+                </ul>
+              </div>
+              <div>
+                <Label className="text-sm font-semibold">
+                  Motivo de anulación * <span className="text-gray-400 font-normal text-xs">(mín. 5 caracteres)</span>
+                </Label>
+                <Input
+                  value={anularMotivo}
+                  onChange={(e) => setAnularMotivo(e.target.value)}
+                  placeholder='Ej: "Error de cantidad en línea 2", "Cliente devolvió mercadería"'
+                  className="mt-1"
+                  maxLength={300}
+                  autoFocus
+                />
+              </div>
+              <div className="flex justify-end gap-2 pt-2 border-t border-gray-100">
+                <Button variant="outline" onClick={() => setAnularOpen(false)} disabled={anularSaving}>
+                  Cancelar
+                </Button>
+                <Button
+                  onClick={confirmarAnulacion}
+                  disabled={anularSaving || anularMotivo.trim().length < 5}
+                  className="bg-red-600 hover:bg-red-700 text-white"
+                >
+                  {anularSaving && <Loader2 className="w-4 h-4 animate-spin mr-1" />}
+                  Anular comprobante
                 </Button>
               </div>
             </div>

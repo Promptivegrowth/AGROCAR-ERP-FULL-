@@ -114,7 +114,9 @@ export default async function HojaRutaSimplePage({ params }: { params: { id: str
       </div>
 
       {/* Hoja imprimible */}
-      <div className="max-w-5xl mx-auto bg-white p-6 print:p-0 shadow-sm my-3 print:my-0 print:shadow-none">
+      {/* Ancho reducido en print (max-w-2xl) para dejar espacio en blanco
+          a la derecha — el repartidor anota a lapicero ahí. */}
+      <div className="max-w-5xl mx-auto print:mx-0 print:ml-0 print:max-w-[140mm] bg-white p-6 print:p-0 shadow-sm my-3 print:my-0 print:shadow-none">
         {/* Membrete */}
         <div className="text-center pb-1 border-b border-gray-200">
           <div className="font-bold text-sm">{EMPRESA.razon_social} · RUC {EMPRESA.ruc}</div>

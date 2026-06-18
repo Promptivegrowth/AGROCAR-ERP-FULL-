@@ -34,20 +34,35 @@ async function getData(personaId: string, desde: string, hasta: string) {
 
   const [pedRes, compRes, cobRes] = await Promise.all([
     (supabase as any).from('pedidos')
-      .select('id, vendedor_id, total, fecha_pedido')
+      .select(`
+        id, numero, vendedor_id, total, fecha_pedido, estado, created_at,
+        clientes(razon_social, ruc, dni)
+      `)
       .gte('fecha_pedido', desde)
       .lte('fecha_pedido', hasta)
-      .eq('vendedor_id', personaId),
+      .eq('vendedor_id', personaId)
+      .order('created_at', { ascending: false }),
     (supabase as any).from('comprobantes')
-      .select('id, total, fecha_emision, pedidos(vendedor_id)')
+      .select(`
+        id, serie, numero, tipo, total, fecha_emision, created_at, estado,
+        pedidos(vendedor_id),
+        clientes(razon_social, ruc, dni),
+        cliente_externo_nombre
+      `)
       .gte('fecha_emision', desde)
       .lte('fecha_emision', hasta)
-      .neq('estado', 'anulado'),
+      .neq('estado', 'anulado')
+      .order('created_at', { ascending: false }),
     (supabase as any).from('cobros')
-      .select('id, cobrador_id, efectivo, yape, plin, transferencia, total, fecha')
+      .select(`
+        id, numero, cobrador_id, efectivo, yape, plin, transferencia, total, fecha, created_at,
+        clientes(razon_social, ruc, dni),
+        cliente_externo_nombre
+      `)
       .gte('fecha', desde)
       .lte('fecha', hasta)
-      .eq('cobrador_id', personaId),
+      .eq('cobrador_id', personaId)
+      .order('created_at', { ascending: false }),
   ])
 
   // Agrupar por día
@@ -88,7 +103,12 @@ async function getData(personaId: string, desde: string, hasta: string) {
 
   const dias_arr = Array.from(dias.values()).sort((a, b) => b.fecha.localeCompare(a.fecha))
 
-  return { persona, dias: dias_arr }
+  // Operaciones detalladas (no agregadas) — el cliente las quiere ver todas
+  const pedidosDet = (pedRes.data ?? []) as any[]
+  const compDet = ((compRes.data ?? []) as any[]).filter((c: any) => c.pedidos?.vendedor_id === personaId)
+  const cobrosDet = (cobRes.data ?? []) as any[]
+
+  return { persona, dias: dias_arr, pedidosDet, compDet, cobrosDet }
 }
 
 export default async function PersonaReportePage({
@@ -110,7 +130,7 @@ export default async function PersonaReportePage({
   const data = await getData(id, desde, hasta)
   if (!data) return notFound()
 
-  const { persona, dias } = data
+  const { persona, dias, pedidosDet, compDet, cobrosDet } = data
 
   // Totales del período
   const tot = dias.reduce(
@@ -271,6 +291,119 @@ export default async function PersonaReportePage({
               </table>
             )}
           </div>
+
+          {/* Operaciones detalladas — cliente pidió ver cada cobro/pedido/factura individual */}
+          {cobrosDet.length > 0 && (
+            <div>
+              <h2 className="text-sm font-bold text-gray-700 uppercase mb-2">
+                Cobros detallados ({cobrosDet.length})
+              </h2>
+              <table className="w-full text-xs border border-gray-200">
+                <thead className="bg-gray-100 border-b border-gray-300">
+                  <tr>
+                    <th className="text-left p-2">Fecha/Hora</th>
+                    <th className="text-left p-2">Recibo</th>
+                    <th className="text-left p-2">Cliente</th>
+                    <th className="text-right p-2">Efectivo</th>
+                    <th className="text-right p-2">Yape</th>
+                    <th className="text-right p-2">Plin</th>
+                    <th className="text-right p-2">Transfer.</th>
+                    <th className="text-right p-2 bg-yellow-50">Total</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {cobrosDet.map((c: any) => (
+                    <tr key={c.id} className="border-b border-gray-100">
+                      <td className="p-2 font-mono text-[11px]">
+                        {new Date(c.created_at).toLocaleString('es-PE', {
+                          day: '2-digit', month: '2-digit', year: '2-digit',
+                          hour: '2-digit', minute: '2-digit', timeZone: 'America/Lima',
+                        })}
+                      </td>
+                      <td className="p-2 font-mono text-[11px]">{c.numero ?? '—'}</td>
+                      <td className="p-2 truncate max-w-[200px]">
+                        {c.clientes?.razon_social ?? c.cliente_externo_nombre ?? 'Consumidor final'}
+                      </td>
+                      <td className="p-2 text-right font-mono">{formatCurrency(Number(c.efectivo ?? 0))}</td>
+                      <td className="p-2 text-right font-mono">{formatCurrency(Number(c.yape ?? 0))}</td>
+                      <td className="p-2 text-right font-mono">{formatCurrency(Number(c.plin ?? 0))}</td>
+                      <td className="p-2 text-right font-mono">{formatCurrency(Number(c.transferencia ?? 0))}</td>
+                      <td className="p-2 text-right font-mono font-bold bg-yellow-50/60">
+                        {formatCurrency(Number(c.total ?? 0))}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {pedidosDet.length > 0 && (
+            <div>
+              <h2 className="text-sm font-bold text-gray-700 uppercase mb-2">
+                Pedidos creados ({pedidosDet.length})
+              </h2>
+              <table className="w-full text-xs border border-gray-200">
+                <thead className="bg-gray-100 border-b border-gray-300">
+                  <tr>
+                    <th className="text-left p-2">Fecha/Hora</th>
+                    <th className="text-left p-2">N° Pedido</th>
+                    <th className="text-left p-2">Cliente</th>
+                    <th className="text-left p-2">Estado</th>
+                    <th className="text-right p-2">Total</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {pedidosDet.map((p: any) => (
+                    <tr key={p.id} className="border-b border-gray-100">
+                      <td className="p-2 font-mono text-[11px]">
+                        {new Date(p.created_at).toLocaleString('es-PE', {
+                          day: '2-digit', month: '2-digit', year: '2-digit',
+                          hour: '2-digit', minute: '2-digit', timeZone: 'America/Lima',
+                        })}
+                      </td>
+                      <td className="p-2 font-mono">{p.numero}</td>
+                      <td className="p-2 truncate max-w-[200px]">{p.clientes?.razon_social ?? '—'}</td>
+                      <td className="p-2 text-[10px] uppercase text-gray-600">{p.estado}</td>
+                      <td className="p-2 text-right font-mono font-semibold">{formatCurrency(Number(p.total ?? 0))}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {compDet.length > 0 && (
+            <div>
+              <h2 className="text-sm font-bold text-gray-700 uppercase mb-2">
+                Comprobantes emitidos ({compDet.length})
+              </h2>
+              <table className="w-full text-xs border border-gray-200">
+                <thead className="bg-gray-100 border-b border-gray-300">
+                  <tr>
+                    <th className="text-left p-2">Fecha</th>
+                    <th className="text-left p-2">Tipo</th>
+                    <th className="text-left p-2">Serie-Número</th>
+                    <th className="text-left p-2">Cliente</th>
+                    <th className="text-right p-2">Total</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {compDet.map((c: any) => (
+                    <tr key={c.id} className="border-b border-gray-100">
+                      <td className="p-2 font-mono">{formatDate(c.fecha_emision)}</td>
+                      <td className="p-2 capitalize text-gray-700">{c.tipo}</td>
+                      <td className="p-2 font-mono">{c.serie}-{String(c.numero).padStart(8, '0')}</td>
+                      <td className="p-2 truncate max-w-[200px]">
+                        {c.clientes?.razon_social ?? c.cliente_externo_nombre ?? '—'}
+                      </td>
+                      <td className="p-2 text-right font-mono font-semibold">{formatCurrency(Number(c.total ?? 0))}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       </div>
     </div>

@@ -197,14 +197,7 @@ export default async function ImprimirLotePage({
                           <td style={{ padding: '2px 4px', fontWeight: 'bold', width: 120 }}>Señor(es):</td>
                           <td style={{ padding: '2px 4px' }}>{clienteNombre}</td>
                           <td style={{ padding: '2px 4px', fontWeight: 'bold', width: 100 }}>Fecha emisión:</td>
-                          <td style={{ padding: '2px 4px' }}>
-                            {fechaEmision}
-                            {fechaDespacho && fechaDespacho !== fechaEmision && (
-                              <span style={{ marginLeft: 6, fontSize: 8.5, color: '#6b7280' }}>
-                                (Desp: <strong style={{ color: '#000' }}>{fechaDespacho}</strong>)
-                              </span>
-                            )}
-                          </td>
+                          <td style={{ padding: '2px 4px' }}>{fechaEmision}</td>
                         </tr>
                         <tr>
                           <td style={{ padding: '2px 4px', fontWeight: 'bold' }}>{docCliente.label}:</td>
@@ -320,9 +313,6 @@ export default async function ImprimirLotePage({
                   )}
                   <div style={{ borderTop: '1px dashed #000', margin: '6px 0' }} />
                   <div>F. Emisión: {fechaEmision}</div>
-                  {fechaDespacho && fechaDespacho !== fechaEmision && (
-                    <div style={{ fontWeight: 'bold' }}>F. Despacho: {fechaDespacho}</div>
-                  )}
                   <div>{docCliente.label}: {docCliente.valor}</div>
                   <div>Cliente: {clienteNombre}</div>
                   <div style={{ borderTop: '1px dashed #000', margin: '6px 0' }} />

@@ -202,27 +202,35 @@ export default async function ComprobantePage({
         `}</style>
         <ToggleFormato />
         <div className="a4-doc mx-auto bg-white shadow-lg print:shadow-none p-8" style={{ maxWidth: 800, fontFamily: '"Helvetica Neue", Arial, sans-serif', fontSize: 11, color: '#111' }}>
-          {/* Encabezado A4 — diseño original con datos actualizados */}
-          <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: 16 }}>
+          {/* Encabezado A4 — 3 columnas: logo+slogan | razón social + RUC + dirección | recuadro */}
+          <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: 14 }}>
             <tbody>
               <tr>
-                <td style={{ width: '40%', verticalAlign: 'top' }}>
+                {/* IZQUIERDA: Logo + slogan centrado bajo el logo */}
+                <td style={{ width: '25%', verticalAlign: 'top', textAlign: 'center' }}>
                   {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src="/logo-agrocar.png" alt="AGROCAR" style={{ maxWidth: 160 }} />
-                  <div style={{ fontFamily: SLOGAN_FONT_STACK, fontSize: 16, color: '#1f2937', marginTop: 2, marginLeft: 4 }}>
+                  <img src="/logo-agrocar.png" alt="AGROCAR" style={{ maxWidth: 150, margin: '0 auto', display: 'block' }} />
+                  <div style={{ fontFamily: SLOGAN_FONT_STACK, fontSize: 16, color: '#1f2937', marginTop: 4, textAlign: 'center' }}>
                     {EMPRESA.slogan}
                   </div>
-                  <div style={{ marginTop: 6, fontSize: 11, lineHeight: 1.5 }}>
-                    <div style={{ fontWeight: 'bold', fontSize: 14 }}>{EMPRESA.razon_social}</div>
+                </td>
+                {/* CENTRO: Razón social · RUC + dirección + teléfono/correo */}
+                <td style={{ width: '45%', verticalAlign: 'top', paddingLeft: 12, paddingRight: 12 }}>
+                  <div style={{ fontWeight: 'bold', fontSize: 14, lineHeight: 1.3 }}>
+                    {EMPRESA.razon_social} · RUC {EMPRESA.ruc}
+                  </div>
+                  <div style={{ fontSize: 10.5, lineHeight: 1.45, marginTop: 4 }}>
                     <div>{EMPRESA.direccion_comercial}</div>
-                    <div style={{ fontSize: 10, color: '#6b7280' }}>{EMPRESA.direccion_fundo}</div>
-                    <div>Tel. {EMPRESA.telefono} · {EMPRESA.correo}</div>
+                    <div style={{ color: '#6b7280' }}>{EMPRESA.direccion_fundo}</div>
+                    <div>Tel. {EMPRESA.telefono}</div>
+                    <div>{EMPRESA.correo}</div>
                   </div>
                 </td>
-                <td style={{ width: '60%', verticalAlign: 'top', textAlign: 'right' }}>
-                  <div style={{ border: '2px solid #000', borderRadius: 4, padding: 12, display: 'inline-block', minWidth: 280, textAlign: 'center' }}>
-                    <div style={{ fontSize: 11, fontWeight: 'bold', marginBottom: 4 }}>R.U.C. {EMPRESA.ruc}</div>
+                {/* DERECHA: Recuadro título + correlativo (RUC ya está al centro, lo quitamos del recuadro) */}
+                <td style={{ width: '30%', verticalAlign: 'top', textAlign: 'right' }}>
+                  <div style={{ border: '2px solid #000', borderRadius: 4, padding: 10, display: 'inline-block', minWidth: 220, textAlign: 'center' }}>
                     <div style={{ fontSize: 14, fontWeight: 'bold', textTransform: 'uppercase', marginBottom: 6, lineHeight: 1.2 }}>{titulo}</div>
+                    <div style={{ fontSize: 11, color: '#444', marginBottom: 4 }}>R.U.C. {EMPRESA.ruc}</div>
                     <div style={{ fontSize: 16, fontWeight: 'bold', fontFamily: 'monospace' }}>{correlativo}</div>
                   </div>
                 </td>
@@ -238,14 +246,7 @@ export default async function ComprobantePage({
                   <td style={{ padding: '2px 4px', fontWeight: 'bold', width: 120 }}>Señor(es):</td>
                   <td style={{ padding: '2px 4px' }}>{clienteNombre}</td>
                   <td style={{ padding: '2px 4px', fontWeight: 'bold', width: 100 }}>Fecha emisión:</td>
-                  <td style={{ padding: '2px 4px' }}>
-                    {fechaEmision}
-                    {fechaDespacho && fechaDespacho !== fechaEmision && (
-                      <span style={{ marginLeft: 8, fontSize: 9, color: '#6b7280' }}>
-                        (Despacho: <strong style={{ color: '#000' }}>{fechaDespacho}</strong>)
-                      </span>
-                    )}
-                  </td>
+                  <td style={{ padding: '2px 4px' }}>{fechaEmision}</td>
                 </tr>
                 <tr>
                   <td style={{ padding: '2px 4px', fontWeight: 'bold' }}>{docCliente.label}:</td>
@@ -418,9 +419,6 @@ export default async function ComprobantePage({
             <span>F. Emisión: {fechaEmision}</span>
             <span>Cond: {condicion}</span>
           </div>
-          {fechaDespacho && fechaDespacho !== fechaEmision && (
-            <div style={{ fontWeight: 'bold' }}>F. Despacho: {fechaDespacho}</div>
-          )}
           <div>{docCliente.label}: {docCliente.valor}{clienteTelefono && clienteTelefono !== '—' ? ` · Tel: ${clienteTelefono}` : ''}</div>
           <div>Cliente: {clienteNombre}</div>
           {clienteDireccion && clienteDireccion !== '—' && (
