@@ -34,30 +34,35 @@ export async function GET(
     return new Response('Sesión no encontrada', { status: 404 })
   }
 
-  const [cobrosRes, movsRes] = await Promise.all([
-    (supabase as any)
-      .from('cobros')
-      .select(`
-        id, numero, total, efectivo, yape, plin, transferencia, fecha, notas, created_at,
-        cliente_externo_nombre,
-        clientes(razon_social, ruc, dni),
-        profiles!cobros_cobrador_id_fkey(full_name, role)
-      `)
-      .gte('created_at', sesion.fecha_apertura)
-      .lte('created_at', sesion.fecha_cierre ?? new Date().toISOString())
-      .order('created_at', { ascending: true }),
-    (supabase as any)
-      .from('caja_movimientos')
-      .select(`
-        id, tipo, categoria, descripcion, monto, created_at,
-        profiles!caja_movimientos_cobrador_id_fkey(full_name)
-      `)
-      .eq('sesion_id', sesionId)
-      .order('created_at', { ascending: true }),
-  ])
+  // Fuente de verdad: caja_movimientos.sesion_id (incluye retroactivos).
+  // Para mostrar cliente/cobrador del cobro, hacemos un IN sobre los
+  // cobro_id de los movimientos en vez de filtrar por created_at.
+  const { data: movsRaw } = await (supabase as any)
+    .from('caja_movimientos')
+    .select(`
+      id, tipo, categoria, descripcion, monto, created_at, cobro_id,
+      profiles!caja_movimientos_cobrador_id_fkey(full_name)
+    `)
+    .eq('sesion_id', sesionId)
+    .order('created_at', { ascending: true })
 
-  const cobros: any[] = cobrosRes.data ?? []
-  const movs: any[] = movsRes.data ?? []
+  const movs: any[] = movsRaw ?? []
+  const cobroIds = movs.filter((m) => m.cobro_id).map((m) => m.cobro_id)
+
+  const { data: cobrosRaw } = cobroIds.length > 0
+    ? await (supabase as any)
+        .from('cobros')
+        .select(`
+          id, numero, total, efectivo, yape, plin, transferencia, fecha, notas, created_at,
+          cliente_externo_nombre,
+          clientes(razon_social, ruc, dni),
+          profiles!cobros_cobrador_id_fkey(full_name, role)
+        `)
+        .in('id', cobroIds)
+        .order('created_at', { ascending: true })
+    : { data: [] }
+
+  const cobros: any[] = cobrosRaw ?? []
   const egresos = movs.filter((m: any) => m.tipo === 'egreso')
 
   const totalEfectivo = cobros.reduce((a, c) => a + Number(c.efectivo ?? 0), 0)

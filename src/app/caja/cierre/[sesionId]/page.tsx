@@ -35,18 +35,8 @@ export default async function CierreCajaReporte({
   const apertura = new Date(sesion.fecha_apertura)
   const cierre = sesion.fecha_cierre ? new Date(sesion.fecha_cierre) : null
 
-  // Todos los cobros y egresos durante la sesión, ordenados cronológicamente
-  const { data: cobrosRaw } = await supabase
-    .from('cobros')
-    .select(`
-      id, numero, total, efectivo, yape, plin, transferencia, fecha, notas, created_at, cliente_externo_nombre,
-      clientes(razon_social, telefono),
-      profiles!cobros_cobrador_id_fkey(full_name, role)
-    `)
-    .gte('created_at', sesion.fecha_apertura)
-    .lte('created_at', sesion.fecha_cierre ?? new Date().toISOString())
-    .order('created_at', { ascending: true })
-
+  // Fuente de verdad: caja_movimientos.sesion_id. Incluye los retroactivos
+  // (cobros previos cargados al abrir caja) que un filtro por fecha excluiría.
   const { data: movsRaw } = await (supabase as any)
     .from('caja_movimientos')
     .select(`
@@ -56,8 +46,23 @@ export default async function CierreCajaReporte({
     .eq('sesion_id', sesionId)
     .order('created_at', { ascending: true })
 
-  const cobros = cobrosRaw ?? []
   const movs = movsRaw ?? []
+  const cobroIds = movs.filter((m: any) => m.cobro_id).map((m: any) => m.cobro_id)
+
+  // Traer cobros asociados a los movimientos (en vez de filtrar por fecha).
+  const { data: cobrosRaw } = cobroIds.length > 0
+    ? await (supabase as any)
+        .from('cobros')
+        .select(`
+          id, numero, total, efectivo, yape, plin, transferencia, fecha, notas, created_at, cliente_externo_nombre,
+          clientes(razon_social, telefono),
+          profiles!cobros_cobrador_id_fkey(full_name, role)
+        `)
+        .in('id', cobroIds)
+        .order('created_at', { ascending: true })
+    : { data: [] }
+
+  const cobros = cobrosRaw ?? []
   const egresos = movs.filter((m: any) => m.tipo === 'egreso')
 
   // Totales
