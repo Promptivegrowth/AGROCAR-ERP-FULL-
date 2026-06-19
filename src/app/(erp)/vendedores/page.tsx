@@ -81,6 +81,22 @@ async function getVendedoresData() {
     return (v?.data ?? []) as T[]
   }
   const vendedoresRaw = pick<any>(0, 'profiles vendedores')
+  // Llamar RPC calcular_comision_vendedor por cada vendedor (en paralelo).
+  // Esto reemplaza el cálculo manual antiguo que ignoraba la familia.
+  const comisionesRpc = await Promise.all(
+    vendedoresRaw.map(async (v) => {
+      const { data } = await (supabase.rpc as any)('calcular_comision_vendedor', {
+        p_vendedor_id: v.id,
+        p_desde: inicioMes,
+        p_hasta: finMes,
+      })
+      return { vendedor_id: v.id, data }
+    }),
+  )
+  const comisionRpcPorVendedor = new Map<string, any>()
+  comisionesRpc.forEach((r) => {
+    if (r.data) comisionRpcPorVendedor.set(r.vendedor_id, r.data)
+  })
   const familiasRaw = pick<any>(1, 'familias')
   const pedidosMes = pick<any>(2, 'pedidos mes')
   const comprobantesMes = pick<any>(3, 'comprobantes mes')
@@ -202,17 +218,11 @@ async function getVendedoresData() {
     const meta = metaPorVendedor.get(v.id) ?? null
     const regla = reglaPorVendedor.get(v.id) ?? reglaGlobal ?? null
 
-    let comision_calculada = 0
-    if (regla) {
-      const porc = Number(regla.porcentaje ?? 0)
-      const fijo = Number(regla.monto_fijo ?? 0)
-      if (fijo > 0) {
-        comision_calculada = fijo
-      } else if (porc > 0) {
-        // default: sobre ventas
-        comision_calculada = (total_ventas * porc) / 100
-      }
-    }
+    // Comisión calculada con desglose por familia (RPC nueva).
+    // Antes era un cálculo manual (total_ventas * porcentaje) que ignoraba
+    // la familia; ahora respeta la prioridad de reglas configuradas.
+    const comisionRpc = comisionRpcPorVendedor.get(v.id)
+    const comision_calculada = comisionRpc ? Number(comisionRpc.total_comision ?? 0) : 0
 
     const liquidaciones = (liquidacionesPorVendedor.get(v.id) ?? []).map((l) => ({
       id: l.id,

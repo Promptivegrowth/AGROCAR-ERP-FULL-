@@ -145,16 +145,24 @@ export default function ReportesPage() {
     })
     setVisitas(Object.entries(visitasPorVendedor).map(([nombre, data]) => ({ nombre, ...data })))
 
-    // Comisiones (2.5% sobre ventas reales del vendedor en el período)
-    const comisionData = vendedores.map((v) => {
-      const ventasV = ventasMap.get(v.id)?.total ?? 0
+    // Comisiones por familia (usa RPC calcular_comision_vendedor)
+    // Antes había un 2.5% hardcoded que ignoraba las reglas configuradas.
+    const comisionPromises = vendedores.map(async (v) => {
+      const { data: rpc } = await (supabase.rpc as any)('calcular_comision_vendedor', {
+        p_vendedor_id: v.id, p_desde: desde, p_hasta: hasta,
+      })
+      const ventasReales = Number(rpc?.total_ventas ?? 0)
+      const comision = Number(rpc?.total_comision ?? 0)
+      const pct = ventasReales > 0 ? (comision / ventasReales) * 100 : 0
       return {
         vendedor: v.full_name,
-        ventas: ventasV,
-        comision_pct: 2.5,
-        comision: ventasV * 0.025,
+        ventas: ventasReales,
+        comision_pct: pct,
+        comision,
+        sin_regla: Number(rpc?.lineas_sin_regla ?? 0),
       }
     })
+    const comisionData = await Promise.all(comisionPromises)
     setComisiones(comisionData)
 
     setLoading(false)
@@ -396,9 +404,17 @@ export default function ReportesPage() {
                 <tbody className="divide-y divide-gray-50">
                   {comisiones.map((c, i) => (
                     <tr key={i} className="hover:bg-gray-50/50">
-                      <td className="py-2.5 px-4 font-medium text-gray-800">{c.vendedor}</td>
+                      <td className="py-2.5 px-4 font-medium text-gray-800">
+                        {c.vendedor}
+                        {c.sin_regla > 0 && (
+                          <span title="Líneas vendidas sin regla de comisión configurada (no generan comisión)"
+                            className="ml-2 inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-200 rounded">
+                            ⚠ {c.sin_regla} sin regla
+                          </span>
+                        )}
+                      </td>
                       <td className="py-2.5 px-4 text-gray-700">{formatCurrency(c.ventas)}</td>
-                      <td className="py-2.5 px-4 text-gray-600">{c.comision_pct}%</td>
+                      <td className="py-2.5 px-4 text-gray-600">{c.comision_pct.toFixed(2)}%</td>
                       <td className="py-2.5 px-4 font-bold text-green-600">{formatCurrency(c.comision)}</td>
                     </tr>
                   ))}
