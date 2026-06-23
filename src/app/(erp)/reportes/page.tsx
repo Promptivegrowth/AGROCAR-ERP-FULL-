@@ -210,22 +210,12 @@ export default function ReportesPage() {
         </div>
       </div>
 
-      {/* Aviso: cómo acceder a reportes individuales */}
-      <div className="bg-blue-50 border border-blue-200 rounded-lg px-3 py-2 text-xs text-blue-800 space-y-1">
-        <p>
-          💡 <strong>Estado de cuenta del cliente</strong> (con WhatsApp):
-          <code className="bg-white px-1 py-0.5 rounded text-[10px] ml-1">/reportes/cobranzas-cliente/&lt;UUID-cliente&gt;</code>
-        </p>
-        <p>
-          📋 <strong>Cuentas por cobrar de un vendedor</strong>:
-          <code className="bg-white px-1 py-0.5 rounded text-[10px] ml-1">/reportes/cobranzas-vendedor/&lt;UUID-vendedor&gt;</code>
-          {' '}— accesible también desde la PWA del vendedor en /pwa/cobros
-        </p>
-        <p>
-          🎯 <strong>Por persona</strong> (ventas/cobros): desde
-          <a href="/reportes/rendicion-diaria" className="underline ml-1">Rendición diaria</a> click sobre el nombre.
-        </p>
-      </div>
+      {/* Acceso rápido a reportes individuales (selectores con búsqueda) */}
+      <ReporteIndividualSelectores
+        vendedores={vendedores}
+        clientesPorCobrar={cuentasPorCobrar}
+      />
+
 
       {/* Filtros */}
       <Card className="border-gray-200 shadow-sm">
@@ -564,6 +554,184 @@ export default function ReportesPage() {
           </Card>
         </TabsContent>
       </Tabs>
+    </div>
+  )
+}
+
+/**
+ * Selectores rápidos para abrir reportes individuales:
+ * - Por VENDEDOR: cuentas por cobrar (cobranzas) + ventas históricas (persona)
+ * - Por CLIENTE: estado de cuenta + historial de compras (ambos con WhatsApp)
+ *
+ * Dropdowns con búsqueda — escribes 2+ caracteres y filtra. Click selecciona
+ * y abre el reporte en pestaña nueva.
+ */
+function ReporteIndividualSelectores({
+  vendedores, clientesPorCobrar,
+}: {
+  vendedores: any[]
+  clientesPorCobrar: any[]
+}) {
+  const [vendedorBuscar, setVendedorBuscar] = useState('')
+  const [vendedorAbierto, setVendedorAbierto] = useState(false)
+  const [vendedorSeleccionado, setVendedorSeleccionado] = useState<any>(null)
+
+  const [clienteBuscar, setClienteBuscar] = useState('')
+  const [clienteAbierto, setClienteAbierto] = useState(false)
+  const [clientesTodos, setClientesTodos] = useState<any[]>([])
+  const [clienteSeleccionado, setClienteSeleccionado] = useState<any>(null)
+
+  // Cargar TODOS los clientes (no solo los con deuda) la primera vez que abren el dropdown
+  const supabase = createClient()
+  const cargarClientes = useCallback(async () => {
+    if (clientesTodos.length > 0) return
+    const { data } = await (supabase as any)
+      .from('clientes')
+      .select('id, razon_social, ruc, dni')
+      .eq('estado', 'activo')
+      .order('razon_social')
+    setClientesTodos((data ?? []) as any[])
+  }, [supabase, clientesTodos.length])
+
+  const vendedoresFiltrados = (() => {
+    const q = vendedorBuscar.trim().toLowerCase()
+    if (q.length === 0) return vendedores.slice(0, 12)
+    return vendedores
+      .filter((v: any) => (v.full_name ?? '').toLowerCase().includes(q))
+      .slice(0, 12)
+  })()
+  const clientesFiltrados = (() => {
+    const q = clienteBuscar.trim().toLowerCase()
+    const base = clientesTodos.length > 0 ? clientesTodos : clientesPorCobrar
+    if (q.length === 0) return base.slice(0, 12)
+    return base
+      .filter((c: any) =>
+        (c.razon_social ?? '').toLowerCase().includes(q) ||
+        (c.ruc ?? '').toLowerCase().includes(q) ||
+        (c.dni ?? '').toLowerCase().includes(q),
+      )
+      .slice(0, 12)
+  })()
+
+  return (
+    <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 space-y-2">
+      <p className="text-xs font-semibold text-blue-900 flex items-center gap-1">
+        🎯 Abrir reporte individual (selecciona y click)
+      </p>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        {/* Selector VENDEDOR */}
+        <div className="relative">
+          <Label className="text-[10px] text-blue-800 uppercase">Por VENDEDOR</Label>
+          <Input
+            type="text"
+            placeholder="Buscar vendedor por nombre..."
+            value={vendedorBuscar}
+            onChange={(e) => { setVendedorBuscar(e.target.value); setVendedorAbierto(true); setVendedorSeleccionado(null) }}
+            onFocus={() => setVendedorAbierto(true)}
+            onBlur={() => setTimeout(() => setVendedorAbierto(false), 200)}
+            className="h-9 text-sm bg-white"
+            autoComplete="off"
+          />
+          {vendedorAbierto && vendedoresFiltrados.length > 0 && (
+            <div className="absolute z-50 mt-1 left-0 right-0 bg-white border border-gray-300 rounded-lg shadow-lg max-h-64 overflow-y-auto">
+              {vendedoresFiltrados.map((v: any) => (
+                <button
+                  key={v.id}
+                  type="button"
+                  onMouseDown={(e) => {
+                    e.preventDefault()
+                    setVendedorSeleccionado(v)
+                    setVendedorBuscar(v.full_name)
+                    setVendedorAbierto(false)
+                  }}
+                  className="w-full text-left px-3 py-2 hover:bg-blue-50 border-b border-gray-100 last:border-0 text-sm"
+                >
+                  <p className="font-semibold">{v.full_name}</p>
+                  <p className="text-[10px] text-gray-500 capitalize">{v.role}</p>
+                </button>
+              ))}
+            </div>
+          )}
+          {vendedorSeleccionado && (
+            <div className="mt-2 flex gap-2 flex-wrap">
+              <a
+                href={`/reportes/cobranzas-vendedor/${vendedorSeleccionado.id}`}
+                target="_blank" rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-bold bg-orange-600 hover:bg-orange-700 text-white rounded-md"
+              >
+                📋 Cuentas por cobrar →
+              </a>
+              <a
+                href={`/reportes/persona/${vendedorSeleccionado.id}`}
+                target="_blank" rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-bold bg-purple-600 hover:bg-purple-700 text-white rounded-md"
+              >
+                📊 Ventas históricas →
+              </a>
+            </div>
+          )}
+        </div>
+
+        {/* Selector CLIENTE */}
+        <div className="relative">
+          <Label className="text-[10px] text-blue-800 uppercase">Por CLIENTE</Label>
+          <Input
+            type="text"
+            placeholder="Buscar cliente por nombre, RUC o DNI..."
+            value={clienteBuscar}
+            onChange={(e) => { setClienteBuscar(e.target.value); setClienteAbierto(true); setClienteSeleccionado(null) }}
+            onFocus={() => { cargarClientes(); setClienteAbierto(true) }}
+            onBlur={() => setTimeout(() => setClienteAbierto(false), 200)}
+            className="h-9 text-sm bg-white"
+            autoComplete="off"
+          />
+          {clienteAbierto && clientesFiltrados.length > 0 && (
+            <div className="absolute z-50 mt-1 left-0 right-0 bg-white border border-gray-300 rounded-lg shadow-lg max-h-64 overflow-y-auto">
+              {clientesFiltrados.map((c: any) => (
+                <button
+                  key={c.id}
+                  type="button"
+                  onMouseDown={(e) => {
+                    e.preventDefault()
+                    setClienteSeleccionado(c)
+                    setClienteBuscar(c.razon_social)
+                    setClienteAbierto(false)
+                  }}
+                  className="w-full text-left px-3 py-2 hover:bg-blue-50 border-b border-gray-100 last:border-0 text-sm"
+                >
+                  <p className="font-semibold truncate">{c.razon_social}</p>
+                  <p className="text-[10px] text-gray-500 font-mono">
+                    {c.ruc ? `RUC ${c.ruc}` : c.dni ? `DNI ${c.dni}` : 'Sin doc'}
+                  </p>
+                </button>
+              ))}
+            </div>
+          )}
+          {clienteSeleccionado && (
+            <div className="mt-2 flex gap-2 flex-wrap">
+              <a
+                href={`/reportes/cobranzas-cliente/${clienteSeleccionado.id}`}
+                target="_blank" rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-bold bg-red-600 hover:bg-red-700 text-white rounded-md"
+              >
+                💰 Estado de cuenta + WhatsApp →
+              </a>
+              <a
+                href={`/reportes/cliente/${clienteSeleccionado.id}`}
+                target="_blank" rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-bold bg-green-600 hover:bg-green-700 text-white rounded-md"
+              >
+                🛒 Historial de compras →
+              </a>
+            </div>
+          )}
+        </div>
+      </div>
+
+      <p className="text-[10px] text-blue-700 italic">
+        Tip: el banner naranja en la tab Cobranzas también permite click directo en cada cliente para ver su estado de cuenta.
+      </p>
     </div>
   )
 }
