@@ -35,6 +35,8 @@ export default function ReportesPage() {
   const [ventasPorVendedor, setVentasPorVendedor] = useState<any[]>([])
   const [ventasPorProducto, setVentasPorProducto] = useState<any[]>([])
   const [cuentasPorCobrar, setCuentasPorCobrar] = useState<any[]>([])
+  // Búsqueda por nombre o doc (RUC/DNI) en la tab Cobranzas
+  const [busquedaCobranza, setBusquedaCobranza] = useState('')
   const [comisiones, setComisiones] = useState<any[]>([])
   const [visitas, setVisitas] = useState<any[]>([])
   const [loading, setLoading] = useState(false)
@@ -101,7 +103,7 @@ export default function ReportesPage() {
 
     // Cuentas por cobrar (real: facturado - cobrado por cliente)
     const [{ data: clientesActivos }, { data: comprAll }, { data: cobrosAll }] = await Promise.all([
-      supabase.from('clientes').select('id, razon_social, credito_limite, credito_dias').eq('estado', 'activo').order('razon_social'),
+      supabase.from('clientes').select('id, razon_social, ruc, dni, credito_limite, credito_dias').eq('estado', 'activo').order('razon_social'),
       supabase.from('comprobantes').select('cliente_id, total').neq('estado', 'anulado'),
       supabase.from('cobros').select('cliente_id, total'),
     ])
@@ -352,36 +354,117 @@ export default function ReportesPage() {
         </TabsContent>
 
         {/* COBRANZAS */}
-        <TabsContent value="cobranzas" className="mt-4">
+        <TabsContent value="cobranzas" className="mt-4 space-y-3">
+          {/* Botón rápido al reporte por vendedor (cuando hay filtro) */}
+          {filterVendedor !== 'todos' && (
+            <div className="bg-orange-50 border border-orange-200 rounded-lg p-3 flex items-center justify-between flex-wrap gap-2">
+              <p className="text-xs text-orange-900">
+                📋 <strong>Vendedor seleccionado:</strong>{' '}
+                {vendedores.find((v: any) => v.id === filterVendedor)?.full_name ?? '—'}
+              </p>
+              <a
+                href={`/reportes/cobranzas-vendedor/${filterVendedor}`}
+                target="_blank" rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-orange-600 hover:bg-orange-700 text-white rounded-md"
+              >
+                Ver sus cuentas por cobrar →
+              </a>
+            </div>
+          )}
+
           <Card className="border-gray-200 shadow-sm">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-base font-semibold text-gray-800">Cuentas por Cobrar</CardTitle>
+            <CardHeader className="pb-2 space-y-2">
+              <div className="flex items-center justify-between flex-wrap gap-2">
+                <CardTitle className="text-base font-semibold text-gray-800">Cuentas por Cobrar</CardTitle>
+                <p className="text-[11px] text-gray-500">
+                  💡 Click en el cliente para ver su estado de cuenta con opción de enviar por WhatsApp.
+                </p>
+              </div>
+              {/* Buscador por nombre o RUC/DNI */}
+              <div className="relative max-w-md">
+                <span className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-400 text-xs">🔍</span>
+                <Input
+                  type="text"
+                  value={busquedaCobranza}
+                  onChange={(e) => setBusquedaCobranza(e.target.value)}
+                  placeholder="Buscar por nombre del cliente, RUC o DNI..."
+                  className="pl-7 pr-9 h-8 text-xs"
+                />
+                {busquedaCobranza && (
+                  <button onClick={() => setBusquedaCobranza('')}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-700 text-xs">
+                    ✕
+                  </button>
+                )}
+              </div>
             </CardHeader>
             <CardContent className="p-0">
-              {cuentasPorCobrar.length === 0 ? (
-                <div className="text-center py-12 text-gray-400 text-sm">Sin cuentas por cobrar</div>
-              ) : (
-                <table className="w-full text-sm">
-                  <thead className="border-b border-gray-100 bg-gray-50/50">
-                    <tr>
-                      {['Cliente', 'Límite Crédito', 'Saldo Deuda', 'Días Crédito', 'Vencimiento'].map((h) => (
-                        <th key={h} className="text-left py-2.5 px-4 text-xs font-semibold text-gray-500 uppercase tracking-wide">{h}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-50">
-                    {cuentasPorCobrar.map((c) => (
-                      <tr key={c.id} className="hover:bg-gray-50/50">
-                        <td className="py-2.5 px-4 font-medium text-gray-800">{c.razon_social}</td>
-                        <td className="py-2.5 px-4 text-gray-600">{formatCurrency(c.credito_limite)}</td>
-                        <td className="py-2.5 px-4 font-bold text-red-600">{formatCurrency(c.saldo)}</td>
-                        <td className="py-2.5 px-4 text-gray-600">{c.credito_dias} días</td>
-                        <td className="py-2.5 px-4 text-gray-500">{formatDate(c.vencimiento)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              )}
+              {(() => {
+                const q = busquedaCobranza.trim().toLowerCase()
+                const filtrados = q.length === 0
+                  ? cuentasPorCobrar
+                  : cuentasPorCobrar.filter((c: any) =>
+                      c.razon_social.toLowerCase().includes(q) ||
+                      (c.ruc ?? '').toLowerCase().includes(q) ||
+                      (c.dni ?? '').toLowerCase().includes(q),
+                    )
+                if (cuentasPorCobrar.length === 0) {
+                  return <div className="text-center py-12 text-gray-400 text-sm">Sin cuentas por cobrar</div>
+                }
+                if (filtrados.length === 0) {
+                  return <div className="text-center py-12 text-gray-400 text-sm">Ningún cliente coincide con &ldquo;{busquedaCobranza}&rdquo;</div>
+                }
+                return (
+                  <>
+                    <p className="text-[10px] text-gray-500 px-4 py-2 border-b border-gray-100">
+                      Mostrando <strong>{filtrados.length}</strong> de {cuentasPorCobrar.length} clientes con deuda
+                      {q && ` · filtro: ${busquedaCobranza}`}
+                    </p>
+                    <table className="w-full text-sm">
+                      <thead className="border-b border-gray-100 bg-gray-50/50">
+                        <tr>
+                          {['Cliente', 'Doc.', 'Límite', 'Saldo Deuda', 'Días', 'Vencimiento', ''].map((h) => (
+                            <th key={h} className="text-left py-2.5 px-4 text-xs font-semibold text-gray-500 uppercase tracking-wide">{h}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-50">
+                        {filtrados.map((c: any) => (
+                          <tr key={c.id} className="hover:bg-blue-50/40 transition-colors group">
+                            <td className="py-2.5 px-4 font-medium">
+                              <a
+                                href={`/reportes/cobranzas-cliente/${c.id}`}
+                                target="_blank" rel="noopener noreferrer"
+                                className="text-blue-700 hover:text-blue-900 hover:underline"
+                                title="Abrir estado de cuenta detallado"
+                              >
+                                {c.razon_social} →
+                              </a>
+                            </td>
+                            <td className="py-2.5 px-4 text-gray-500 font-mono text-xs">
+                              {c.ruc ? `RUC ${c.ruc}` : c.dni ? `DNI ${c.dni}` : '—'}
+                            </td>
+                            <td className="py-2.5 px-4 text-gray-600">{formatCurrency(c.credito_limite)}</td>
+                            <td className="py-2.5 px-4 font-bold text-red-600">{formatCurrency(c.saldo)}</td>
+                            <td className="py-2.5 px-4 text-gray-600">{c.credito_dias} días</td>
+                            <td className="py-2.5 px-4 text-gray-500">{formatDate(c.vencimiento)}</td>
+                            <td className="py-2.5 px-4 text-right">
+                              <a
+                                href={`/reportes/cobranzas-cliente/${c.id}`}
+                                target="_blank" rel="noopener noreferrer"
+                                className="opacity-0 group-hover:opacity-100 transition-opacity inline-flex items-center gap-1 px-2 py-1 text-[10px] font-bold bg-blue-600 hover:bg-blue-700 text-white rounded"
+                                title="Estado de cuenta + WhatsApp"
+                              >
+                                💬 Estado de cuenta
+                              </a>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </>
+                )
+              })()}
             </CardContent>
           </Card>
         </TabsContent>
