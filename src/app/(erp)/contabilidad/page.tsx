@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { Calculator, BookOpen, FileText, BarChart3, Lock, ScrollText } from 'lucide-react'
+import { Calculator, BookOpen, FileText, BarChart3, Lock, ScrollText, Zap } from 'lucide-react'
 
 /**
  * Hub del módulo Contabilidad.
@@ -29,6 +29,13 @@ const MODULOS = [
     description: 'Asientos contables manuales con validación de cuadre (debe = haber).',
     icon: ScrollText,
     color: 'bg-emerald-600',
+  },
+  {
+    href: '/contabilidad/automaticos',
+    title: 'Asientos Automáticos',
+    description: 'Genera asientos desde transacciones operativas (ventas, cobros, compras). Quedan en borrador para revisión.',
+    icon: Zap,
+    color: 'bg-yellow-500',
   },
   {
     href: '/contabilidad/mayor',
