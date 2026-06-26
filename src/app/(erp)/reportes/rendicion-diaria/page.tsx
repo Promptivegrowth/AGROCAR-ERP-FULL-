@@ -161,17 +161,28 @@ export default async function RendicionDiariaPage({
         </p>
       ) : (
         <table className="w-full rendicion-table border-collapse border border-gray-300">
+          <colgroup>
+            <col style={{ width: '22%' }} />{/* Persona */}
+            <col style={{ width: '6%' }} />{/* Ped */}
+            <col style={{ width: '11%' }} />{/* Ventas día */}
+            <col style={{ width: '6%' }} />{/* Cobros */}
+            <col style={{ width: '11%' }} />{/* Efectivo */}
+            <col style={{ width: '10%' }} />{/* Yape */}
+            <col style={{ width: '10%' }} />{/* Plin */}
+            <col style={{ width: '11%' }} />{/* Transfer */}
+            <col style={{ width: '13%' }} />{/* Total */}
+          </colgroup>
           <thead>
             <tr className="bg-gray-100 text-[9pt]">
               <th className="text-left py-1 px-2 border border-gray-300">Persona</th>
-              <th className="text-center py-1 px-2 border border-gray-300 w-12">Ped.</th>
-              <th className="text-right py-1 px-2 border border-gray-300 w-24">Ventas día</th>
-              <th className="text-center py-1 px-2 border border-gray-300 w-12">Cobros</th>
-              <th className="text-right py-1 px-2 border border-gray-300 w-20">Efectivo</th>
-              <th className="text-right py-1 px-2 border border-gray-300 w-20">Yape</th>
-              <th className="text-right py-1 px-2 border border-gray-300 w-20">Plin</th>
-              <th className="text-right py-1 px-2 border border-gray-300 w-20">Transfer.</th>
-              <th className="text-right py-1 px-2 border border-gray-300 w-24">Total cobrado</th>
+              <th className="text-center py-1 px-2 border border-gray-300">Ped.</th>
+              <th className="text-right py-1 px-2 border border-gray-300">Ventas día</th>
+              <th className="text-center py-1 px-2 border border-gray-300">Cobros</th>
+              <th className="text-right py-1 px-2 border border-gray-300">Efectivo</th>
+              <th className="text-right py-1 px-2 border border-gray-300">Yape</th>
+              <th className="text-right py-1 px-2 border border-gray-300">Plin</th>
+              <th className="text-right py-1 px-2 border border-gray-300">Transfer.</th>
+              <th className="text-right py-1 px-2 border border-gray-300">Total cobrado</th>
             </tr>
           </thead>
           <tbody className="text-[9pt]">
@@ -207,11 +218,13 @@ export default async function RendicionDiariaPage({
     <div className="min-h-screen bg-gray-50 print:bg-white">
       <style>{`
         @media print {
-          @page { size: A4 landscape; margin: 8mm; }
+          @page { size: A4 landscape; margin: 10mm; }
           body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
           .no-print { display: none !important; }
-          .rendicion-table { font-size: 8pt !important; }
-          .rendicion-table td, .rendicion-table th { padding: 2px 4px !important; }
+          /* table-layout fixed + anchos % por colgroup → impresión idéntica
+             a pantalla. Antes la tabla se redistribuía distinto en print. */
+          .rendicion-table { table-layout: fixed !important; width: 100% !important; font-size: 9pt !important; }
+          .rendicion-table td, .rendicion-table th { padding: 3px 5px !important; overflow: hidden; }
         }
       `}</style>
 

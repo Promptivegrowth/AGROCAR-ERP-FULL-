@@ -45,8 +45,9 @@ export default function BalanceComprobacionPage() {
         @page { size: A4 portrait; margin: 12mm; }
         .no-print { display: none !important; }
         body { background: white !important; }
-        table { font-size: 9pt !important; }
-        th, td { padding: 3px 4px !important; }
+        /* table-layout fixed + colgroup → impresión idéntica a pantalla */
+        table { table-layout: fixed !important; width: 100% !important; font-size: 9pt !important; }
+        th, td { padding: 4px 5px !important; overflow: hidden; }
       }`}</style>
 
       <div className="flex items-center gap-3 no-print">

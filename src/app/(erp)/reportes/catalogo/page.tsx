@@ -111,9 +111,11 @@ export default async function CatalogoPage({ searchParams }: {
             font-family: 'Helvetica Neue', Arial, sans-serif !important; color: #111 !important; }
           .no-print { display: none !important; }
           .print-only { display: block !important; }
-          .cat-doc { font-size: 9pt !important; line-height: 1.2 !important; }
-          .cat-doc table { font-size: 8.5pt !important; }
-          .cat-doc th, .cat-doc td { padding: 2px 4px !important; }
+          /* table-layout fixed para que las 8 columnas mantengan proporción
+             entre pantalla y print — antes el navegador las redistribuía
+             según contenido al imprimir, distinto a la pantalla. */
+          .cat-doc table { table-layout: fixed !important; width: 100% !important; }
+          .cat-doc th, .cat-doc td { padding: 3px 5px !important; overflow: hidden; }
           .cat-doc tr { page-break-inside: avoid; }
           .cat-doc thead { display: table-header-group; }
           .familia-header { page-break-after: avoid; }
@@ -165,16 +167,27 @@ export default async function CatalogoPage({ searchParams }: {
                 {familia} <span className="text-gray-500 font-normal text-xs">({productosFam.length})</span>
               </h2>
               <table className="w-full text-xs border border-gray-300">
+                {/* Anchos % por colgroup → idéntica distribución en pantalla y print */}
+                <colgroup>
+                  <col style={{ width: '10%' }} />{/* Código */}
+                  <col style={{ width: '36%' }} />{/* Producto — el más ancho */}
+                  <col style={{ width: '6%' }} />{/* UDM */}
+                  <col style={{ width: '9%' }} />{/* Stock */}
+                  <col style={{ width: '10%' }} />{/* Lista A */}
+                  <col style={{ width: '10%' }} />{/* Lista B */}
+                  <col style={{ width: '10%' }} />{/* Lista C */}
+                  <col style={{ width: '9%' }} />{/* Atributos */}
+                </colgroup>
                 <thead className="bg-gray-50 border-b border-gray-300">
                   <tr>
-                    <th className="text-left p-1.5 w-20">Código</th>
+                    <th className="text-left p-1.5">Código</th>
                     <th className="text-left p-1.5">Producto</th>
-                    <th className="text-center p-1.5 w-12">UDM</th>
-                    <th className="text-right p-1.5 w-16">Stock</th>
-                    <th className="text-right p-1.5 w-20 bg-blue-50">Lista A</th>
-                    <th className="text-right p-1.5 w-20">Lista B</th>
-                    <th className="text-right p-1.5 w-20">Lista C</th>
-                    <th className="text-center p-1.5 w-16">Atributos</th>
+                    <th className="text-center p-1.5">UDM</th>
+                    <th className="text-right p-1.5">Stock</th>
+                    <th className="text-right p-1.5 bg-blue-50">Lista A</th>
+                    <th className="text-right p-1.5">Lista B</th>
+                    <th className="text-right p-1.5">Lista C</th>
+                    <th className="text-center p-1.5">Atributos</th>
                   </tr>
                 </thead>
                 <tbody>
