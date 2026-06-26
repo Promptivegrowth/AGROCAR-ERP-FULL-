@@ -59,6 +59,25 @@ export default function FacturacionPage() {
   const [anularComp, setAnularComp] = useState<any>(null)
   const [anularMotivo, setAnularMotivo] = useState('')
   const [anularSaving, setAnularSaving] = useState(false)
+  // Guía de remisión
+  const [guiaOpen, setGuiaOpen] = useState(false)
+  const [guiaComp, setGuiaComp] = useState<any>(null)
+  const [guiaSaving, setGuiaSaving] = useState(false)
+  const [guiaForm, setGuiaForm] = useState({
+    fecha_inicio_traslado: '',
+    motivo_traslado: 'venta',
+    motivo_descripcion: '',
+    punto_partida: '',
+    punto_llegada: '',
+    peso_bruto: '',
+    vehiculo_placa: '',
+    conductor_nombre: '',
+    conductor_doc: '',
+    conductor_licencia: '',
+    modalidad: 'privado',
+    transportista_razon_social: '',
+    transportista_ruc: '',
+  })
   const [editHistorial, setEditHistorial] = useState<any[]>([])
   const [editNota, setEditNota] = useState('')
   const [editSaving, setEditSaving] = useState(false)
@@ -268,6 +287,68 @@ export default function FacturacionPage() {
       .order('created_at', { ascending: false })
     setEditHistorial(hist ?? [])
     loadData()
+  }
+
+  // ── Guía de Remisión Electrónica
+  function abrirGuia(comp: any) {
+    setGuiaComp(comp)
+    // Defaults: mañana como fecha de traslado, datos auto desde cliente
+    const manana = new Date(); manana.setDate(manana.getDate() + 1)
+    const direccionCliente = comp.clientes?.razon_social
+      ? `${comp.clientes?.razon_social} · ${(comp as any).pedidos?.direccion_entrega_texto ?? ''}`.trim()
+      : ''
+    setGuiaForm({
+      fecha_inicio_traslado: manana.toISOString().slice(0, 10),
+      motivo_traslado: 'venta',
+      motivo_descripcion: '',
+      punto_partida: 'CALLE EMILIO FORERO 553-A PARA GRANDE TACNA FUNDO PARA GRANDE PARCELA 31 SUB.LT.1 TACNA - TACNA - TACNA',
+      punto_llegada: direccionCliente,
+      peso_bruto: '',
+      vehiculo_placa: '',
+      conductor_nombre: '',
+      conductor_doc: '',
+      conductor_licencia: '',
+      modalidad: 'privado',
+      transportista_razon_social: '',
+      transportista_ruc: '',
+    })
+    setGuiaOpen(true)
+  }
+
+  async function emitirGuia() {
+    if (!guiaComp) return
+    if (!guiaForm.vehiculo_placa.trim() || !guiaForm.conductor_nombre.trim() || !guiaForm.conductor_doc.trim()) {
+      toast.error('Faltan datos', { description: 'Placa, nombre y documento del conductor son obligatorios.' })
+      return
+    }
+    setGuiaSaving(true)
+    const { data, error } = await (supabase.rpc as any)('emitir_guia_desde_comprobante', {
+      p_comprobante_id: guiaComp.id,
+      p_fecha_inicio_traslado: guiaForm.fecha_inicio_traslado,
+      p_motivo_traslado: guiaForm.motivo_traslado,
+      p_punto_partida: guiaForm.punto_partida || null,
+      p_punto_llegada: guiaForm.punto_llegada || null,
+      p_peso_bruto: parseFloat(guiaForm.peso_bruto) || 0,
+      p_vehiculo_placa: guiaForm.vehiculo_placa,
+      p_conductor_nombre: guiaForm.conductor_nombre,
+      p_conductor_doc: guiaForm.conductor_doc,
+      p_conductor_licencia: guiaForm.conductor_licencia || null,
+      p_modalidad: guiaForm.modalidad,
+      p_transportista_razon_social: guiaForm.modalidad === 'publico' ? guiaForm.transportista_razon_social : null,
+      p_transportista_ruc: guiaForm.modalidad === 'publico' ? guiaForm.transportista_ruc : null,
+      p_motivo_descripcion: guiaForm.motivo_descripcion || null,
+    })
+    setGuiaSaving(false)
+    if (error || !data?.id) {
+      toast.error('No se pudo emitir', { description: error?.message ?? 'Error desconocido' })
+      return
+    }
+    toast.success(`Guía ${data.numero_completo} emitida`, {
+      description: 'Se abrirá en una nueva pestaña.',
+    })
+    setGuiaOpen(false)
+    setGuiaComp(null)
+    window.open(`/guia/${data.id}`, '_blank', 'noopener,noreferrer')
   }
 
   // ── Anulación de comprobante (mantiene correlativo, libera pedido para re-facturar)
@@ -1029,6 +1110,14 @@ export default function FacturacionPage() {
                                     >
                                       🚫 Anular
                                     </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => abrirGuia(c)}
+                                      className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-purple-700 hover:text-purple-900 hover:bg-purple-50 rounded transition-colors"
+                                      title="Emitir guía de remisión electrónica para este comprobante"
+                                    >
+                                      📄 Guía
+                                    </button>
                                   </>
                                 )}
                                 {c.estado === 'anulado' && (
@@ -1484,6 +1573,154 @@ export default function FacturacionPage() {
               </Button>
             </div>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialog: Emitir Guía de Remisión */}
+      <Dialog open={guiaOpen} onOpenChange={(o) => { if (!guiaSaving) setGuiaOpen(o) }}>
+        <DialogContent className="max-w-2xl max-h-[92vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="text-purple-700">📄 Emitir Guía de Remisión Electrónica</DialogTitle>
+          </DialogHeader>
+          {guiaComp && (
+            <div className="space-y-3 mt-2">
+              <div className="bg-purple-50 border border-purple-200 rounded-lg p-3 text-xs text-purple-900">
+                Guía para comprobante <strong className="font-mono">{guiaComp.serie}-{String(guiaComp.numero).padStart(8, '0')}</strong> ·
+                Cliente: <strong>{guiaComp.clientes?.razon_social ?? guiaComp.cliente_externo_nombre ?? '—'}</strong>
+                <br/>Los items se heredan automáticamente. Solo completa los datos del traslado.
+              </div>
+
+              {/* Fechas + Motivo */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <Label className="text-xs font-semibold">Fecha inicio traslado *</Label>
+                  <Input type="date"
+                    value={guiaForm.fecha_inicio_traslado}
+                    onChange={(e) => setGuiaForm((p) => ({ ...p, fecha_inicio_traslado: e.target.value }))}
+                    className="mt-1" />
+                </div>
+                <div>
+                  <Label className="text-xs font-semibold">Motivo del traslado *</Label>
+                  <select
+                    value={guiaForm.motivo_traslado}
+                    onChange={(e) => setGuiaForm((p) => ({ ...p, motivo_traslado: e.target.value }))}
+                    className="mt-1 w-full h-9 px-2 text-sm border border-gray-300 rounded-md bg-white"
+                  >
+                    <option value="venta">Venta</option>
+                    <option value="compra">Compra</option>
+                    <option value="traslado_entre_establecimientos">Traslado entre establecimientos</option>
+                    <option value="devolucion">Devolución</option>
+                    <option value="recojo_bienes">Recojo de bienes</option>
+                    <option value="otros">Otros</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Direcciones */}
+              <div>
+                <Label className="text-xs font-semibold">Punto de partida *</Label>
+                <Input value={guiaForm.punto_partida}
+                  onChange={(e) => setGuiaForm((p) => ({ ...p, punto_partida: e.target.value }))}
+                  className="mt-1 text-xs" />
+                <p className="text-[10px] text-gray-500 mt-0.5">Por defecto: domicilio fiscal + establecimiento anexo AGROCAR</p>
+              </div>
+              <div>
+                <Label className="text-xs font-semibold">Punto de llegada *</Label>
+                <Input value={guiaForm.punto_llegada}
+                  onChange={(e) => setGuiaForm((p) => ({ ...p, punto_llegada: e.target.value }))}
+                  className="mt-1 text-xs"
+                  placeholder="Dirección de entrega" />
+              </div>
+
+              {/* Modalidad + Peso */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <Label className="text-xs font-semibold">Modalidad *</Label>
+                  <select
+                    value={guiaForm.modalidad}
+                    onChange={(e) => setGuiaForm((p) => ({ ...p, modalidad: e.target.value }))}
+                    className="mt-1 w-full h-9 px-2 text-sm border border-gray-300 rounded-md bg-white"
+                  >
+                    <option value="privado">Privado (vehículo propio)</option>
+                    <option value="publico">Público (transportista tercero)</option>
+                  </select>
+                </div>
+                <div>
+                  <Label className="text-xs font-semibold">Peso bruto total (KG)</Label>
+                  <Input type="number" step="0.01"
+                    value={guiaForm.peso_bruto}
+                    onChange={(e) => setGuiaForm((p) => ({ ...p, peso_bruto: e.target.value }))}
+                    className="mt-1" />
+                </div>
+              </div>
+
+              {guiaForm.modalidad === 'publico' && (
+                <div className="grid grid-cols-2 gap-3 bg-amber-50 border border-amber-200 rounded-lg p-2">
+                  <div>
+                    <Label className="text-xs font-semibold">Transportista (razón social) *</Label>
+                    <Input value={guiaForm.transportista_razon_social}
+                      onChange={(e) => setGuiaForm((p) => ({ ...p, transportista_razon_social: e.target.value }))}
+                      className="mt-1 text-xs" />
+                  </div>
+                  <div>
+                    <Label className="text-xs font-semibold">RUC transportista *</Label>
+                    <Input value={guiaForm.transportista_ruc}
+                      onChange={(e) => setGuiaForm((p) => ({ ...p, transportista_ruc: e.target.value }))}
+                      className="mt-1 text-xs" maxLength={11} />
+                  </div>
+                </div>
+              )}
+
+              {/* Vehículo */}
+              <div className="border-t border-gray-200 pt-3">
+                <p className="text-xs font-bold text-gray-700 uppercase mb-2">Datos del vehículo</p>
+                <Label className="text-xs font-semibold">Placa principal *</Label>
+                <Input value={guiaForm.vehiculo_placa}
+                  onChange={(e) => setGuiaForm((p) => ({ ...p, vehiculo_placa: e.target.value.toUpperCase() }))}
+                  className="mt-1 font-mono uppercase"
+                  placeholder="Z8J708" maxLength={10} />
+              </div>
+
+              {/* Conductor */}
+              <div className="border-t border-gray-200 pt-3">
+                <p className="text-xs font-bold text-gray-700 uppercase mb-2">Datos del conductor</p>
+                <div>
+                  <Label className="text-xs font-semibold">Nombre completo *</Label>
+                  <Input value={guiaForm.conductor_nombre}
+                    onChange={(e) => setGuiaForm((p) => ({ ...p, conductor_nombre: e.target.value.toUpperCase() }))}
+                    className="mt-1 uppercase"
+                    placeholder="VALERIO AGUILAR JARRO" />
+                </div>
+                <div className="grid grid-cols-2 gap-3 mt-2">
+                  <div>
+                    <Label className="text-xs font-semibold">DNI *</Label>
+                    <Input value={guiaForm.conductor_doc}
+                      onChange={(e) => setGuiaForm((p) => ({ ...p, conductor_doc: e.target.value.replace(/\D/g, '') }))}
+                      className="mt-1 font-mono"
+                      placeholder="40389487" maxLength={8} />
+                  </div>
+                  <div>
+                    <Label className="text-xs font-semibold">N° licencia conducir</Label>
+                    <Input value={guiaForm.conductor_licencia}
+                      onChange={(e) => setGuiaForm((p) => ({ ...p, conductor_licencia: e.target.value.toUpperCase() }))}
+                      className="mt-1 font-mono uppercase"
+                      placeholder="K40389487" />
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2 border-t border-gray-100">
+                <Button variant="outline" onClick={() => setGuiaOpen(false)} disabled={guiaSaving}>
+                  Cancelar
+                </Button>
+                <Button onClick={emitirGuia} disabled={guiaSaving}
+                  className="bg-purple-600 hover:bg-purple-700 text-white">
+                  {guiaSaving && <Loader2 className="w-4 h-4 animate-spin mr-1" />}
+                  📄 Emitir guía
+                </Button>
+              </div>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
 
