@@ -138,7 +138,7 @@ const NAV_ITEMS: NavItem[] = [
     label: 'Contabilidad',
     href: '/contabilidad',
     icon: BookOpen,
-    roles: ['gerente', 'contador'],
+    roles: ['gerente', 'administrador', 'contador'],
   },
   {
     label: 'Configuración',
