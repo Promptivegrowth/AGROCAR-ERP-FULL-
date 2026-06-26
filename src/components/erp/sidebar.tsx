@@ -81,6 +81,7 @@ const NAV_ITEMS: NavItem[] = [
     children: [
       { label: 'Inventario', href: '/almacen', icon: ClipboardList },
       { label: 'Movimientos del día', href: '/almacen/movimientos-dia', icon: Package },
+      { label: 'Inventario Valorizado', href: '/almacen/valorizado', icon: BarChart3 },
       { label: 'Lotes', href: '/almacen/lotes', icon: Boxes },
       { label: 'Compras', href: '/almacen/compras', icon: ShoppingCart },
       { label: 'Notas de Crédito', href: '/almacen/notas-credito', icon: FileMinus },

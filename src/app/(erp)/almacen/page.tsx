@@ -509,6 +509,13 @@ export default function AlmacenPage() {
           >
             📋 Movimientos del día
           </Link>
+          <Link
+            href="/almacen/valorizado"
+            className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold rounded-lg transition-colors shadow-sm"
+            title="Stock × costo promedio · utilidad real por producto"
+          >
+            📊 Valorizado (utilidad real)
+          </Link>
           <Button
             onClick={() => setExportOpen(true)}
             disabled={exportando || stocks.length === 0}
