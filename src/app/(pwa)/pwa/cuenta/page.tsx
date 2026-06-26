@@ -389,6 +389,23 @@ export default function CuentaPage() {
           Mi Reporte (historial + Excel/PDF)
         </Button>
 
+        {/* Cuentas por cobrar a mi cargo */}
+        {profile?.id && (
+          <a
+            href={`/reportes/cobranzas-vendedor/${profile.id}`}
+            target="_blank" rel="noopener noreferrer"
+            className="block"
+          >
+            <Button
+              variant="outline"
+              className="w-full h-12 border-red-200 text-red-700 hover:bg-red-50 font-semibold pointer-events-none"
+            >
+              <DollarSign className="w-4 h-4" />
+              Mis cuentas por cobrar (clientes con deuda)
+            </Button>
+          </a>
+        )}
+
         {/* Cerrar sesión */}
         <Button
           onClick={cerrarSesion}

@@ -220,8 +220,14 @@ export default async function ComprobantePage({
                     {EMPRESA.razon_social} · RUC {EMPRESA.ruc}
                   </div>
                   <div style={{ fontSize: 10.5, lineHeight: 1.45, marginTop: 4 }}>
-                    <div>{EMPRESA.direccion_comercial}</div>
-                    <div style={{ color: '#6b7280' }}>{EMPRESA.direccion_fundo}</div>
+                    <div>
+                      <span style={{ color: '#6b7280', fontSize: 9 }}>Domicilio fiscal: </span>
+                      {EMPRESA.direccion_comercial}
+                    </div>
+                    <div style={{ color: '#374151' }}>
+                      <span style={{ color: '#6b7280', fontSize: 9 }}>Establecimiento anexo: </span>
+                      {EMPRESA.direccion_fundo}
+                    </div>
                     <div>Tel. {EMPRESA.telefono}</div>
                     <div>{EMPRESA.correo}</div>
                   </div>

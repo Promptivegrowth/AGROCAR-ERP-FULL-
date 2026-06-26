@@ -94,7 +94,7 @@ export default function MovimientosDiaPage() {
         .from('comprobantes_items')
         .select(`
           cantidad, precio_unitario, subtotal, descripcion, producto_id,
-          productos(id, codigo, nombre, peso_kg, familias(nombre)),
+          productos(id, codigo, nombre, descripcion, peso_kg, familias(nombre)),
           comprobantes!inner(
             id, serie, numero, tipo, fecha_emision, created_at, estado,
             clientes(razon_social, ruc, dni),
@@ -131,7 +131,13 @@ export default function MovimientosDiaPage() {
           vendedor_nombre: it.comprobantes.pedidos?.profiles?.full_name ?? '—',
           producto_id: it.producto_id,
           codigo: it.productos?.codigo ?? '—',
-          producto_nombre: it.productos?.nombre ?? it.descripcion ?? '—',
+          // Daniel pidió mostrar la descripción completa del producto
+          // (con presentación: gramaje, marca, etc.) — no solo el nombre corto.
+          // Prioridad: productos.descripcion → productos.nombre → item.descripcion
+          producto_nombre: (it.productos?.descripcion?.trim()
+                          || it.productos?.nombre
+                          || it.descripcion
+                          || '—'),
           familia: it.productos?.familias?.nombre ?? '—',
           cantidad: cant,
           peso_unit: pesoUnit,
