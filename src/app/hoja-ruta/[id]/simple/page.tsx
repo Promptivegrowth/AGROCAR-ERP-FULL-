@@ -93,12 +93,17 @@ export default async function HojaRutaSimplePage({ params }: { params: { id: str
     <div className="min-h-screen bg-gray-50 print:bg-white">
       <style>{`
         @media print {
-          @page { size: A4 portrait; margin: 6mm; }
-          body { -webkit-print-color-adjust: exact; print-color-adjust: exact; line-height: 1.15; }
+          /* IMPRESIÓN IDÉNTICA A LA PANTALLA — usar todo el ancho A4 sin
+             reducir fuentes ni reflujo de columnas. La pantalla ya está
+             optimizada con table-layout fixed y anchos proporcionales por
+             colgroup, así que la impresión solo debe respetar ese diseño. */
+          @page { size: A4 portrait; margin: 8mm; }
+          html, body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
           .no-print { display: none !important; }
-          .simple-table { font-size: 8.5pt !important; line-height: 1.1 !important; }
-          .simple-table td, .simple-table th { padding: 0px 3px !important; }
-          .simple-table tr { height: auto !important; }
+          /* Mantener table-layout y proporciones tal cual están en pantalla */
+          .simple-table { table-layout: fixed !important; width: 100% !important; }
+          .simple-table td, .simple-table th { overflow: hidden; }
+          .simple-table .col-cliente { white-space: nowrap; text-overflow: ellipsis; }
         }
       `}</style>
 
@@ -113,10 +118,9 @@ export default async function HojaRutaSimplePage({ params }: { params: { id: str
         </div>
       </div>
 
-      {/* Hoja imprimible */}
-      {/* Ancho reducido en print (max-w-2xl) para dejar espacio en blanco
-          a la derecha — el repartidor anota a lapicero ahí. */}
-      <div className="max-w-5xl mx-auto print:mx-0 print:ml-0 print:max-w-[140mm] bg-white p-6 print:p-0 shadow-sm my-3 print:my-0 print:shadow-none">
+      {/* Hoja imprimible — usa todo el ancho del A4 (igual que se ve en pantalla).
+          La columna "Observación" al final tiene espacio para anotar a mano. */}
+      <div className="max-w-5xl mx-auto print:mx-0 print:max-w-full bg-white p-6 print:p-0 shadow-sm my-3 print:my-0 print:shadow-none">
         {/* Membrete */}
         <div className="text-center pb-1 border-b border-gray-200">
           <div className="font-bold text-sm">{EMPRESA.razon_social} · RUC {EMPRESA.ruc}</div>
@@ -147,7 +151,20 @@ export default async function HojaRutaSimplePage({ params }: { params: { id: str
         </div>
 
         {/* Tabla lista */}
-        <table className="simple-table w-full mt-1 text-[9.5pt]" style={{ borderCollapse: 'collapse', lineHeight: 1.15 }}>
+        <table className="simple-table w-full mt-1 text-[9.5pt]" style={{ borderCollapse: 'collapse', lineHeight: 1.15, tableLayout: 'fixed' }}>
+          {/* Anchos explícitos para que el navegador NO redistribuya según
+              contenido. Total: 100% — distribuido para que "Cliente" tenga
+              espacio suficiente para nombres peruanos largos (3-4 palabras). */}
+          <colgroup>
+            <col style={{ width: '12%' }} />{/* Pedido */}
+            <col style={{ width: '6%' }} />{/* Cod.Vend */}
+            <col style={{ width: '4%' }} />{/* T.D. */}
+            <col style={{ width: '11%' }} />{/* Comprob */}
+            <col style={{ width: '30%' }} />{/* Cliente — el más ancho */}
+            <col style={{ width: '9%' }} />{/* Total */}
+            <col style={{ width: '8%' }} />{/* Condic */}
+            <col style={{ width: '20%' }} />{/* Observación */}
+          </colgroup>
           <thead>
             <tr className="border-b border-gray-400">
               <th className="text-left px-1 py-0.5 text-[7.5pt] font-bold text-gray-700">Pedido</th>
@@ -167,10 +184,10 @@ export default async function HojaRutaSimplePage({ params }: { params: { id: str
                 <td className="px-1 py-0 font-mono text-[8.5pt] text-gray-700">{String(p.secuencia).padStart(3, '0')}</td>
                 <td className="px-1 py-0 font-mono text-[8.5pt] text-gray-700">{p.tipo_doc}</td>
                 <td className="px-1 py-0 font-mono text-[8.5pt] text-gray-700">{p.comprobante}</td>
-                <td className="px-1 py-0 text-[8.5pt] text-gray-900 uppercase">{p.cliente}</td>
+                <td className="col-cliente px-1 py-0 text-[8.5pt] text-gray-900 uppercase">{p.cliente}</td>
                 <td className="px-1 py-0 text-[8.5pt] text-right font-semibold">{p.total.toFixed(2)}</td>
                 <td className="px-1 py-0 text-[8.5pt] text-gray-700">{p.condicion}</td>
-                <td className="px-1 py-0 text-[8.5pt] text-gray-600 border-b border-dotted border-gray-400 min-w-[120px]"></td>
+                <td className="px-1 py-0 text-[8.5pt] text-gray-600 border-b border-dotted border-gray-400"></td>
               </tr>
             ))}
           </tbody>
