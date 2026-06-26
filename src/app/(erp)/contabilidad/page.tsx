@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { Calculator, BookOpen, FileText, BarChart3, Lock, ScrollText, Zap } from 'lucide-react'
+import { Calculator, BookOpen, FileText, BarChart3, Lock, ScrollText, Zap, TrendingUp } from 'lucide-react'
 
 /**
  * Hub del módulo Contabilidad.
@@ -43,7 +43,6 @@ const MODULOS = [
     description: 'Vista por cuenta · todos sus asientos · saldo acumulado.',
     icon: FileText,
     color: 'bg-purple-600',
-    disabled: true,
   },
   {
     href: '/contabilidad/balance',
@@ -51,7 +50,13 @@ const MODULOS = [
     description: 'Sumas y saldos por cuenta · validación general de la contabilidad.',
     icon: BarChart3,
     color: 'bg-amber-600',
-    disabled: true,
+  },
+  {
+    href: '/contabilidad/estado-resultados',
+    title: 'Estado de Resultados',
+    description: 'Ingresos − Gastos = Utilidad del período. Margen sobre ingresos.',
+    icon: TrendingUp,
+    color: 'bg-rose-600',
   },
   {
     href: '/contabilidad/periodos',
@@ -83,35 +88,16 @@ export default function ContabilidadHubPage() {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {MODULOS.map((m) => {
-          if (m.disabled) {
-            return (
-              <div key={m.href}
-                className="block bg-white border border-gray-200 rounded-xl p-5 shadow-sm opacity-50 cursor-not-allowed">
-                <div className={`w-10 h-10 rounded-lg ${m.color} flex items-center justify-center mb-3`}>
-                  <m.icon className="w-5 h-5 text-white" />
-                </div>
-                <h3 className="font-bold text-gray-900 text-base mb-1 flex items-center gap-2">
-                  {m.title}
-                  <span className="text-[10px] bg-gray-200 text-gray-600 px-1.5 py-0.5 rounded font-bold">
-                    Próximamente
-                  </span>
-                </h3>
-                <p className="text-xs text-gray-500 leading-snug">{m.description}</p>
-              </div>
-            )
-          }
-          return (
-            <Link key={m.href} href={m.href}
-              className="block bg-white border border-gray-200 rounded-xl p-5 shadow-sm hover:shadow-md hover:border-blue-300 transition-all cursor-pointer">
-              <div className={`w-10 h-10 rounded-lg ${m.color} flex items-center justify-center mb-3`}>
-                <m.icon className="w-5 h-5 text-white" />
-              </div>
-              <h3 className="font-bold text-gray-900 text-base mb-1">{m.title}</h3>
-              <p className="text-xs text-gray-500 leading-snug">{m.description}</p>
-            </Link>
-          )
-        })}
+        {MODULOS.map((m) => (
+          <Link key={m.href} href={m.href}
+            className="block bg-white border border-gray-200 rounded-xl p-5 shadow-sm hover:shadow-md hover:border-blue-300 transition-all cursor-pointer">
+            <div className={`w-10 h-10 rounded-lg ${m.color} flex items-center justify-center mb-3`}>
+              <m.icon className="w-5 h-5 text-white" />
+            </div>
+            <h3 className="font-bold text-gray-900 text-base mb-1">{m.title}</h3>
+            <p className="text-xs text-gray-500 leading-snug">{m.description}</p>
+          </Link>
+        ))}
       </div>
     </div>
   )
