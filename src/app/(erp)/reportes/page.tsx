@@ -460,7 +460,22 @@ export default function ReportesPage() {
         </TabsContent>
 
         {/* COMISIONES */}
-        <TabsContent value="comisiones" className="mt-4">
+        <TabsContent value="comisiones" className="mt-4 space-y-3">
+          {/* Banner cumplimiento de cuotas */}
+          <div className="bg-gradient-to-r from-blue-50 to-emerald-50 border border-blue-200 rounded-lg p-3 flex items-center justify-between gap-3 flex-wrap">
+            <div>
+              <p className="text-sm font-semibold text-blue-900">🎯 Cumplimiento de cuotas mensuales por vendedor × familia</p>
+              <p className="text-xs text-blue-700">Asigna metas mensuales y mide el cumplimiento contra ventas reales.</p>
+            </div>
+            <div className="flex gap-2">
+              <a href="/vendedores/cuotas" className="text-xs px-3 py-2 bg-white hover:bg-blue-50 text-blue-700 font-semibold rounded-md border border-blue-200">
+                ⚙ Asignar cuotas
+              </a>
+              <a href="/reportes/cumplimiento-cuotas" className="text-xs px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded-md">
+                📈 Ver cumplimiento →
+              </a>
+            </div>
+          </div>
           <Card className="border-gray-200 shadow-sm">
             <CardHeader className="pb-2">
               <CardTitle className="text-base font-semibold text-gray-800">Comisiones por Vendedor</CardTitle>

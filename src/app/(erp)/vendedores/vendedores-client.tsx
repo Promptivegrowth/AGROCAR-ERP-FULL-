@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 import {
   Users, Target, DollarSign, TrendingUp, CreditCard, Download, Eye,
   Settings, Percent, Banknote, CheckCircle2, Loader2, AlertTriangle,
@@ -634,12 +635,22 @@ export default function VendedoresClient({
             Metas, ventas, comisiones y liquidaciones
           </p>
         </div>
-        <Button
-          onClick={exportarCSV}
-          className="bg-[#FBE600] hover:bg-[#E5D100] text-black font-semibold gap-2"
-        >
-          <Download className="w-4 h-4" /> Exportar Reporte
-        </Button>
+        <div className="flex flex-wrap items-center gap-2">
+          <Link href="/vendedores/cuotas"
+            className="inline-flex items-center gap-1.5 px-3 py-2 bg-blue-50 hover:bg-blue-100 text-blue-700 font-semibold rounded-md text-sm">
+            🎯 Asignar cuotas mensuales
+          </Link>
+          <Link href="/reportes/cumplimiento-cuotas"
+            className="inline-flex items-center gap-1.5 px-3 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-semibold rounded-md text-sm">
+            📈 Ver cumplimiento
+          </Link>
+          <Button
+            onClick={exportarCSV}
+            className="bg-[#FBE600] hover:bg-[#E5D100] text-black font-semibold gap-2"
+          >
+            <Download className="w-4 h-4" /> Exportar Reporte
+          </Button>
+        </div>
       </div>
 
       {/* KPIs */}
