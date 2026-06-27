@@ -7,12 +7,13 @@
  * - facturador: Dashboard, Pedidos, Facturación, Maestros (solo lectura desde UI)
  * - almacenero: Dashboard, Almacén, Compras, Ajustes, Despacho, Maestros (productos)
  * - contador: Dashboard, Caja, Cobranzas, Contabilidad, Reportes
- * - vendedor / repartidor: SOLO PWA — si entran al ERP se les redirige a su home PWA
+ * - caja: Dashboard, Caja, Cobranzas, Facturación (cajero-facturador)
+ * - vendedor / repartidor / chofer: SOLO PWA — si entran al ERP se les redirige a su home PWA
  */
 
 export type UserRole =
   | 'gerente' | 'administrador' | 'facturador' | 'almacenero'
-  | 'contador' | 'vendedor' | 'repartidor'
+  | 'contador' | 'vendedor' | 'repartidor' | 'chofer' | 'caja'
 
 export const ROLE_HOME: Record<UserRole, string> = {
   gerente: '/dashboard',
@@ -20,8 +21,10 @@ export const ROLE_HOME: Record<UserRole, string> = {
   facturador: '/facturacion',
   almacenero: '/almacen',
   contador: '/caja',
+  caja: '/caja',
   vendedor: '/pwa/pedidos',
   repartidor: '/pwa/cobros',
+  chofer: '/pwa/cobros',
 }
 
 // Prefijos permitidos por rol en el ERP. Si no aparece, el rol no entra.
@@ -60,8 +63,16 @@ const ERP_ACCESS: Record<UserRole, string[] | '*'> = {
     '/vendedores',
     '/configuracion',
   ],
+  caja: [
+    '/dashboard',
+    '/caja',
+    '/cobranzas',
+    '/facturacion',
+    '/configuracion',
+  ],
   vendedor: [],
   repartidor: [],
+  chofer: [],
 }
 
 export function canAccessErpPath(role: string, pathname: string): boolean {
@@ -79,5 +90,5 @@ export function homeForRole(role: string): string {
 }
 
 export function isPwaRole(role: string): boolean {
-  return role === 'vendedor' || role === 'repartidor'
+  return role === 'vendedor' || role === 'repartidor' || role === 'chofer'
 }

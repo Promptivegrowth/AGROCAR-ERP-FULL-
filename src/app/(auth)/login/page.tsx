@@ -20,8 +20,10 @@ const roleRedirects: Record<UserRole, string> = {
   facturador: '/facturacion',
   almacenero: '/almacen',
   contador: '/contabilidad',
+  caja: '/caja',
   vendedor: '/pwa/pedidos',
   repartidor: '/pwa/cobros',
+  chofer: '/pwa/cobros',
 }
 
 export default function LoginPage() {

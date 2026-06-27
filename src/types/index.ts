@@ -100,6 +100,8 @@ export type UserRole =
   | 'vendedor'
   | 'repartidor'
   | 'contador'
+  | 'chofer'
+  | 'caja'
 
 export type EstadoCliente = 'activo' | 'inactivo' | 'deudor' | 'de_baja'
 
@@ -330,6 +332,8 @@ export const ROLES_LABELS: Record<UserRole, string> = {
   vendedor:       'Vendedor',
   repartidor:     'Repartidor',
   contador:       'Contador',
+  chofer:         'Chofer',
+  caja:           'Caja',
 }
 
 export const ESTADO_PEDIDO_LABELS: Record<EstadoPedido, string> = {

@@ -102,19 +102,19 @@ const NAV_ITEMS: NavItem[] = [
     label: 'Facturación',
     href: '/facturacion',
     icon: FileText,
-    roles: ['gerente', 'administrador', 'facturador'],
+    roles: ['gerente', 'administrador', 'facturador', 'caja'],
   },
   {
     label: 'Caja',
     href: '/caja',
     icon: Wallet,
-    roles: ['gerente', 'administrador', 'contador'],
+    roles: ['gerente', 'administrador', 'contador', 'caja'],
   },
   {
     label: 'Cobranzas',
     href: '/cobranzas',
     icon: Landmark,
-    roles: ['gerente', 'administrador', 'contador'],
+    roles: ['gerente', 'administrador', 'contador', 'caja'],
   },
   {
     label: 'GPS',

@@ -21,6 +21,8 @@ export type UserRole =
   | 'vendedor'
   | 'repartidor'
   | 'contador'
+  | 'chofer'
+  | 'caja'
 
 export type EstadoCliente = 'activo' | 'suspendido' | 'bloqueado'
 export type TipoCliente = 'consumidor_final' | 'tienda'
