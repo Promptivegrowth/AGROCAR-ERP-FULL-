@@ -124,10 +124,12 @@ export const ROLES_LABELS: Record<string, string> = {
   gerente: 'Gerente',
   administrador: 'Administrador',
   facturador: 'Facturador',
+  caja: 'Caja',
+  contador: 'Contador',
   almacenero: 'Almacenero',
   vendedor: 'Vendedor',
   repartidor: 'Repartidor',
-  contador: 'Contador',
+  chofer: 'Chofer',
 }
 
 export const ESTADO_CLIENTE_COLORS: Record<string, string> = {
