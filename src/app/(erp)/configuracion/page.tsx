@@ -927,7 +927,7 @@ export default function ConfiguracionPage() {
               </div>
             </div>
 
-            {(userForm.role === 'vendedor' || userForm.role === 'repartidor') && (
+            {(userForm.role === 'vendedor' || userForm.role === 'repartidor' || userForm.role === 'chofer') && (
             <div>
               <div className="flex items-center justify-between mb-1.5">
                 <Label className="text-xs">Zonas asignadas</Label>
