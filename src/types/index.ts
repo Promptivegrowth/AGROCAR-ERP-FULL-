@@ -324,18 +324,6 @@ export interface ResumenCaja {
 
 // ─── Constantes de dominio ────────────────────────────────────────────────────
 
-export const ROLES_LABELS: Record<UserRole, string> = {
-  gerente:        'Gerente',
-  administrador:  'Administrador',
-  facturador:     'Facturador',
-  caja:           'Caja',
-  contador:       'Contador',
-  almacenero:     'Almacenero',
-  vendedor:       'Vendedor',
-  repartidor:     'Repartidor',
-  chofer:         'Chofer',
-}
-
 export const ESTADO_PEDIDO_LABELS: Record<EstadoPedido, string> = {
   borrador:   'Borrador',
   enviado:    'Enviado',
