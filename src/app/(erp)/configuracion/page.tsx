@@ -866,14 +866,17 @@ export default function ConfiguracionPage() {
               </div>
               <div>
                 <Label>Rol *</Label>
-                <Select value={userForm.role} onValueChange={(v) => setUserForm((f) => ({ ...f, role: v }))}>
-                  <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    {Object.entries(ROLES_LABELS).map(([key, label]) => (
-                      <SelectItem key={key} value={key}>{label}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                {/* HTML select nativo: garantiza que se vean los 9 roles sin
+                    problemas de portal/overflow del modal. */}
+                <select
+                  value={userForm.role}
+                  onChange={(e) => setUserForm((f) => ({ ...f, role: e.target.value }))}
+                  className="mt-1 w-full h-10 px-3 text-sm border border-gray-200 rounded-md bg-white"
+                >
+                  {Object.entries(ROLES_LABELS).map(([key, label]) => (
+                    <option key={key} value={key}>{label}</option>
+                  ))}
+                </select>
               </div>
             </div>
 

@@ -328,12 +328,12 @@ export const ROLES_LABELS: Record<UserRole, string> = {
   gerente:        'Gerente',
   administrador:  'Administrador',
   facturador:     'Facturador',
+  caja:           'Caja',
+  contador:       'Contador',
   almacenero:     'Almacenero',
   vendedor:       'Vendedor',
   repartidor:     'Repartidor',
-  contador:       'Contador',
   chofer:         'Chofer',
-  caja:           'Caja',
 }
 
 export const ESTADO_PEDIDO_LABELS: Record<EstadoPedido, string> = {
