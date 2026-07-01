@@ -26,6 +26,11 @@ interface Cliente {
   estado: string
 }
 
+interface VendedorOpt {
+  id: string
+  nombre: string
+}
+
 interface Producto {
   id: string
   codigo: string | null
@@ -83,6 +88,17 @@ export default function VentaDirectaDialog({ open, onOpenChange, onCreated }: Pr
   const [incluirIgv, setIncluirIgv] = useState(true)
   const [notas, setNotas] = useState('')
 
+  // Vendedor asignado a esta venta (opcional) — importante para comisiones
+  const [vendedores, setVendedores] = useState<VendedorOpt[]>([])
+  const [vendedorId, setVendedorId] = useState<string>('')
+
+  // Preview del siguiente número correlativo por tipo. Es solo informativo
+  // (se muestra al operador). El número REAL se obtiene atómicamente en el
+  // momento de guardar via RPC siguiente_correlativo, para evitar colisiones
+  // si dos operadores emiten al mismo tiempo.
+  // Formato: { factura: 'F001-00000040', boleta: 'B001-00000103', ... }
+  const [siguientesCorr, setSiguientesCorr] = useState<Record<string, string>>({})
+
   // Métodos de pago
   const [pagoEfectivo, setPagoEfectivo] = useState('')
   const [pagoYape, setPagoYape] = useState('')
@@ -103,6 +119,7 @@ export default function VentaDirectaDialog({ open, onOpenChange, onCreated }: Pr
     setSerie('B001')
     setIncluirIgv(true)
     setNotas('')
+    setVendedorId('')
     setPagoEfectivo('')
     setPagoYape('')
     setPagoPlin('')
@@ -115,7 +132,7 @@ export default function VentaDirectaDialog({ open, onOpenChange, onCreated }: Pr
     let cancelled = false
     async function load() {
       setLoadingData(true)
-      const [{ data: cls }, { data: prods }] = await Promise.all([
+      const [{ data: cls }, { data: prods }, { data: vends }, { data: series }] = await Promise.all([
         supabase
           .from('clientes')
           .select('id, razon_social, ruc, dni, direccion, lista_precio_id, tipo_comprobante_preferido, estado')
@@ -126,6 +143,16 @@ export default function VentaDirectaDialog({ open, onOpenChange, onCreated }: Pr
           .select('id, codigo, nombre, descripcion, tiene_lote, tiene_vencimiento, activo')
           .eq('activo', true)
           .order('nombre'),
+        (supabase as any)
+          .from('profiles')
+          .select('id, full_name, email')
+          .eq('role', 'vendedor')
+          .eq('activo', true)
+          .order('full_name'),
+        (supabase as any)
+          .from('series_correlativos')
+          .select('tipo_comprobante, serie, correlativo_actual, padding_digitos')
+          .eq('activo', true),
       ])
       if (cancelled) return
       setClientes((cls ?? []) as Cliente[])
@@ -133,6 +160,16 @@ export default function VentaDirectaDialog({ open, onOpenChange, onCreated }: Pr
         id: p.id, codigo: p.codigo, nombre: p.nombre, descripcion: p.descripcion,
         tiene_lote: !!p.tiene_lote, tiene_vencimiento: !!p.tiene_vencimiento, precio: 0,
       })))
+      setVendedores(((vends ?? []) as any[]).map((v) => ({
+        id: v.id, nombre: v.full_name || v.email,
+      })))
+      // Preview de siguientes números (correlativo_actual + 1, con padding)
+      const siguientes: Record<string, string> = {}
+      ;((series ?? []) as any[]).forEach((s) => {
+        const num = String(Number(s.correlativo_actual ?? 0) + 1).padStart(Number(s.padding_digitos ?? 8), '0')
+        siguientes[s.tipo_comprobante] = `${s.serie}-${num}`
+      })
+      setSiguientesCorr(siguientes)
       setLoadingData(false)
     }
     load()
@@ -277,7 +314,7 @@ export default function VentaDirectaDialog({ open, onOpenChange, onCreated }: Pr
           cliente_id: clienteId,
           cliente_externo_nombre: externoNom,
           cliente_externo_doc: externoDc,
-          vendedor_id: null,
+          vendedor_id: vendedorId || null,
           fecha_pedido: hoyLima(),
           fecha_despacho: hoyLima(),
           estado: 'enviado',
@@ -376,7 +413,6 @@ export default function VentaDirectaDialog({ open, onOpenChange, onCreated }: Pr
           cliente_externo_doc: externoDc,
         }).eq('id', compResult.id)
       }
-      const compInsert = { id: compResult.id as string }
 
       // 5. Registrar el cobro
       const { error: cobroError } = await (supabase.from('cobros') as any).insert({
@@ -646,7 +682,7 @@ export default function VentaDirectaDialog({ open, onOpenChange, onCreated }: Pr
             {carrito.length > 0 && (
               <div className="border-t border-gray-100 pt-4">
                 <Label className="text-sm font-semibold">3. Comprobante</Label>
-                <div className="grid grid-cols-3 gap-3 mt-2">
+                <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 mt-2">
                   <div>
                     <Label className="text-xs">Tipo</Label>
                     <Select value={tipoComprobante} onValueChange={updateTipoComprobante}>
@@ -664,6 +700,14 @@ export default function VentaDirectaDialog({ open, onOpenChange, onCreated }: Pr
                     <Label className="text-xs">Serie</Label>
                     <Input value={serie} onChange={(e) => setSerie(e.target.value.toUpperCase())} maxLength={4} className="mt-1 font-mono" />
                   </div>
+                  {/* Preview del correlativo — el número real se asigna
+                      atómicamente al guardar, este es solo indicativo. */}
+                  <div>
+                    <Label className="text-xs">N° correlativo (preview)</Label>
+                    <div className="mt-1 h-10 px-3 flex items-center bg-yellow-50 border border-yellow-200 rounded-md font-mono text-sm font-bold text-gray-900">
+                      {siguientesCorr[tipoComprobante] ?? '—'}
+                    </div>
+                  </div>
                   <div className="flex items-end justify-between bg-blue-50 border border-blue-100 rounded-lg px-3 py-2">
                     <div>
                       <p className="text-xs font-medium text-blue-900">Aplica IGV (18%)</p>
@@ -677,6 +721,24 @@ export default function VentaDirectaDialog({ open, onOpenChange, onCreated }: Pr
                       <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${incluirIgv ? 'translate-x-5' : 'translate-x-1'}`} />
                     </button>
                   </div>
+                </div>
+
+                {/* Vendedor asignado — se usa para comisiones y reportes */}
+                <div className="mt-3">
+                  <Label className="text-xs">Vendedor asignado (opcional)</Label>
+                  <select
+                    value={vendedorId}
+                    onChange={(e) => setVendedorId(e.target.value)}
+                    className="mt-1 w-full h-10 px-3 text-sm border border-gray-200 rounded-md bg-white"
+                  >
+                    <option value="">— Sin vendedor asignado —</option>
+                    {vendedores.map((v) => (
+                      <option key={v.id} value={v.id}>{v.nombre}</option>
+                    ))}
+                  </select>
+                  <p className="text-[10px] text-gray-500 mt-0.5">
+                    Si asignas un vendedor, esta venta cuenta para su comisión y su cuota mensual.
+                  </p>
                 </div>
 
                 {/* Totales */}
