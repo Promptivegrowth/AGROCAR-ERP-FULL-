@@ -70,6 +70,7 @@ const NAV_ITEMS: NavItem[] = [
       { label: 'Productos', href: '/maestros/productos', icon: Package },
       { label: 'Familias', href: '/maestros/familias', icon: Tags },
       { label: 'Proveedores', href: '/maestros/proveedores', icon: Building2 },
+      { label: 'Terceros', href: '/maestros/terceros', icon: UserPlus },
       { label: 'Vehículos', href: '/maestros/vehiculos', icon: Car },
       { label: 'Conductores', href: '/maestros/conductores', icon: IdCard },
       { label: 'Zonas', href: '/maestros/zonas', icon: Map },

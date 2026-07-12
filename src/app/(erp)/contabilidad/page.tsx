@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { Calculator, BookOpen, FileText, BarChart3, Lock, ScrollText, Zap, TrendingUp } from 'lucide-react'
+import { Calculator, BookOpen, FileText, BarChart3, Lock, ScrollText, Zap, TrendingUp, Users } from 'lucide-react'
 
 /**
  * Hub del módulo Contabilidad.
@@ -43,6 +43,13 @@ const MODULOS = [
     description: 'Vista por cuenta · todos sus asientos · saldo acumulado.',
     icon: FileText,
     color: 'bg-purple-600',
+  },
+  {
+    href: '/contabilidad/mayor-auxiliar',
+    title: 'Mayores Auxiliares',
+    description: 'Movimientos por cliente, proveedor o tercero — anexos SUNAT/PLE.',
+    icon: Users,
+    color: 'bg-indigo-600',
   },
   {
     href: '/contabilidad/balance',
