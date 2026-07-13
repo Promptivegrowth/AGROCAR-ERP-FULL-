@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { Calculator, BookOpen, FileText, BarChart3, Lock, ScrollText, Zap, TrendingUp, Users, MapPin, AlertTriangle, Landmark } from 'lucide-react'
+import { Calculator, BookOpen, FileText, BarChart3, Lock, ScrollText, Zap, TrendingUp, Users, MapPin, AlertTriangle, Landmark, FileCheck2 } from 'lucide-react'
 
 /**
  * Hub del módulo Contabilidad.
@@ -64,6 +64,13 @@ const MODULOS = [
     description: 'Gastos sin comprobante formal · control del tope 6% anual · art. 37 LIR.',
     icon: AlertTriangle,
     color: 'bg-orange-600',
+  },
+  {
+    href: '/contabilidad/sire',
+    title: 'SIRE — Registros Electrónicos',
+    description: 'Registro de Ventas (RVIE) y Compras (RCE) · exportar TXT · match con archivo SUNAT.',
+    icon: FileCheck2,
+    color: 'bg-cyan-700',
   },
   {
     href: '/contabilidad/balance',
