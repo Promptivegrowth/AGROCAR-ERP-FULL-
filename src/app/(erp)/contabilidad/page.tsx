@@ -73,6 +73,20 @@ const MODULOS = [
     color: 'bg-cyan-700',
   },
   {
+    href: '/contabilidad/ple',
+    title: 'PLE — Libros Electrónicos',
+    description: 'Libro Diario 5.1 · Libro Mayor 6.1 · TXT con nomenclatura oficial SUNAT.',
+    icon: BookOpen,
+    color: 'bg-emerald-700',
+  },
+  {
+    href: '/contabilidad/activos-fijos',
+    title: 'Activos Fijos',
+    description: 'Registro PLE 7.1 · depreciación mensual automática con % SUNAT.',
+    icon: Calculator,
+    color: 'bg-amber-700',
+  },
+  {
     href: '/contabilidad/balance',
     title: 'Balance de Comprobación',
     description: 'Sumas y saldos por cuenta · validación general de la contabilidad.',
