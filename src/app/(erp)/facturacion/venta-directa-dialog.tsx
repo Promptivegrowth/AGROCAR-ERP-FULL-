@@ -45,6 +45,8 @@ interface ItemCarrito {
   producto: Producto
   cantidad: number
   subtotal: number
+  // true = ítem manual sin producto del catálogo (venta de vehículo, activo, servicio)
+  esLibre?: boolean
 }
 
 type ModoCliente = 'registrado' | 'consumidor_final'
@@ -81,6 +83,12 @@ export default function VentaDirectaDialog({ open, onOpenChange, onCreated }: Pr
   const debouncedProducto = useDebounce(productoSearch, 300)
   const [showProductoDropdown, setShowProductoDropdown] = useState(false)
   const [carrito, setCarrito] = useState<ItemCarrito[]>([])
+
+  // Ítem libre (sin producto del catálogo — venta de vehículo, activo, servicio)
+  const [libreOpen, setLibreOpen] = useState(false)
+  const [libreDesc, setLibreDesc] = useState('')
+  const [libreCant, setLibreCant] = useState('1')
+  const [librePrecio, setLibrePrecio] = useState('')
 
   // Datos del comprobante
   const [tipoComprobante, setTipoComprobante] = useState<'factura' | 'boleta' | 'nota_pedido_interna'>('boleta')
@@ -267,6 +275,27 @@ export default function VentaDirectaDialog({ open, onOpenChange, onCreated }: Pr
     setCarrito((prev) => prev.filter((s) => s.producto.id !== productoId))
   }
 
+  function agregarItemLibre() {
+    const cant = parseFloat(libreCant)
+    const precio = parseFloat(librePrecio)
+    if (!libreDesc.trim()) { toast.error('Descripción requerida'); return }
+    if (isNaN(cant) || cant <= 0) { toast.error('Cantidad inválida'); return }
+    if (isNaN(precio) || precio <= 0) { toast.error('Precio inválido'); return }
+    // ID sintético local — no existe en el catálogo
+    const fakeId = `libre-${Date.now()}`
+    setCarrito((prev) => [...prev, {
+      producto: {
+        id: fakeId, codigo: null, nombre: libreDesc.trim(), descripcion: libreDesc.trim(),
+        tiene_lote: false, tiene_vencimiento: false, precio,
+      },
+      cantidad: cant,
+      subtotal: cant * precio,
+      esLibre: true,
+    }])
+    setLibreOpen(false)
+    setLibreDesc(''); setLibreCant('1'); setLibrePrecio('')
+  }
+
   // Totales
   const subtotalBruto = carrito.reduce((acc, s) => acc + s.subtotal, 0)
   const baseImponible = incluirIgv ? subtotalBruto / (1 + IGV_RATE) : subtotalBruto
@@ -351,8 +380,11 @@ export default function VentaDirectaDialog({ open, onOpenChange, onCreated }: Pr
 
       const itemsToInsert = carrito.map((s) => ({
         pedido_id: pedido.id,
-        producto_id: s.producto.id,
-        lote_id: lotePorProducto[s.producto.id] ?? null,
+        // Ítems libres van sin producto_id — la descripción manual viaja
+        // en descripcion_libre (migración 065).
+        producto_id: s.esLibre ? null : s.producto.id,
+        descripcion_libre: s.esLibre ? s.producto.nombre : null,
+        lote_id: s.esLibre ? null : (lotePorProducto[s.producto.id] ?? null),
         cantidad: s.cantidad,
         precio_unitario: s.producto.precio,
         descuento_porcentaje: 0,
@@ -571,7 +603,45 @@ export default function VentaDirectaDialog({ open, onOpenChange, onCreated }: Pr
 
             {/* 2. Productos */}
             <div className="border-t border-gray-100 pt-4">
-              <Label className="text-sm font-semibold">2. Productos *</Label>
+              <div className="flex items-center justify-between">
+                <Label className="text-sm font-semibold">2. Productos *</Label>
+                <button
+                  type="button"
+                  onClick={() => setLibreOpen(!libreOpen)}
+                  disabled={!datosClienteValidos}
+                  className="text-xs px-2 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-semibold rounded disabled:opacity-40"
+                  title="Vender algo que no está en el catálogo (vehículo, activo, servicio)"
+                >
+                  + Ítem libre (sin catálogo)
+                </button>
+              </div>
+              {libreOpen && (
+                <div className="mt-2 p-3 bg-indigo-50 border border-indigo-200 rounded-lg grid grid-cols-1 sm:grid-cols-4 gap-2 items-end">
+                  <div className="sm:col-span-2">
+                    <Label className="text-[10px]">Descripción *</Label>
+                    <Input value={libreDesc} onChange={(e) => setLibreDesc(e.target.value)}
+                      placeholder="Ej: Camioneta Toyota Hilux 2018 placa ABC-123"
+                      className="mt-0.5 h-8 text-xs bg-white" />
+                  </div>
+                  <div>
+                    <Label className="text-[10px]">Cant. / Precio *</Label>
+                    <div className="flex gap-1 mt-0.5">
+                      <Input type="number" min="0.01" step="0.01" value={libreCant}
+                        onChange={(e) => setLibreCant(e.target.value)} className="h-8 text-xs w-16 bg-white font-mono" />
+                      <Input type="number" min="0.01" step="0.01" value={librePrecio}
+                        onChange={(e) => setLibrePrecio(e.target.value)} placeholder="0.00"
+                        className="h-8 text-xs bg-white font-mono" />
+                    </div>
+                  </div>
+                  <Button type="button" size="sm" onClick={agregarItemLibre}
+                    className="h-8 bg-indigo-600 hover:bg-indigo-700 text-xs">
+                    Agregar
+                  </Button>
+                  <p className="sm:col-span-4 text-[10px] text-indigo-700">
+                    Los ítems libres no descuentan stock. Útil para venta de vehículos, activos o servicios.
+                  </p>
+                </div>
+              )}
               <div className="relative mt-2">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                 <Input
@@ -621,13 +691,17 @@ export default function VentaDirectaDialog({ open, onOpenChange, onCreated }: Pr
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-50">
-                      {carrito.map(({ producto, cantidad, subtotal }) => (
+                      {carrito.map(({ producto, cantidad, subtotal, esLibre }) => (
                         <tr key={producto.id}>
                           <td className="py-2 px-3">
                             <div className="font-medium text-gray-900 text-sm truncate max-w-[260px]">
                               {producto.descripcion?.trim() || producto.nombre}
                             </div>
-                            <div className="text-[10px] text-gray-400 font-mono">{producto.codigo}</div>
+                            <div className="text-[10px] text-gray-400 font-mono">
+                              {esLibre
+                                ? <span className="inline-block px-1 bg-indigo-100 text-indigo-700 rounded font-bold">ÍTEM LIBRE</span>
+                                : producto.codigo}
+                            </div>
                           </td>
                           <td className="py-2 px-2">
                             <div className="flex items-center justify-center gap-1">
