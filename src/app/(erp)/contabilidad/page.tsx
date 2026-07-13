@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { Calculator, BookOpen, FileText, BarChart3, Lock, ScrollText, Zap, TrendingUp, Users } from 'lucide-react'
+import { Calculator, BookOpen, FileText, BarChart3, Lock, ScrollText, Zap, TrendingUp, Users, MapPin } from 'lucide-react'
 
 /**
  * Hub del módulo Contabilidad.
@@ -50,6 +50,13 @@ const MODULOS = [
     description: 'Movimientos por cliente, proveedor o tercero — anexos SUNAT/PLE.',
     icon: Users,
     color: 'bg-indigo-600',
+  },
+  {
+    href: '/contabilidad/centros-costo',
+    title: 'Reporte por Centro de Costo',
+    description: 'Ingresos y gastos segmentados por área (Administración, Ventas, Almacén, Reparto).',
+    icon: MapPin,
+    color: 'bg-teal-600',
   },
   {
     href: '/contabilidad/balance',
