@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { Calculator, BookOpen, FileText, BarChart3, Lock, ScrollText, Zap, TrendingUp, Users, MapPin } from 'lucide-react'
+import { Calculator, BookOpen, FileText, BarChart3, Lock, ScrollText, Zap, TrendingUp, Users, MapPin, AlertTriangle } from 'lucide-react'
 
 /**
  * Hub del módulo Contabilidad.
@@ -57,6 +57,13 @@ const MODULOS = [
     description: 'Ingresos y gastos segmentados por área (Administración, Ventas, Almacén, Reparto).',
     icon: MapPin,
     color: 'bg-teal-600',
+  },
+  {
+    href: '/contabilidad/declaraciones-juradas',
+    title: 'Declaraciones Juradas',
+    description: 'Gastos sin comprobante formal · control del tope 6% anual · art. 37 LIR.',
+    icon: AlertTriangle,
+    color: 'bg-orange-600',
   },
   {
     href: '/contabilidad/balance',
