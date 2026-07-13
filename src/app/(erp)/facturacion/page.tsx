@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from 'react'
 import { FileText, Loader2, CheckCircle, AlertCircle, DollarSign, Receipt, Eye, ExternalLink, Search } from 'lucide-react'
 import Link from 'next/link'
 import VentaDirectaDialog from './venta-directa-dialog'
+import NotaCreditoDialog from './nota-credito-dialog'
 import { toast } from 'sonner'
 import { createClient } from '@/lib/supabase/client'
 import { formatCurrency, formatDate } from '@/lib/utils'
@@ -62,6 +63,8 @@ export default function FacturacionPage() {
   // Guía de remisión
   const [guiaOpen, setGuiaOpen] = useState(false)
   const [guiaComp, setGuiaComp] = useState<any>(null)
+  const [ncOpen, setNcOpen] = useState(false)
+  const [ncCompId, setNcCompId] = useState<string | null>(null)
   const [guiaSaving, setGuiaSaving] = useState(false)
   const [guiaForm, setGuiaForm] = useState({
     fecha_inicio_traslado: '',
@@ -721,6 +724,13 @@ export default function FacturacionPage() {
         onCreated={loadData}
       />
 
+      <NotaCreditoDialog
+        open={ncOpen}
+        onOpenChange={setNcOpen}
+        comprobanteId={ncCompId}
+        onCreated={loadData}
+      />
+
       {successMsg && (
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-green-50 border border-green-200 rounded-xl px-4 py-3">
           <div className="flex items-center gap-3">
@@ -1117,6 +1127,14 @@ export default function FacturacionPage() {
                                       title="Emitir guía de remisión electrónica para este comprobante"
                                     >
                                       📄 Guía
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => { setNcCompId(c.id); setNcOpen(true) }}
+                                      className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-orange-700 hover:text-orange-900 hover:bg-orange-50 rounded transition-colors"
+                                      title="Emitir Nota de Crédito para este comprobante"
+                                    >
+                                      ⬅️ NC
                                     </button>
                                   </>
                                 )}
