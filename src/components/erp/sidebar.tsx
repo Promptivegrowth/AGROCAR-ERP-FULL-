@@ -112,6 +112,12 @@ const NAV_ITEMS: NavItem[] = [
     roles: ['gerente', 'administrador', 'contador', 'caja'],
   },
   {
+    label: 'Caja Chica',
+    href: '/caja-chica',
+    icon: Wallet,
+    roles: ['gerente', 'administrador', 'contador', 'caja'],
+  },
+  {
     label: 'Cobranzas',
     href: '/cobranzas',
     icon: Landmark,

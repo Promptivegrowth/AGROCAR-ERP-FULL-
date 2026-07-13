@@ -56,6 +56,7 @@ const ERP_ACCESS: Record<UserRole, string[] | '*'> = {
   contador: [
     '/dashboard',
     '/caja',
+    '/caja-chica',
     '/cobranzas',
     '/contabilidad',
     '/reportes',
@@ -66,6 +67,7 @@ const ERP_ACCESS: Record<UserRole, string[] | '*'> = {
   caja: [
     '/dashboard',
     '/caja',
+    '/caja-chica',
     '/cobranzas',
     '/facturacion',
     '/configuracion',
