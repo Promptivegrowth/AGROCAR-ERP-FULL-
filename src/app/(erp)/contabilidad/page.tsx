@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { Calculator, BookOpen, FileText, BarChart3, Lock, ScrollText, Zap, TrendingUp, Users, MapPin, AlertTriangle } from 'lucide-react'
+import { Calculator, BookOpen, FileText, BarChart3, Lock, ScrollText, Zap, TrendingUp, Users, MapPin, AlertTriangle, Landmark } from 'lucide-react'
 
 /**
  * Hub del módulo Contabilidad.
@@ -78,6 +78,13 @@ const MODULOS = [
     description: 'Ingresos − Gastos = Utilidad del período. Margen sobre ingresos.',
     icon: TrendingUp,
     color: 'bg-rose-600',
+  },
+  {
+    href: '/contabilidad/estados-financieros',
+    title: 'Estados Financieros',
+    description: 'Situación Financiera (Balance) · Flujo de Efectivo · Cambios en el Patrimonio.',
+    icon: Landmark,
+    color: 'bg-blue-800',
   },
   {
     href: '/contabilidad/periodos',
