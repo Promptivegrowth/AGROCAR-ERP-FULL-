@@ -87,6 +87,13 @@ const MODULOS = [
     color: 'bg-amber-700',
   },
   {
+    href: '/contabilidad/conciliacion',
+    title: 'Conciliación Bancaria',
+    description: 'Importa el estado de cuenta BCP y haz match automático contra el sistema.',
+    icon: Landmark,
+    color: 'bg-sky-700',
+  },
+  {
     href: '/contabilidad/balance',
     title: 'Balance de Comprobación',
     description: 'Sumas y saldos por cuenta · validación general de la contabilidad.',
