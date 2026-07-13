@@ -172,11 +172,11 @@ export default function PlanillaCalculoPage() {
 
   // ── Matriz trabajador × concepto para la vista
   const matriz = useMemo(() => {
-    const trabMap = new Map<string, { codigo: string; nombre: string; conceptos: Map<string, number>; ingresos: number; descuentos: number }>()
+    const trabMap = new Map<string, { id: string; codigo: string; nombre: string; conceptos: Map<string, number>; ingresos: number; descuentos: number }>()
     const conceptosSet = new Map<string, { codigo: string; nombre: string; tipo: string; orden: number }>()
     detalles.forEach((d: any) => {
       if (!trabMap.has(d.trabajador_id)) {
-        trabMap.set(d.trabajador_id, { codigo: d.trabajador_codigo, nombre: d.trabajador_nombre!, conceptos: new Map(), ingresos: 0, descuentos: 0 })
+        trabMap.set(d.trabajador_id, { id: d.trabajador_id, codigo: d.trabajador_codigo, nombre: d.trabajador_nombre!, conceptos: new Map(), ingresos: 0, descuentos: 0 })
       }
       const t = trabMap.get(d.trabajador_id)!
       t.conceptos.set(d.concepto_codigo!, d.monto)
@@ -190,6 +190,46 @@ export default function PlanillaCalculoPage() {
     const filas = Array.from(trabMap.values()).sort((a, b) => a.codigo.localeCompare(b.codigo))
     return { conceptos, filas }
   }, [detalles])
+
+  // ── Export AFPnet / ONP (CSV para importar en los portales)
+  const exportarPension = async (regimen: 'afp' | 'onp') => {
+    if (!planilla) return
+    const { data: trabs } = await (supabase as any)
+      .from('trabajadores')
+      .select('id, numero_doc, nombres, apellido_paterno, apellido_materno, afp_nombre, afp_cuspp, regimen_pension')
+      .eq('regimen_pension', regimen).eq('estado', 'activo')
+    const lista = (trabs ?? []) as any[]
+    if (lista.length === 0) { toast.info(`Sin trabajadores en ${regimen.toUpperCase()}`); return }
+    const codigos = regimen === 'afp' ? ['AFP_FONDO', 'AFP_SEGURO', 'AFP_COMISION'] : ['ONP']
+    const lineas: string[] = [
+      regimen === 'afp'
+        ? 'CUSPP;DOC;APELLIDOS Y NOMBRES;AFP;FONDO;SEGURO;COMISION;TOTAL'
+        : 'DOC;APELLIDOS Y NOMBRES;BASE;ONP 13%',
+    ]
+    for (const t of lista) {
+      const dets = detalles.filter((d: any) => d.trabajador_id === t.id && codigos.includes(d.concepto_codigo))
+      const montos = new Map<string, number>()
+      dets.forEach((d: any) => montos.set(d.concepto_codigo, d.monto))
+      const nombre = `${t.apellido_paterno} ${t.apellido_materno ?? ''} ${t.nombres}`.trim()
+      if (regimen === 'afp') {
+        const fondo = montos.get('AFP_FONDO') ?? 0
+        const seguro = montos.get('AFP_SEGURO') ?? 0
+        const comision = montos.get('AFP_COMISION') ?? 0
+        lineas.push([t.afp_cuspp ?? '', t.numero_doc, nombre, t.afp_nombre ?? '', fondo.toFixed(2), seguro.toFixed(2), comision.toFixed(2), (fondo + seguro + comision).toFixed(2)].join(';'))
+      } else {
+        const onp = montos.get('ONP') ?? 0
+        lineas.push([t.numero_doc, nombre, (onp / 0.13).toFixed(2), onp.toFixed(2)].join(';'))
+      }
+    }
+    const blob = new Blob(['﻿' + lineas.join('\r\n')], { type: 'text/csv;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `${regimen.toUpperCase()}_${anio}${String(mes).padStart(2, '0')}.csv`
+    a.click()
+    URL.revokeObjectURL(url)
+    toast.success(`Export ${regimen.toUpperCase()} descargado (${lista.length} trabajadores)`)
+  }
 
   const editable = !planilla || ['borrador', 'calculada'].includes(planilla.estado)
 
@@ -244,10 +284,18 @@ export default function PlanillaCalculoPage() {
           </Button>
         )}
         {planilla && ['calculada', 'cerrada', 'pagada'].includes(planilla.estado) && (
-          <button onClick={() => window.print()}
-            className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-black bg-[#FBE600] rounded-md hover:bg-[#E5D100]">
-            <Printer className="w-3.5 h-3.5" /> Imprimir
-          </button>
+          <>
+            <Button variant="outline" onClick={() => exportarPension('afp')} className="h-9 text-xs gap-1">
+              ⬇ AFPnet
+            </Button>
+            <Button variant="outline" onClick={() => exportarPension('onp')} className="h-9 text-xs gap-1">
+              ⬇ ONP
+            </Button>
+            <button onClick={() => window.print()}
+              className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-black bg-[#FBE600] rounded-md hover:bg-[#E5D100]">
+              <Printer className="w-3.5 h-3.5" /> Imprimir
+            </button>
+          </>
         )}
       </div>
 
@@ -322,6 +370,7 @@ export default function PlanillaCalculoPage() {
                       </th>
                     ))}
                     <th className="text-right p-2 font-bold text-gray-800 bg-yellow-50 min-w-[90px]">NETO</th>
+                    <th className="p-2 w-16 no-print"></th>
                   </tr>
                 </thead>
                 <tbody>
@@ -344,6 +393,12 @@ export default function PlanillaCalculoPage() {
                       <td className="p-2 text-right font-mono font-bold bg-yellow-50">
                         {formatCurrency(f.ingresos - f.descuentos)}
                       </td>
+                      <td className="p-1 text-center no-print">
+                        <Link href={`/planillas/boleta/${planilla!.id}/${f.id}`}
+                          className="text-[10px] px-2 py-1 bg-blue-50 hover:bg-blue-100 text-blue-700 font-semibold rounded whitespace-nowrap">
+                          🧾 Boleta
+                        </Link>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -359,6 +414,7 @@ export default function PlanillaCalculoPage() {
                       )
                     })}
                     <td className="p-2 text-right font-mono bg-[#FBE600]">{formatCurrency(planilla.total_neto)}</td>
+                    <td className="no-print"></td>
                   </tr>
                 </tfoot>
               </table>

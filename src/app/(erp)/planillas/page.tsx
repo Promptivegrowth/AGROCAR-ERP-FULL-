@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import Link from 'next/link'
-import { Users, Calculator, Settings2, CalendarClock, Loader2, ChevronRight, Wallet } from 'lucide-react'
+import { Users, Calculator, Settings2, CalendarClock, Loader2, ChevronRight, Wallet, Gift } from 'lucide-react'
 import { formatCurrency } from '@/lib/utils'
 
 const MESES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Setiembre','Octubre','Noviembre','Diciembre']
@@ -47,6 +47,13 @@ export default function PlanillasHub() {
       description: 'Calcula sueldos, horas extras, aportes y descuentos · cierre inmutable con asiento automático.',
       icon: Calculator,
       color: 'bg-emerald-600',
+    },
+    {
+      href: '/planillas/beneficios',
+      title: 'Beneficios Sociales',
+      description: 'Provisiones mensuales CTS/gratificación/vacaciones · goce vacacional · liquidación de cese.',
+      icon: Gift,
+      color: 'bg-pink-600',
     },
     {
       href: '/planillas/conceptos',
