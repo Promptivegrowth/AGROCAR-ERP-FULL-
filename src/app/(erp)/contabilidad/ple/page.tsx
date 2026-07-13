@@ -52,6 +52,22 @@ const LIBROS = [
       f.estado_ple,
     ],
   },
+  {
+    key: 'inventario',
+    codigo: '130100',
+    titulo: 'Inventario Permanente Valorizado (13.1)',
+    descripcion: 'Entradas y salidas de mercadería por producto con costos (movimientos de stock reales).',
+    rpc: 'ple_inventario_valorizado',
+    icon: FileText,
+    color: 'bg-cyan-600',
+    campos: (f: any) => [
+      f.producto_codigo, f.producto_nombre, f.udm,
+      f.fecha, f.tipo_operacion,
+      Number(f.entrada_cantidad).toFixed(2), Number(f.entrada_costo).toFixed(2),
+      Number(f.salida_cantidad).toFixed(2), Number(f.salida_costo).toFixed(2),
+      f.referencia ?? '', '1',
+    ],
+  },
 ]
 
 export default function PlePage() {
@@ -135,7 +151,11 @@ export default function PlePage() {
               </p>
               {prev && (
                 <div className="mt-2 text-xs bg-gray-50 rounded p-2">
-                  <p>{prev.cantidad} líneas · Debe {formatCurrency(prev.total_debe)} · Haber {formatCurrency(prev.total_haber)}</p>
+                  {prev.total_debe !== undefined ? (
+                    <p>{prev.cantidad} líneas · Debe {formatCurrency(prev.total_debe)} · Haber {formatCurrency(prev.total_haber)}</p>
+                  ) : (
+                    <p>{prev.cantidad_movimientos} movimientos · {prev.productos_distintos} productos</p>
+                  )}
                 </div>
               )}
               <Button onClick={() => generar(libro)} disabled={loading === libro.key}

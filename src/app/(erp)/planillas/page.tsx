@@ -63,6 +63,13 @@ export default function PlanillasHub() {
       color: 'bg-purple-600',
     },
     {
+      href: '/planillas/asistencia',
+      title: 'Control de Asistencia',
+      description: 'Registro diario de entrada/salida · faltas y tardanzas · resumen mensual.',
+      icon: CalendarClock,
+      color: 'bg-teal-600',
+    },
+    {
       href: '/planillas/parametros',
       title: 'Parámetros del Año',
       description: 'UIT, RMV, tasas EsSalud/ONP · actualizables cada año sin tocar código.',
