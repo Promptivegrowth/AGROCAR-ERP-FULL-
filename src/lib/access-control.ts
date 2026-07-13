@@ -64,6 +64,14 @@ const ERP_ACCESS: Record<UserRole, string[] | '*'> = {
     '/facturacion',
     '/vendedores',
     '/configuracion',
+    // La contadora pidió gestionar anexos: crear clientes, proveedores y
+    // terceros desde contabilidad (reunión 1). RLS controla qué puede escribir.
+    '/maestros/clientes',
+    '/maestros/proveedores',
+    '/maestros/terceros',
+    // Reportes contables de inventario (kardex valorizado y compras)
+    '/almacen/valorizado',
+    '/almacen/compras',
   ],
   caja: [
     '/dashboard',
