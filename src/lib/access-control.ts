@@ -59,6 +59,7 @@ const ERP_ACCESS: Record<UserRole, string[] | '*'> = {
     '/caja-chica',
     '/cobranzas',
     '/contabilidad',
+    '/planillas',
     '/reportes',
     '/facturacion',
     '/vendedores',

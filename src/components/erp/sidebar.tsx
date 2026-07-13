@@ -148,6 +148,12 @@ const NAV_ITEMS: NavItem[] = [
     roles: ['gerente', 'administrador', 'contador'],
   },
   {
+    label: 'Planillas',
+    href: '/planillas',
+    icon: Users,
+    roles: ['gerente', 'administrador', 'contador'],
+  },
+  {
     label: 'Configuración',
     href: '/configuracion',
     icon: Settings,
