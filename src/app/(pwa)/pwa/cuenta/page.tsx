@@ -389,22 +389,25 @@ export default function CuentaPage() {
           Mi Reporte (historial + Excel/PDF)
         </Button>
 
-        {/* Cuentas por cobrar a mi cargo */}
-        {profile?.id && (
-          <a
-            href={`/reportes/cobranzas-vendedor/${profile.id}`}
-            target="_blank" rel="noopener noreferrer"
-            className="block"
-          >
-            <Button
-              variant="outline"
-              className="w-full h-12 border-red-200 text-red-700 hover:bg-red-50 font-semibold pointer-events-none"
-            >
-              <DollarSign className="w-4 h-4" />
-              Mis cuentas por cobrar (clientes con deuda)
-            </Button>
-          </a>
-        )}
+        {/* Mis cuotas del mes por familia */}
+        <Button
+          onClick={() => router.push('/pwa/mis-cuotas')}
+          variant="outline"
+          className="w-full h-12 border-yellow-300 text-yellow-800 hover:bg-yellow-50 font-semibold"
+        >
+          🎯 Mis cuotas del mes (metas por familia)
+        </Button>
+
+        {/* Cuentas por cobrar a mi cargo — página PWA nativa (la ruta del
+            ERP estaba bloqueada para el rol vendedor) */}
+        <Button
+          onClick={() => router.push('/pwa/mis-cobranzas')}
+          variant="outline"
+          className="w-full h-12 border-red-200 text-red-700 hover:bg-red-50 font-semibold"
+        >
+          <DollarSign className="w-4 h-4" />
+          Mis cuentas por cobrar (clientes con deuda)
+        </Button>
 
         {/* Cerrar sesión */}
         <Button
