@@ -9,7 +9,7 @@ export const dynamic = 'force-dynamic'
 const TIPO_TITULO: Record<string, string> = {
   boleta: 'BOLETA DE VENTA ELECTRONICA',
   factura: 'FACTURA ELECTRONICA',
-  nota_pedido_interna: 'NOTA DE PEDIDO',
+  nota_pedido_interna: 'DOCUMENTO INTERNO',
 }
 
 function pad(n: string | number, len: number) {

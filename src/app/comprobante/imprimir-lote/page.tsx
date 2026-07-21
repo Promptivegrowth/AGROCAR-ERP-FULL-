@@ -8,7 +8,8 @@ export const dynamic = 'force-dynamic'
 const TIPO_TITULO: Record<string, string> = {
   boleta: 'BOLETA DE VENTA ELECTRONICA',
   factura: 'FACTURA ELECTRONICA',
-  nota_pedido_interna: 'NOTA DE PEDIDO',
+  nota_pedido_interna: 'DOCUMENTO INTERNO',
+  nota_credito: 'NOTA DE CREDITO ELECTRONICA',
 }
 
 function pad(n: string | number, len: number) {
@@ -76,8 +77,18 @@ export default async function ImprimirLotePage({
           @page { size: ${esA4 ? 'A4' : '80mm auto'}; margin: ${esA4 ? '8mm' : '0'}; }
           body { margin: 0; }
           .no-print { display: none !important; }
+          ${esA4 ? `
+          /* A4: un comprobante por hoja */
           .pagebreak { page-break-after: always; break-after: page; }
           .pagebreak:last-child { page-break-after: auto; break-after: auto; }
+          ` : `
+          /* TICKET: impresión CONTINUA en rollo térmico — SIN saltos de página
+             entre comprobantes (evita que la impresora avance papel en blanco).
+             Cada ticket termina con una línea de corte ✂ para cortar a mano
+             o donde la guillotina automática detecte la marca. */
+          .pagebreak { page-break-after: auto !important; break-after: auto !important; }
+          .pagebreak { page-break-inside: avoid; break-inside: avoid; }
+          `}
         }
       `}</style>
 
@@ -330,6 +341,13 @@ export default async function ImprimirLotePage({
                   <div style={{ borderTop: '1px dashed #000', margin: '6px 0' }} />
                   <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'bold' }}>
                     <span>TOTAL:</span><span>S/ {fmtNum(totalNum)}</span>
+                  </div>
+                  <div style={{ textAlign: 'center', fontSize: 8, color: '#666', marginTop: 4 }}>
+                    ¡Gracias por su compra!
+                  </div>
+                  {/* Línea de corte entre tickets (impresión continua en rollo) */}
+                  <div style={{ borderTop: '1px dashed #999', margin: '10px 0 2px', textAlign: 'center', fontSize: 9, color: '#999' }}>
+                    ✂ ····························································
                   </div>
                 </>
               )}

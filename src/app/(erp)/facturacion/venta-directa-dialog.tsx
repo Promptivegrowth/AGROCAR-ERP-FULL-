@@ -487,6 +487,8 @@ export default function VentaDirectaDialog({ open, onOpenChange, onCreated }: Pr
       toast.success('Venta directa registrada', {
         description: `${serieReal}-${numeroComp} · ${formatCurrency(totalFinal)}`,
       })
+      // Abrir el ticket en formato 80mm para imprimir de inmediato (mostrador)
+      window.open(`/comprobante/imprimir-lote?ids=${compResult.id}&formato=ticket`, '_blank', 'noopener,noreferrer')
       onCreated()
       onOpenChange(false)
     } catch (err: any) {

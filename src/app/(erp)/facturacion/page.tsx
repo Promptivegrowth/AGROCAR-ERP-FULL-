@@ -81,6 +81,10 @@ export default function FacturacionPage() {
     transportista_razon_social: '',
     transportista_ruc: '',
   })
+  // Catálogos para la guía: flota y conductores del sistema + ítems a trasladar
+  const [guiaVehiculos, setGuiaVehiculos] = useState<any[]>([])
+  const [guiaConductores, setGuiaConductores] = useState<any[]>([])
+  const [guiaItems, setGuiaItems] = useState<any[]>([])
   const [editHistorial, setEditHistorial] = useState<any[]>([])
   const [editNota, setEditNota] = useState('')
   const [editSaving, setEditSaving] = useState(false)
@@ -293,20 +297,47 @@ export default function FacturacionPage() {
   }
 
   // ── Guía de Remisión Electrónica
-  function abrirGuia(comp: any) {
+  async function abrirGuia(comp: any) {
     setGuiaComp(comp)
-    // Defaults: mañana como fecha de traslado, datos auto desde cliente
     const manana = new Date(); manana.setDate(manana.getDate() + 1)
-    const direccionCliente = comp.clientes?.razon_social
-      ? `${comp.clientes?.razon_social} · ${(comp as any).pedidos?.direccion_entrega_texto ?? ''}`.trim()
-      : ''
+
+    // Cargar en paralelo: dirección real del cliente, ítems con peso,
+    // flota de vehículos y conductores registrados en el sistema.
+    const [cliRes, itemsRes, vehRes, condRes] = await Promise.all([
+      comp.cliente_id
+        ? (supabase as any).from('clientes').select('razon_social, direccion, ruc, dni').eq('id', comp.cliente_id).maybeSingle()
+        : Promise.resolve({ data: null }),
+      (supabase as any).from('comprobantes_items')
+        .select('descripcion, cantidad, productos(peso_kg, nombre)')
+        .eq('comprobante_id', comp.id),
+      (supabase as any).from('vehiculos').select('id, placa, descripcion, capacidad_kg').eq('activo', true).order('placa'),
+      (supabase as any).from('conductores').select('id, nombre_completo, dni, licencia_numero').eq('activo', true).order('nombre_completo'),
+    ])
+
+    const cli = cliRes.data as any
+    const items = ((itemsRes.data ?? []) as any[]).map((it) => ({
+      descripcion: it.descripcion ?? it.productos?.nombre ?? '—',
+      cantidad: Number(it.cantidad ?? 0),
+      peso_unit: Number(it.productos?.peso_kg ?? 0),
+      peso_total: Number(it.cantidad ?? 0) * Number(it.productos?.peso_kg ?? 0),
+    }))
+    const pesoTotal = items.reduce((a, it) => a + it.peso_total, 0)
+    setGuiaItems(items)
+    setGuiaVehiculos((vehRes.data ?? []) as any[])
+    setGuiaConductores((condRes.data ?? []) as any[])
+
+    // Punto de llegada: razón social + dirección REAL del cliente
+    const nombreCliente = cli?.razon_social ?? comp.clientes?.razon_social ?? comp.cliente_externo_nombre ?? ''
+    const dirCliente = cli?.direccion ?? ''
+    const llegada = [nombreCliente, dirCliente].filter(Boolean).join(' · ')
+
     setGuiaForm({
       fecha_inicio_traslado: manana.toISOString().slice(0, 10),
       motivo_traslado: 'venta',
       motivo_descripcion: '',
       punto_partida: 'CALLE EMILIO FORERO 553-A PARA GRANDE TACNA FUNDO PARA GRANDE PARCELA 31 SUB.LT.1 TACNA - TACNA - TACNA',
-      punto_llegada: direccionCliente,
-      peso_bruto: '',
+      punto_llegada: llegada,
+      peso_bruto: pesoTotal > 0 ? pesoTotal.toFixed(2) : '',
       vehiculo_placa: '',
       conductor_nombre: '',
       conductor_doc: '',
@@ -1604,9 +1635,51 @@ export default function FacturacionPage() {
             <div className="space-y-3 mt-2">
               <div className="bg-purple-50 border border-purple-200 rounded-lg p-3 text-xs text-purple-900">
                 Guía para comprobante <strong className="font-mono">{guiaComp.serie}-{String(guiaComp.numero).padStart(8, '0')}</strong> ·
-                Cliente: <strong>{guiaComp.clientes?.razon_social ?? guiaComp.cliente_externo_nombre ?? '—'}</strong>
-                <br/>Los items se heredan automáticamente. Solo completa los datos del traslado.
+                Destinatario: <strong>{guiaComp.clientes?.razon_social ?? guiaComp.cliente_externo_nombre ?? '—'}</strong>
+                {(guiaComp.clientes?.ruc || guiaComp.clientes?.dni) && (
+                  <span className="font-mono"> · {guiaComp.clientes?.ruc ? `RUC ${guiaComp.clientes.ruc}` : `DNI ${guiaComp.clientes.dni}`}</span>
+                )}
               </div>
+
+              {/* Productos que se trasladan (heredados del comprobante) */}
+              {guiaItems.length > 0 && (
+                <div className="border border-gray-200 rounded-lg overflow-hidden">
+                  <p className="text-[10px] font-bold text-gray-600 uppercase bg-gray-50 px-2 py-1.5 border-b border-gray-200">
+                    📦 Productos que se trasladan ({guiaItems.length})
+                  </p>
+                  <table className="w-full text-[11px]">
+                    <thead className="bg-gray-50/50 text-gray-500">
+                      <tr>
+                        <th className="text-left px-2 py-1">Descripción</th>
+                        <th className="text-right px-2 py-1 w-16">Cant.</th>
+                        <th className="text-right px-2 py-1 w-20">Peso (KG)</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {guiaItems.map((it, i) => (
+                        <tr key={i} className="border-t border-gray-100">
+                          <td className="px-2 py-1 truncate max-w-[280px]">{it.descripcion}</td>
+                          <td className="px-2 py-1 text-right font-mono">{it.cantidad}</td>
+                          <td className="px-2 py-1 text-right font-mono">
+                            {it.peso_total > 0 ? it.peso_total.toFixed(2) : <span className="text-amber-600" title="Producto sin peso configurado">s/p</span>}
+                          </td>
+                        </tr>
+                      ))}
+                      <tr className="border-t-2 border-gray-300 bg-gray-50 font-bold">
+                        <td className="px-2 py-1" colSpan={2}>PESO BRUTO TOTAL</td>
+                        <td className="px-2 py-1 text-right font-mono">
+                          {guiaItems.reduce((a, it) => a + it.peso_total, 0).toFixed(2)} KG
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                  {guiaItems.some((it) => it.peso_unit === 0) && (
+                    <p className="text-[10px] text-amber-700 bg-amber-50 px-2 py-1">
+                      ⚠ Algunos productos no tienen peso configurado (s/p) — complétalo en Maestros → Productos o ajusta el peso total manualmente.
+                    </p>
+                  )}
+                </div>
+              )}
 
               {/* Fechas + Motivo */}
               <div className="grid grid-cols-2 gap-3">
@@ -1689,19 +1762,58 @@ export default function FacturacionPage() {
                 </div>
               )}
 
-              {/* Vehículo */}
+              {/* Vehículo — selector de la flota del sistema */}
               <div className="border-t border-gray-200 pt-3">
                 <p className="text-xs font-bold text-gray-700 uppercase mb-2">Datos del vehículo</p>
-                <Label className="text-xs font-semibold">Placa principal *</Label>
+                <Label className="text-xs font-semibold">Elegir de mi flota</Label>
+                <select
+                  value=""
+                  onChange={(e) => {
+                    const v = guiaVehiculos.find((x) => x.id === e.target.value)
+                    if (v) setGuiaForm((p) => ({ ...p, vehiculo_placa: v.placa }))
+                  }}
+                  className="mt-1 w-full h-9 px-2 text-sm border border-gray-300 rounded-md bg-white"
+                >
+                  <option value="">— Seleccionar vehículo ({guiaVehiculos.length} registrados) —</option>
+                  {guiaVehiculos.map((v) => (
+                    <option key={v.id} value={v.id}>
+                      {v.placa} · {v.descripcion ?? ''} {v.capacidad_kg ? `(${v.capacidad_kg} kg)` : ''}
+                    </option>
+                  ))}
+                </select>
+                <Label className="text-xs font-semibold mt-2 block">Placa principal *</Label>
                 <Input value={guiaForm.vehiculo_placa}
                   onChange={(e) => setGuiaForm((p) => ({ ...p, vehiculo_placa: e.target.value.toUpperCase() }))}
                   className="mt-1 font-mono uppercase"
                   placeholder="Z8J708" maxLength={10} />
+                <p className="text-[10px] text-gray-500 mt-0.5">Al elegir de la flota se llena solo. También puedes escribir una placa manualmente.</p>
               </div>
 
-              {/* Conductor */}
+              {/* Conductor — selector de conductores registrados */}
               <div className="border-t border-gray-200 pt-3">
                 <p className="text-xs font-bold text-gray-700 uppercase mb-2">Datos del conductor</p>
+                <Label className="text-xs font-semibold">Elegir conductor registrado</Label>
+                <select
+                  value=""
+                  onChange={(e) => {
+                    const c = guiaConductores.find((x) => x.id === e.target.value)
+                    if (c) setGuiaForm((p) => ({
+                      ...p,
+                      conductor_nombre: (c.nombre_completo ?? '').toUpperCase(),
+                      conductor_doc: c.dni ?? '',
+                      conductor_licencia: (c.licencia_numero ?? '').toUpperCase(),
+                    }))
+                  }}
+                  className="mt-1 w-full h-9 px-2 text-sm border border-gray-300 rounded-md bg-white"
+                >
+                  <option value="">— Seleccionar conductor ({guiaConductores.length} registrados) —</option>
+                  {guiaConductores.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.nombre_completo} · DNI {c.dni} {c.licencia_numero ? `· Lic. ${c.licencia_numero}` : ''}
+                    </option>
+                  ))}
+                </select>
+                <p className="text-[10px] text-gray-500 mt-0.5 mb-2">Al elegirlo se llenan nombre, DNI y licencia. Se administran en Maestros → Conductores.</p>
                 <div>
                   <Label className="text-xs font-semibold">Nombre completo *</Label>
                   <Input value={guiaForm.conductor_nombre}
