@@ -25,7 +25,7 @@ export default async function GuiaPage({ params }: { params: Promise<{ id: strin
     .from('guias_remision')
     .select(`
       *,
-      clientes(razon_social, ruc, dni),
+      clientes(razon_social, ruc, dni, direccion),
       comprobantes(serie, numero, tipo)
     `)
     .eq('id', id).maybeSingle()
@@ -33,13 +33,32 @@ export default async function GuiaPage({ params }: { params: Promise<{ id: strin
 
   const { data: items } = await (supabase as any)
     .from('guias_remision_items')
-    .select('*')
+    .select('*, productos(peso_kg)')
     .eq('guia_id', id)
     .order('orden')
 
   const numeroCompleto = `${guia.serie}-${String(guia.numero).padStart(8, '0')}`
 
   const cliNombre = guia.clientes?.razon_social ?? guia.cliente_externo_nombre ?? 'Consumidor final'
+
+  // Punto de llegada: SUNAT exige la DIRECCIÓN del punto de entrega.
+  // Guías antiguas guardaron solo el nombre del cliente — fallback a la
+  // dirección registrada del cliente si el campo no contiene una dirección.
+  const direccionCliente = guia.clientes?.direccion ?? null
+  const llegadaGuardada = (guia.punto_llegada ?? '').trim()
+  const llegadaEsSoloNombre = llegadaGuardada === '' ||
+    llegadaGuardada.replace(/[-·\s]+$/, '').toUpperCase() === cliNombre.toUpperCase()
+  const puntoLlegada = llegadaEsSoloNombre && direccionCliente
+    ? direccionCliente
+    : llegadaGuardada || direccionCliente || '—'
+
+  // Peso bruto: si la guía guardó 0, calcularlo del sistema
+  // (cantidad × peso_kg del producto de cada ítem).
+  const pesoCalculado = (items ?? []).reduce(
+    (a: number, it: any) => a + Number(it.cantidad ?? 0) * Number(it.productos?.peso_kg ?? 0), 0)
+  const pesoBruto = Number(guia.peso_bruto_total ?? 0) > 0
+    ? Number(guia.peso_bruto_total)
+    : pesoCalculado
   const cliDoc = guia.clientes?.ruc
     ? `REGISTRO ÚNICO DE CONTRIBUYENTES N° ${guia.clientes.ruc}`
     : guia.clientes?.dni
@@ -59,7 +78,7 @@ export default async function GuiaPage({ params }: { params: Promise<{ id: strin
     })
 
   // QR data básico (similar a SUNAT)
-  const qrData = `${EMPRESA.ruc}|09|${guia.serie}|${guia.numero}|${guia.peso_bruto_total ?? 0}|${(guia.fecha_inicio_traslado ?? '').replace(/-/g, '')}`
+  const qrData = `${EMPRESA.ruc}|09|${guia.serie}|${guia.numero}|${pesoBruto.toFixed(2)}|${(guia.fecha_inicio_traslado ?? '').replace(/-/g, '')}`
   const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=${encodeURIComponent(qrData)}`
 
   const motivoLabel = MOTIVOS_LABEL[guia.motivo_traslado] ?? guia.motivo_traslado
@@ -133,7 +152,7 @@ export default async function GuiaPage({ params }: { params: Promise<{ id: strin
                 </div>
                 <div style={{ marginTop: 8 }}>
                   <strong>Punto de llegada</strong>
-                  <div style={{ marginTop: 2 }}>{guia.punto_llegada}</div>
+                  <div style={{ marginTop: 2 }}>{puntoLlegada}</div>
                 </div>
               </td>
             </tr>
@@ -154,26 +173,26 @@ export default async function GuiaPage({ params }: { params: Promise<{ id: strin
               <th style={{ border: '1px solid #000', padding: '4px 3px', width: 28 }}>N°</th>
               <th style={{ border: '1px solid #000', padding: '4px 3px', width: 60 }}>Bien<br/>normalizado</th>
               <th style={{ border: '1px solid #000', padding: '4px 3px', width: 68 }}>Código de<br/>Bien</th>
-              <th style={{ border: '1px solid #000', padding: '4px 3px', width: 68 }}>Código<br/>producto<br/>SUNAT</th>
-              <th style={{ border: '1px solid #000', padding: '4px 3px', width: 70 }}>Partida<br/>arancelaria</th>
-              <th style={{ border: '1px solid #000', padding: '4px 3px', width: 70 }}>Código<br/>GTIN</th>
               <th style={{ border: '1px solid #000', padding: '4px 3px' }}>Descripción Detallada</th>
+              <th style={{ border: '1px solid #000', padding: '4px 3px', width: 65 }}>Peso<br/>(KG)</th>
               <th style={{ border: '1px solid #000', padding: '4px 3px', width: 70 }}>Unidad de<br/>medida</th>
               <th style={{ border: '1px solid #000', padding: '4px 3px', width: 60 }}>Cantidad</th>
             </tr>
           </thead>
           <tbody>
             {(items ?? []).length === 0 ? (
-              <tr><td colSpan={9} style={{ padding: 12, textAlign: 'center', color: '#999' }}>Sin items</td></tr>
-            ) : (items ?? []).map((it: any, i: number) => (
+              <tr><td colSpan={7} style={{ padding: 12, textAlign: 'center', color: '#999' }}>Sin items</td></tr>
+            ) : (items ?? []).map((it: any, i: number) => {
+              const pesoItem = Number(it.cantidad ?? 0) * Number(it.productos?.peso_kg ?? 0)
+              return (
               <tr key={it.id}>
                 <td style={{ border: '1px solid #000', padding: '3px', textAlign: 'center' }}>{i + 1}</td>
                 <td style={{ border: '1px solid #000', padding: '3px', textAlign: 'center' }}>{it.bien_normalizado ? 'SI' : 'NO'}</td>
                 <td style={{ border: '1px solid #000', padding: '3px', textAlign: 'center', fontSize: 9 }}>{it.codigo ?? ''}</td>
-                <td style={{ border: '1px solid #000', padding: '3px', textAlign: 'center', fontSize: 9 }}>{it.codigo_producto_sunat ?? ''}</td>
-                <td style={{ border: '1px solid #000', padding: '3px', textAlign: 'center', fontSize: 9 }}>{it.partida_arancelaria ?? ''}</td>
-                <td style={{ border: '1px solid #000', padding: '3px', textAlign: 'center', fontSize: 9 }}>{it.codigo_gtin ?? ''}</td>
-                <td style={{ border: '1px solid #000', padding: '3px' }}>{it.descripcion}</td>
+                <td style={{ border: '1px solid #000', padding: '4px 6px', fontSize: 10 }}>{it.descripcion}</td>
+                <td style={{ border: '1px solid #000', padding: '3px', textAlign: 'right', fontFamily: 'monospace' }}>
+                  {pesoItem > 0 ? pesoItem.toFixed(2) : ''}
+                </td>
                 <td style={{ border: '1px solid #000', padding: '3px', textAlign: 'center' }}>
                   {it.unidad_medida === 'NIU' ? 'UNIDAD' :
                    it.unidad_medida === 'KGM' ? 'KILO' :
@@ -181,7 +200,8 @@ export default async function GuiaPage({ params }: { params: Promise<{ id: strin
                 </td>
                 <td style={{ border: '1px solid #000', padding: '3px', textAlign: 'right' }}>{Number(it.cantidad).toFixed(2)}</td>
               </tr>
-            ))}
+              )
+            })}
           </tbody>
         </table>
 
@@ -189,7 +209,7 @@ export default async function GuiaPage({ params }: { params: Promise<{ id: strin
         <div style={{ fontSize: 10.5, lineHeight: 1.55 }}>
           <div><strong>Indicador de traslado total de la DAM o DS (*):</strong> {ind(guia.ind_traslado_total_dam)}</div>
           <div style={{ marginTop: 6 }}><strong>Unidad de Medida del Peso Bruto:</strong> {guia.unidad_peso}</div>
-          <div><strong>Peso Bruto total de la carga:</strong> {Number(guia.peso_bruto_total).toFixed(2)}</div>
+          <div><strong>Peso Bruto total de la carga:</strong> {pesoBruto.toFixed(2)}</div>
 
           <div style={{ marginTop: 10 }}><strong>Datos del traslado:</strong></div>
 

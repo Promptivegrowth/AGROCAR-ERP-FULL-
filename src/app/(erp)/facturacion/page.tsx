@@ -326,10 +326,9 @@ export default function FacturacionPage() {
     setGuiaVehiculos((vehRes.data ?? []) as any[])
     setGuiaConductores((condRes.data ?? []) as any[])
 
-    // Punto de llegada: razón social + dirección REAL del cliente
-    const nombreCliente = cli?.razon_social ?? comp.clientes?.razon_social ?? comp.cliente_externo_nombre ?? ''
-    const dirCliente = cli?.direccion ?? ''
-    const llegada = [nombreCliente, dirCliente].filter(Boolean).join(' · ')
+    // Punto de llegada: la DIRECCIÓN del cliente (SUNAT pide dirección;
+    // la razón social ya figura en "Datos del Destinatario")
+    const llegada = cli?.direccion ?? ''
 
     setGuiaForm({
       fecha_inicio_traslado: manana.toISOString().slice(0, 10),
@@ -1721,6 +1720,12 @@ export default function FacturacionPage() {
                   onChange={(e) => setGuiaForm((p) => ({ ...p, punto_llegada: e.target.value }))}
                   className="mt-1 text-xs"
                   placeholder="Dirección de entrega" />
+                <p className="text-[10px] text-gray-500 mt-0.5">
+                  Se llena con la dirección registrada del cliente.
+                  {!guiaForm.punto_llegada && (
+                    <span className="text-amber-700 font-semibold"> ⚠ Este cliente no tiene dirección registrada — escríbela aquí o complétala en Maestros → Clientes.</span>
+                  )}
+                </p>
               </div>
 
               {/* Modalidad + Peso */}
