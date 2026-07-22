@@ -1,3 +1,4 @@
+import { Fragment } from 'react'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { notFound } from 'next/navigation'
 import { numeroALetras } from '@/lib/utils'
@@ -391,11 +392,20 @@ export default async function ComprobantePage({
           @page { size: 80mm auto; margin: 0; }
           body { margin: 0; }
           .no-print { display: none !important; }
+          /* FIDELIDAD pantalla = papel: ancho fijo de 72mm (área útil de
+             la térmica de 80mm) y sin reescalado del navegador. El layout
+             impreso reproduce exactamente la vista previa. */
           .ticket {
+            width: 72mm !important;
+            max-width: 72mm !important;
             margin: 0 auto !important;
+            padding: 2mm !important;
             box-shadow: none !important;
             page-break-inside: avoid;
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
           }
+          .ticket img { max-width: 100% !important; }
         }
       `}</style>
 
@@ -432,26 +442,37 @@ export default async function ComprobantePage({
           )}
         </div>
 
-        {/* Tabla items */}
+        {/* Tabla items — formato 2 líneas (pedido de Daniel):
+            Línea 1: código + descripción COMPLETA del producto (sin truncar)
+            Línea 2: cantidad · precio unitario · total */}
         <table style={{ width: '100%', fontSize: 9.5, borderCollapse: 'collapse', marginTop: 4 }}>
           <thead>
             <tr style={{ borderTop: '1px solid #000', borderBottom: '1px solid #000' }}>
-              <th style={{ textAlign: 'left', padding: '1px 0' }}>COD</th>
+              <th style={{ textAlign: 'left', padding: '1px 0', width: 60 }}>CODIGO</th>
               <th style={{ textAlign: 'left', padding: '1px 0' }}>PRODUCTO</th>
-              <th style={{ textAlign: 'right', padding: '1px 0' }}>CANT</th>
-              <th style={{ textAlign: 'right', padding: '1px 0' }}>P.U</th>
-              <th style={{ textAlign: 'right', padding: '1px 0' }}>TOTAL</th>
+              <th style={{ textAlign: 'right', padding: '1px 0', width: 38 }}>CANT.</th>
+              <th style={{ textAlign: 'right', padding: '1px 0', width: 48 }}>P.UNIT.</th>
+              <th style={{ textAlign: 'right', padding: '1px 0', width: 52 }}>TOTAL</th>
             </tr>
           </thead>
           <tbody>
             {(items ?? []).map((it: any) => (
-              <tr key={it.id} style={{ verticalAlign: 'top' }}>
-                <td style={{ padding: '1px 2px 1px 0' }}>{it.productos?.codigo ?? '—'}</td>
-                <td style={{ padding: '1px 2px' }}>{truncar(it.descripcion ?? it.productos?.descripcion ?? it.productos?.nombre ?? '', 18)}</td>
-                <td style={{ textAlign: 'right', padding: '1px 2px' }}>{Number(it.cantidad).toFixed(0)}</td>
-                <td style={{ textAlign: 'right', padding: '1px 2px' }}>{fmtNum(Number(it.precio_unitario))}</td>
-                <td style={{ textAlign: 'right', padding: '1px 0 1px 2px' }}>{fmtNum(Number(it.subtotal))}</td>
-              </tr>
+              <Fragment key={it.id}>
+                {/* Línea 1: código + descripción completa a todo el ancho */}
+                <tr style={{ verticalAlign: 'top' }}>
+                  <td style={{ padding: '2px 2px 0 0', fontSize: 9 }}>{it.productos?.codigo ?? '—'}</td>
+                  <td colSpan={4} style={{ padding: '2px 0 0 2px' }}>
+                    {(it.descripcion ?? it.productos?.descripcion ?? it.productos?.nombre ?? '—').trim()}
+                  </td>
+                </tr>
+                {/* Línea 2: cantidad · P.U. · total */}
+                <tr>
+                  <td colSpan={2}></td>
+                  <td style={{ textAlign: 'right', padding: '0 2px 2px' }}>{Number(it.cantidad).toFixed(0)}</td>
+                  <td style={{ textAlign: 'right', padding: '0 2px 2px' }}>{fmtNum(Number(it.precio_unitario))}</td>
+                  <td style={{ textAlign: 'right', padding: '0 0 2px 2px', fontWeight: 'bold' }}>{fmtNum(Number(it.subtotal))}</td>
+                </tr>
+              </Fragment>
             ))}
           </tbody>
         </table>
