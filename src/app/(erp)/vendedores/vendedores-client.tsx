@@ -640,6 +640,14 @@ export default function VendedoresClient({
             className="inline-flex items-center gap-1.5 px-3 py-2 bg-blue-50 hover:bg-blue-100 text-blue-700 font-semibold rounded-md text-sm">
             🎯 Asignar cuotas mensuales
           </Link>
+          <Link href="/vendedores/cuotas/productos"
+            className="inline-flex items-center gap-1.5 px-3 py-2 bg-blue-50 hover:bg-blue-100 text-blue-700 font-semibold rounded-md text-sm">
+            📦 Cuotas por producto
+          </Link>
+          <Link href="/reportes/alcance-objetivos"
+            className="inline-flex items-center gap-1.5 px-3 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-semibold rounded-md text-sm">
+            📊 Alcance de objetivos
+          </Link>
           <Link href="/reportes/cumplimiento-cuotas"
             className="inline-flex items-center gap-1.5 px-3 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-semibold rounded-md text-sm">
             📈 Ver cumplimiento

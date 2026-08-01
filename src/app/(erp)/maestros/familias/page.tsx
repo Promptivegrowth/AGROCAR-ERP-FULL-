@@ -22,6 +22,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Switch } from '@/components/ui/switch'
 
 const familiaSchema = z.object({
+  codigo: z.string().nullable().optional(),
   nombre: z.string().min(2, 'Mínimo 2 caracteres'),
   descripcion: z.string().nullable().optional(),
   activo: z.boolean().default(true),
@@ -58,8 +59,8 @@ export default function FamiliasPage() {
     setLoading(true)
     let query = supabase
       .from('familias')
-      .select('id, nombre, descripcion, activo, created_at', { count: 'exact' })
-      .order('nombre')
+      .select('id, codigo, nombre, descripcion, activo, created_at', { count: 'exact' })
+      .order('codigo', { nullsFirst: false })
       .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1)
 
     if (debouncedSearch) query = query.ilike('nombre', `%${debouncedSearch}%`)
@@ -91,7 +92,7 @@ export default function FamiliasPage() {
   const openCreate = () => {
     setEditingFamilia(null)
     setActivo(true)
-    reset({ activo: true, nombre: '', descripcion: '' })
+    reset({ activo: true, codigo: '', nombre: '', descripcion: '' })
     setDialogOpen(true)
   }
 
@@ -99,6 +100,7 @@ export default function FamiliasPage() {
     setEditingFamilia(f)
     setActivo(f.activo)
     reset({
+      codigo: f.codigo ?? '',
       nombre: f.nombre,
       descripcion: f.descripcion ?? '',
       activo: f.activo,
@@ -112,6 +114,7 @@ export default function FamiliasPage() {
     setSaving(true)
     try {
       const payload = {
+        codigo: data.codigo?.trim() || null,
         nombre: data.nombre,
         descripcion: data.descripcion || null,
         activo,
@@ -199,7 +202,10 @@ export default function FamiliasPage() {
                   <div key={f.id} className="p-4 hover:bg-gray-50/50">
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0 flex-1">
-                        <p className="font-medium text-gray-900 truncate">{f.nombre}</p>
+                        <p className="font-medium text-gray-900 truncate">
+                          {f.codigo && <span className="font-mono text-xs text-gray-400 mr-1">{f.codigo}</span>}
+                          {f.nombre}
+                        </p>
                         {f.descripcion && (
                           <p className="text-xs text-gray-500 mt-0.5 line-clamp-2">{f.descripcion}</p>
                         )}
@@ -231,7 +237,7 @@ export default function FamiliasPage() {
                 <table className="w-full text-sm">
                   <thead className="border-b border-gray-100 bg-gray-50/50">
                     <tr>
-                      {['Nombre', 'Descripción', 'Productos', 'Creada', 'Estado', 'Acciones'].map((h) => (
+                      {['Línea', 'Nombre', 'Descripción', 'Productos', 'Creada', 'Estado', 'Acciones'].map((h) => (
                         <th key={h} className="text-left py-3 px-4 text-xs font-semibold text-gray-500 uppercase tracking-wide">
                           {h}
                         </th>
@@ -241,6 +247,7 @@ export default function FamiliasPage() {
                   <tbody className="divide-y divide-gray-50">
                     {familias.map((f) => (
                       <tr key={f.id} className="hover:bg-gray-50/50 transition-colors">
+                        <td className="py-3 px-4 font-mono text-xs text-gray-500">{f.codigo ?? '—'}</td>
                         <td className="py-3 px-4 font-medium text-gray-900 max-w-[220px] truncate">{f.nombre}</td>
                         <td className="py-3 px-4 text-gray-500 text-xs max-w-[280px] truncate">{f.descripcion ?? '—'}</td>
                         <td className="py-3 px-4 text-gray-600">{productosPorFamilia[f.id] ?? 0}</td>
@@ -295,6 +302,15 @@ export default function FamiliasPage() {
             <DialogTitle>{editingFamilia ? 'Editar Familia' : 'Nueva Familia'}</DialogTitle>
           </DialogHeader>
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-4 mt-2">
+            <div>
+              <Label>Código de línea</Label>
+              <Input {...register('codigo')} placeholder="Ej. 01, 02, 03..." className="mt-1" maxLength={4} />
+              <p className="text-[11px] text-gray-500 mt-1">
+                Número con el que la familia aparece en el reporte <b>Alcance de Objetivos</b>
+                (ej. &ldquo;LÍNEA: 01 - CERDEÑA&rdquo;). Define también el orden de las líneas.
+              </p>
+            </div>
+
             <div>
               <Label>Nombre *</Label>
               <Input {...register('nombre')} placeholder="Ej. Cascajo, Napolitano..." className="mt-1" />

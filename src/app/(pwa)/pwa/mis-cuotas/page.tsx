@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
-import { ArrowLeft, Loader2, Target, TrendingUp, Users } from 'lucide-react'
+import { ArrowLeft, Loader2, Target, TrendingUp, Users, ChevronDown, ChevronRight, Package } from 'lucide-react'
 import { formatCurrency } from '@/lib/utils'
 
 const MESES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Setiembre','Octubre','Noviembre','Diciembre']
@@ -16,6 +16,13 @@ export default function MisCuotasPage() {
   const [mes, setMes] = useState(ahora.getMonth() + 1)
   const [data, setData] = useState<any>(null)
   const [loading, setLoading] = useState(true)
+  const [abiertas, setAbiertas] = useState<Set<string>>(new Set())
+
+  const toggle = (key: string) => setAbiertas((prev) => {
+    const next = new Set(prev)
+    if (next.has(key)) next.delete(key); else next.add(key)
+    return next
+  })
 
   const cargar = useCallback(async () => {
     setLoading(true)
@@ -60,7 +67,7 @@ export default function MisCuotasPage() {
               <Target className="w-5 h-5 text-[#FBE600]" />
               Mis Cuotas del Mes
             </h1>
-            <p className="text-xs text-gray-400">Tu meta por familia y cómo vas</p>
+            <p className="text-xs text-gray-400">Tu meta por familia y por producto</p>
           </div>
         </div>
         {/* Selector período */}
@@ -117,25 +124,77 @@ export default function MisCuotasPage() {
               </div>
             ) : (
               <div className="space-y-2">
-                {(data.familias as any[]).map((f) => (
-                  <div key={f.familia} className="bg-white rounded-xl p-3 shadow-sm">
-                    <div className="flex items-center justify-between">
-                      <p className="font-semibold text-sm text-gray-900">{f.familia}</p>
-                      <span className={`font-black text-lg ${colorPct(f.pct)}`}>
-                        {f.pct !== null ? `${Number(f.pct).toFixed(0)}%` : '—'}
-                      </span>
+                {(data.familias as any[]).map((f) => {
+                  const productos = (f.productos ?? []) as any[]
+                  const abierta = abiertas.has(f.familia)
+                  return (
+                    <div key={f.familia} className="bg-white rounded-xl shadow-sm overflow-hidden">
+                      <button type="button"
+                        onClick={() => productos.length > 0 && toggle(f.familia)}
+                        className="w-full text-left p-3 active:bg-gray-50">
+                        <div className="flex items-center justify-between gap-2">
+                          <p className="font-semibold text-sm text-gray-900 flex items-center gap-1 flex-1">
+                            {productos.length > 0 && (
+                              abierta ? <ChevronDown className="w-4 h-4 text-gray-400" />
+                                      : <ChevronRight className="w-4 h-4 text-gray-400" />
+                            )}
+                            {f.familia}
+                          </p>
+                          <span className={`font-black text-lg ${colorPct(f.pct)}`}>
+                            {f.pct !== null ? `${Number(f.pct).toFixed(0)}%` : '—'}
+                          </span>
+                        </div>
+                        <div className="flex justify-between text-xs text-gray-500 mt-0.5">
+                          <span>Vendido: {formatCurrency(f.vendido)}</span>
+                          <span>{f.cuota > 0 ? `Meta: ${formatCurrency(f.cuota)}` : 'Sin meta asignada'}</span>
+                        </div>
+                        {f.pct !== null && (
+                          <div className="w-full bg-gray-100 rounded-full h-1.5 mt-1.5 overflow-hidden">
+                            <div className={`${barColor(f.pct)} h-full`} style={{ width: `${Math.min(Number(f.pct), 100)}%` }}></div>
+                          </div>
+                        )}
+                        {productos.length > 0 && !abierta && (
+                          <p className="text-[10px] text-blue-600 font-semibold mt-1.5 flex items-center gap-1">
+                            <Package className="w-3 h-3" /> Ver mis {productos.length} productos con meta
+                          </p>
+                        )}
+                      </button>
+
+                      {abierta && productos.length > 0 && (
+                        <div className="border-t border-gray-100 bg-gray-50/60 divide-y divide-gray-100">
+                          {productos.map((p: any, i: number) => (
+                            <div key={`${p.codigo}-${i}`} className="px-3 py-2">
+                              <div className="flex items-start justify-between gap-2">
+                                <p className="text-[11px] font-semibold text-gray-800 leading-tight flex-1">
+                                  {p.descripcion}
+                                </p>
+                                <span className={`text-xs font-bold shrink-0 ${colorPct(p.pct_valor)}`}>
+                                  {p.pct_valor !== null ? `${Number(p.pct_valor).toFixed(0)}%` : '—'}
+                                </span>
+                              </div>
+                              <div className="flex justify-between text-[10px] text-gray-500 mt-1">
+                                <span>
+                                  Cant: <strong className="text-gray-700">{Number(p.vendido_cant).toLocaleString('es-PE')}</strong>
+                                  {Number(p.cuota_cant) > 0 && ` / ${Number(p.cuota_cant).toLocaleString('es-PE')}`}
+                                </span>
+                                <span>
+                                  {formatCurrency(p.vendido_valor)}
+                                  {Number(p.cuota_valor) > 0 && ` / ${formatCurrency(p.cuota_valor)}`}
+                                </span>
+                              </div>
+                              {p.pct_valor !== null && (
+                                <div className="w-full bg-gray-200 rounded-full h-1 mt-1 overflow-hidden">
+                                  <div className={`${barColor(p.pct_valor)} h-full`}
+                                    style={{ width: `${Math.min(Number(p.pct_valor), 100)}%` }}></div>
+                                </div>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
-                    <div className="flex justify-between text-xs text-gray-500 mt-0.5">
-                      <span>Vendido: {formatCurrency(f.vendido)}</span>
-                      <span>{f.cuota > 0 ? `Meta: ${formatCurrency(f.cuota)}` : 'Sin meta asignada'}</span>
-                    </div>
-                    {f.pct !== null && (
-                      <div className="w-full bg-gray-100 rounded-full h-1.5 mt-1.5 overflow-hidden">
-                        <div className={`${barColor(f.pct)} h-full`} style={{ width: `${Math.min(Number(f.pct), 100)}%` }}></div>
-                      </div>
-                    )}
-                  </div>
-                ))}
+                  )
+                })}
               </div>
             )}
           </div>

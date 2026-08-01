@@ -136,6 +136,10 @@ export default function CuotasPage() {
         <Button variant="outline" size="sm" onClick={copiarAnterior} disabled={loading || saving} className="gap-1 h-9">
           <Copy className="w-3.5 h-3.5" /> Copiar mes anterior
         </Button>
+        <a href="/vendedores/cuotas/productos"
+          className="inline-flex items-center h-9 px-3 text-xs font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-md">
+          📦 Cuotas por producto →
+        </a>
         <div className="flex-1" />
         {dirty && <span className="text-xs font-semibold text-amber-700">⚠ Cambios sin guardar</span>}
         <Button onClick={guardar} disabled={saving || !dirty} className="bg-blue-600 hover:bg-blue-700 gap-1">

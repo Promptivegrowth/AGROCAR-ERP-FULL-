@@ -467,12 +467,18 @@ export default function ReportesPage() {
               <p className="text-sm font-semibold text-blue-900">🎯 Cumplimiento de cuotas mensuales por vendedor × familia</p>
               <p className="text-xs text-blue-700">Asigna metas mensuales y mide el cumplimiento contra ventas reales.</p>
             </div>
-            <div className="flex gap-2">
+            <div className="flex gap-2 flex-wrap">
               <a href="/vendedores/cuotas" className="text-xs px-3 py-2 bg-white hover:bg-blue-50 text-blue-700 font-semibold rounded-md border border-blue-200">
-                ⚙ Asignar cuotas
+                ⚙ Cuotas por familia
+              </a>
+              <a href="/vendedores/cuotas/productos" className="text-xs px-3 py-2 bg-white hover:bg-blue-50 text-blue-700 font-semibold rounded-md border border-blue-200">
+                📦 Cuotas por producto
               </a>
               <a href="/reportes/cumplimiento-cuotas" className="text-xs px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded-md">
                 📈 Ver cumplimiento →
+              </a>
+              <a href="/reportes/alcance-objetivos" className="text-xs px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-md">
+                📊 Alcance de objetivos →
               </a>
             </div>
           </div>
