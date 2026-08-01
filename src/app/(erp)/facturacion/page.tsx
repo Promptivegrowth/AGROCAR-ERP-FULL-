@@ -124,7 +124,10 @@ export default function FacturacionPage() {
           clientes(razon_social, ruc, dni),
           pedidos(numero, profiles!pedidos_vendedor_id_fkey(full_name))
         `)
-        .order('fecha_emision', { ascending: false })
+        // Pedido de Daniel: agrupado por serie y en orden correlativo — las
+        // boletas juntas y las facturas juntas, no mezcladas por fecha.
+        .order('serie', { ascending: true })
+        .order('numero', { ascending: false })
         .limit(1000),
       // TC más reciente disponible (si hoy no hay, usa el último día hábil)
       supabase

@@ -1,3 +1,4 @@
+import { Fragment } from 'react'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { numeroALetras } from '@/lib/utils'
 import { EMPRESA, SLOGAN_FONT_STACK } from '@/lib/empresa'
@@ -62,11 +63,36 @@ export default async function ImprimirLotePage({
     itemsPorComp.get(it.comprobante_id)!.push(it)
   })
 
-  // Ordenar comprobantes por correlativo (serie + numero)
+  // Vendedor y condición (contado/crédito) — mismos datos que el comprobante individual
+  const pedidoIds = (comprobantes ?? [])
+    .map((c: any) => c.pedido_id)
+    .filter(Boolean) as string[]
+
+  const vendedorPorPedido = new Map<string, string>()
+  const cobradoPorPedido = new Map<string, number>()
+
+  if (pedidoIds.length > 0) {
+    const [{ data: pedidos }, { data: cobros }] = await Promise.all([
+      supabase
+        .from('pedidos')
+        .select('id, profiles!pedidos_vendedor_id_fkey(full_name)')
+        .in('id', pedidoIds),
+      supabase.from('cobros').select('referencia_id, total').in('referencia_id', pedidoIds),
+    ])
+    ;(pedidos ?? []).forEach((p: any) => {
+      if (p.profiles?.full_name) vendedorPorPedido.set(p.id, p.profiles.full_name)
+    })
+    ;(cobros ?? []).forEach((c: any) => {
+      cobradoPorPedido.set(c.referencia_id, (cobradoPorPedido.get(c.referencia_id) ?? 0) + Number(c.total ?? 0))
+    })
+  }
+
+  // Ordenar comprobantes por correlativo: primero por serie, luego por número
+  // (pedido de Daniel: que salgan en orden correlativo, boletas y facturas)
   const lista = (comprobantes ?? []).sort((a: any, b: any) => {
-    const ka = `${a.serie}-${a.numero}`
-    const kb = `${b.serie}-${b.numero}`
-    return ka.localeCompare(kb)
+    const s = String(a.serie).localeCompare(String(b.serie))
+    if (s !== 0) return s
+    return Number(a.numero) - Number(b.numero)
   })
 
   return (
@@ -82,12 +108,24 @@ export default async function ImprimirLotePage({
           .pagebreak { page-break-after: always; break-after: page; }
           .pagebreak:last-child { page-break-after: auto; break-after: auto; }
           ` : `
-          /* TICKET: impresión CONTINUA en rollo térmico — SIN saltos de página
-             entre comprobantes (evita que la impresora avance papel en blanco).
-             Cada ticket termina con una línea de corte ✂ para cortar a mano
-             o donde la guillotina automática detecte la marca. */
-          .pagebreak { page-break-after: auto !important; break-after: auto !important; }
+          /* TICKET: cada comprobante es su PROPIA página.
+             Con @page size: 80mm auto el rollo solo avanza lo que mide el
+             ticket (no gasta papel), y el salto de página es justo lo que
+             dispara la guillotina automática de la ticketera — así CADA
+             ticket sale cortado, incluido el último del lote. */
+          .pagebreak { page-break-after: always; break-after: page; }
           .pagebreak { page-break-inside: avoid; break-inside: avoid; }
+          /* FIDELIDAD pantalla = papel: ancho útil de 72mm, sin reescalado */
+          .pagebreak {
+            width: 72mm !important;
+            max-width: 72mm !important;
+            margin: 0 auto !important;
+            padding: 2mm !important;
+            box-shadow: none !important;
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
+          }
+          .pagebreak img { max-width: 100% !important; }
           `}
         }
       `}</style>
@@ -141,6 +179,11 @@ export default async function ImprimirLotePage({
                   : { label: 'DOC', valor: externoDoc ?? '—' }
           const totalLetras = numeroALetras(totalNum)
           const monedaLabel = comp.moneda === 'USD' ? 'DOLARES AMERICANOS' : 'SOLES'
+          const clienteTelefono = cliente?.telefono ?? null
+          const vendedorNombre = comp.pedido_id ? (vendedorPorPedido.get(comp.pedido_id) ?? '—') : '—'
+          const cobrado = comp.pedido_id ? (cobradoPorPedido.get(comp.pedido_id) ?? 0) : 0
+          const condicion = cobrado >= totalNum && totalNum > 0 ? 'CONTADO' : 'CREDITO'
+          const impreso = new Date().toLocaleString('es-PE', { timeZone: 'America/Lima' })
           const fechaDespacho = (comp as any).fecha_despacho
             ? new Date((comp as any).fecha_despacho + 'T12:00:00-05:00').toLocaleDateString('es-PE', {
                 day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'America/Lima',
@@ -158,10 +201,14 @@ export default async function ImprimirLotePage({
               className="pagebreak mx-auto bg-white shadow-lg print:shadow-none mb-6 print:mb-0"
               style={{
                 maxWidth: esA4 ? 800 : 350,
-                padding: esA4 ? 32 : 12,
+                width: esA4 ? undefined : '100%',
+                padding: esA4 ? 32 : 10,
                 fontFamily: esA4 ? '"Helvetica Neue", Arial, sans-serif' : 'ui-monospace, "Courier New", monospace',
-                fontSize: esA4 ? 11 : 11,
-                color: '#111',
+                fontSize: esA4 ? 11 : 10.5,
+                lineHeight: esA4 ? undefined : 1.25,
+                // Ticket: TODO en negrita — la térmica imprimía muy claro (pedido de Daniel)
+                fontWeight: esA4 ? 'normal' : 'bold',
+                color: '#000',
               }}
             >
               {esA4 ? (
@@ -269,17 +316,19 @@ export default async function ImprimirLotePage({
                         <td style={{ verticalAlign: 'top', width: '40%', paddingLeft: 8 }}>
                           <table style={{ width: '100%', fontSize: 11 }}>
                             <tbody>
+                              {/* Totales en NEGRITA sobre fondo blanco: el relleno
+                                  negro salía lavado en la impresora (pedido de Daniel) */}
                               <tr>
-                                <td style={{ padding: '4px 8px', border: '1px solid #ccc', background: '#fafafa' }}>OP. GRAVADA</td>
-                                <td style={{ padding: '4px 8px', border: '1px solid #ccc', textAlign: 'right', fontFamily: 'monospace' }}>S/ {fmtNum(subtotalNum)}</td>
+                                <td style={{ padding: '4px 8px', border: '1px solid #666', fontWeight: 'bold', color: '#000' }}>OP. GRAVADA</td>
+                                <td style={{ padding: '4px 8px', border: '1px solid #666', textAlign: 'right', fontFamily: 'monospace', fontWeight: 'bold', color: '#000' }}>S/ {fmtNum(subtotalNum)}</td>
                               </tr>
                               <tr>
-                                <td style={{ padding: '4px 8px', border: '1px solid #ccc', background: '#fafafa' }}>IGV (18%)</td>
-                                <td style={{ padding: '4px 8px', border: '1px solid #ccc', textAlign: 'right', fontFamily: 'monospace' }}>S/ {fmtNum(igvNum)}</td>
+                                <td style={{ padding: '4px 8px', border: '1px solid #666', fontWeight: 'bold', color: '#000' }}>IGV (18%)</td>
+                                <td style={{ padding: '4px 8px', border: '1px solid #666', textAlign: 'right', fontFamily: 'monospace', fontWeight: 'bold', color: '#000' }}>S/ {fmtNum(igvNum)}</td>
                               </tr>
                               <tr>
-                                <td style={{ padding: '6px 8px', border: '2px solid #000', background: '#000', color: '#fff', fontWeight: 'bold' }}>TOTAL</td>
-                                <td style={{ padding: '6px 8px', border: '2px solid #000', background: '#000', color: '#fff', textAlign: 'right', fontFamily: 'monospace', fontWeight: 'bold', fontSize: 13 }}>S/ {fmtNum(totalNum)}</td>
+                                <td style={{ padding: '6px 8px', border: '2px solid #000', fontWeight: 'bold', fontSize: 13, color: '#000' }}>TOTAL</td>
+                                <td style={{ padding: '6px 8px', border: '2px solid #000', textAlign: 'right', fontFamily: 'monospace', fontWeight: 'bold', fontSize: 14, color: '#000' }}>S/ {fmtNum(totalNum)}</td>
                               </tr>
                             </tbody>
                           </table>
@@ -308,46 +357,114 @@ export default async function ImprimirLotePage({
                   </table>
                 </>
               ) : (
-                /* Ticket 80mm — versión compacta */
+                /* Ticket 80mm — MISMO formato aprobado del comprobante individual.
+                   Todo en negrita por pedido de Daniel: la térmica imprimía muy
+                   claro y no se leía bien. */
                 <>
-                  <div style={{ textAlign: 'center', fontFamily: SLOGAN_FONT_STACK, fontSize: 13, marginBottom: 1 }}>
-                    {EMPRESA.slogan}
+                  {/* Logo + encabezado */}
+                  <div style={{ textAlign: 'center' }}>
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src="/logo-agrocar.png" alt="AGROCAR" style={{ maxWidth: 130, margin: '0 auto 1px', display: 'block' }} />
+                    <div style={{ fontFamily: SLOGAN_FONT_STACK, fontSize: 14, color: '#000', marginBottom: 2 }}>
+                      {EMPRESA.slogan}
+                    </div>
+                    <div style={{ fontWeight: 'bold', fontSize: 12 }}>{EMPRESA.razon_social} · RUC {EMPRESA.ruc}</div>
+                    <div style={{ fontSize: 9.5 }}>{EMPRESA.direccion_comercial}</div>
+                    <div style={{ fontSize: 9.5 }}>{EMPRESA.direccion_fundo}</div>
+                    <div style={{ fontSize: 9.5 }}>Tel. {EMPRESA.telefono} · {EMPRESA.correo}</div>
                   </div>
-                  <div style={{ textAlign: 'center', fontWeight: 'bold' }}>{EMPRESA.razon_social}</div>
-                  <div style={{ textAlign: 'center' }}>RUC: {EMPRESA.ruc}</div>
-                  <div style={{ textAlign: 'center', fontSize: 9 }}>Tel. {EMPRESA.telefono} · {EMPRESA.correo}</div>
-                  <div style={{ borderTop: '1px dashed #000', margin: '6px 0' }} />
-                  <div style={{ textAlign: 'center', fontWeight: 'bold' }}>{titulo}</div>
+
+                  {/* Título y correlativo */}
+                  <div style={{ textAlign: 'center', fontWeight: 'bold', fontSize: 11, marginTop: 5 }}>{titulo}</div>
                   <div style={{ textAlign: 'center', fontWeight: 'bold', fontSize: 13 }}>{correlativo}</div>
                   {comp.editado && (
-                    <div style={{ textAlign: 'center', fontSize: 9, color: '#92400e', fontWeight: 'bold' }}>⚠ EDITADO</div>
+                    <div style={{ textAlign: 'center', fontSize: 9, fontWeight: 'bold' }}>⚠ COMPROBANTE EDITADO</div>
                   )}
-                  <div style={{ borderTop: '1px dashed #000', margin: '6px 0' }} />
-                  <div>F. Emisión: {fechaEmision}</div>
-                  <div>{docCliente.label}: {docCliente.valor}</div>
-                  <div>Cliente: {clienteNombre}</div>
-                  <div style={{ borderTop: '1px dashed #000', margin: '6px 0' }} />
-                  {items.length === 0 ? (
-                    <div style={{ textAlign: 'center', color: '#b91c1c', fontStyle: 'italic', fontSize: 10 }}>⚠ Sin detalle</div>
-                  ) : items.map((it: any) => (
-                    <div key={it.id} style={{ marginBottom: 4 }}>
-                      <div style={{ fontWeight: 'bold', fontSize: 10 }}>{it.descripcion ?? it.productos?.nombre ?? '—'}</div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10 }}>
-                        <span>{Number(it.cantidad).toFixed(0)} x {fmtNum(Number(it.precio_unitario))}</span>
-                        <span>{fmtNum(Number(it.subtotal))}</span>
+
+                  {/* Cabecera */}
+                  <div style={{ marginTop: 4, fontSize: 10 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span>F. Emisión: {fechaEmision}</span>
+                      <span>Cond: {condicion}</span>
+                    </div>
+                    {fechaDespacho && <div>F. Despacho: {fechaDespacho}</div>}
+                    <div>
+                      {docCliente.label}: {docCliente.valor}
+                      {clienteTelefono && clienteTelefono !== '—' ? ` · Tel: ${clienteTelefono}` : ''}
+                    </div>
+                    <div>Cliente: {clienteNombre}</div>
+                    {clienteDireccion && clienteDireccion !== '—' && (
+                      <div>Dirección: {clienteDireccion}</div>
+                    )}
+                  </div>
+
+                  {/* Ítems en 2 líneas: descripción completa arriba, cifras abajo */}
+                  <table style={{ width: '100%', fontSize: 9.5, borderCollapse: 'collapse', marginTop: 4 }}>
+                    <thead>
+                      <tr style={{ borderTop: '1px solid #000', borderBottom: '1px solid #000' }}>
+                        <th style={{ textAlign: 'left', padding: '1px 0', width: 60 }}>CODIGO</th>
+                        <th style={{ textAlign: 'left', padding: '1px 0' }}>PRODUCTO</th>
+                        <th style={{ textAlign: 'right', padding: '1px 0', width: 38 }}>CANT.</th>
+                        <th style={{ textAlign: 'right', padding: '1px 0', width: 48 }}>P.UNIT.</th>
+                        <th style={{ textAlign: 'right', padding: '1px 0', width: 52 }}>TOTAL</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {items.length === 0 ? (
+                        <tr><td colSpan={5} style={{ padding: 6, textAlign: 'center', fontStyle: 'italic' }}>
+                          ⚠ Sin detalle de items
+                        </td></tr>
+                      ) : items.map((it: any) => (
+                        <Fragment key={it.id}>
+                          <tr style={{ verticalAlign: 'top' }}>
+                            <td style={{ padding: '2px 2px 0 0', fontSize: 9 }}>{it.productos?.codigo ?? '—'}</td>
+                            <td colSpan={4} style={{ padding: '2px 0 0 2px' }}>
+                              {(it.descripcion ?? it.productos?.descripcion ?? it.productos?.nombre ?? '—').trim()}
+                            </td>
+                          </tr>
+                          <tr>
+                            <td colSpan={2}></td>
+                            <td style={{ textAlign: 'right', padding: '0 2px 2px' }}>{Number(it.cantidad).toFixed(0)}</td>
+                            <td style={{ textAlign: 'right', padding: '0 2px 2px' }}>{fmtNum(Number(it.precio_unitario))}</td>
+                            <td style={{ textAlign: 'right', padding: '0 0 2px 2px' }}>{fmtNum(Number(it.subtotal))}</td>
+                          </tr>
+                        </Fragment>
+                      ))}
+                    </tbody>
+                  </table>
+
+                  {/* QR + totales lado a lado */}
+                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: 6, marginTop: 6, borderTop: '1px solid #000', paddingTop: 4 }}>
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={qrUrl} alt="QR" style={{ width: 65, height: 65, flexShrink: 0 }} />
+                    <div style={{ flex: 1, fontSize: 10 }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <span>OP. GRAVADA:</span><span>S/ {fmtNum(subtotalNum)}</span>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <span>IGV 18%:</span><span>S/ {fmtNum(igvNum)}</span>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, borderTop: '1px solid #000', paddingTop: 1, marginTop: 1 }}>
+                        <span>IMPORTE TOTAL:</span><span>S/ {fmtNum(totalNum)}</span>
                       </div>
                     </div>
-                  ))}
-                  <div style={{ borderTop: '1px dashed #000', margin: '6px 0' }} />
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'bold' }}>
-                    <span>TOTAL:</span><span>S/ {fmtNum(totalNum)}</span>
                   </div>
-                  <div style={{ textAlign: 'center', fontSize: 8, color: '#666', marginTop: 4 }}>
-                    ¡Gracias por su compra!
+
+                  <div style={{ fontSize: 9.5, marginTop: 3 }}>
+                    SON: {totalLetras} {monedaLabel}
                   </div>
-                  {/* Línea de corte entre tickets (impresión continua en rollo) */}
-                  <div style={{ borderTop: '1px dashed #999', margin: '10px 0 2px', textAlign: 'center', fontSize: 9, color: '#999' }}>
-                    ✂ ····························································
+
+                  <div style={{ fontSize: 9, marginTop: 4, display: 'flex', justifyContent: 'space-between' }}>
+                    <span>Usuario: {facturador?.full_name ?? '—'}</span>
+                    <span>VDR: {vendedorNombre}</span>
+                  </div>
+                  <div style={{ fontSize: 9 }}>Impreso: {impreso}</div>
+
+                  <div style={{ textAlign: 'center', marginTop: 4 }}>
+                    ** GRACIAS POR SU COMPRA **
+                  </div>
+                  <div style={{ textAlign: 'center', fontSize: 8 }}>
+                    Representación impresa · Consulta www.sunat.gob.pe
                   </div>
                 </>
               )}
