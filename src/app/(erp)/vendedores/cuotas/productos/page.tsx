@@ -3,7 +3,8 @@
 import { useEffect, useState, useCallback, useMemo, Fragment } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { toast } from 'sonner'
-import { ArrowLeft, Loader2, Save, Copy, Target, Search, Calculator, Eraser, ClipboardPaste, X } from 'lucide-react'
+import { ArrowLeft, Loader2, Save, Copy, Target, Search, Calculator, Eraser, ClipboardPaste, X, Download, Printer, RotateCcw } from 'lucide-react'
+import { EMPRESA, SLOGAN_FONT_STACK } from '@/lib/empresa'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { Input } from '@/components/ui/input'
@@ -42,6 +43,8 @@ export default function CuotasPorProductoPage() {
   const [productos, setProductos] = useState<ProductoRow[]>([])
   // Ediciones en curso: producto_id → {cant, valor}
   const [edits, setEdits] = useState<Map<string, { cant: number; valor: number }>>(new Map())
+  // Filas cuyo valor se digitó a mano: no se recalculan con el precio promedio
+  const [valorManual, setValorManual_] = useState<Set<string>>(new Set())
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
   const [dirty, setDirty] = useState(false)
@@ -80,40 +83,83 @@ export default function CuotasPorProductoPage() {
     })) as ProductoRow[]
     setProductos(rows)
     const m = new Map<string, { cant: number; valor: number }>()
-    rows.forEach((p) => m.set(p.producto_id, { cant: p.cuota_cantidad, valor: p.cuota_valor }))
+    // Si el valor guardado no coincide con cantidad × precio promedio, fue
+    // digitado a mano: se respeta y no se vuelve a recalcular solo.
+    const manuales = new Set<string>()
+    rows.forEach((p) => {
+      m.set(p.producto_id, { cant: p.cuota_cantidad, valor: p.cuota_valor })
+      const auto = Math.round(p.cuota_cantidad * p.precio_ref * 100) / 100
+      if (p.cuota_valor > 0 && Math.abs(p.cuota_valor - auto) > 0.01) manuales.add(p.producto_id)
+    })
     setEdits(m)
+    setValorManual_(manuales)
     setDirty(false)
   }, [supabase, anio, mes, vendedorId])
 
   useEffect(() => { cargar() }, [cargar])
 
-  const setValor = (id: string, campo: 'cant' | 'valor', valor: string) => {
-    const n = parseFloat(valor.replace(',', '.')) || 0
+  // Daniel solo digita la CANTIDAD: "yo ingreso... tienes que venderme este mes
+  // cien unidades, automáticamente debe jalarme ese precio promedio y el total".
+  // El valor se calcula solo al escribir la cantidad. Si alguien edita el valor
+  // a mano, esa fila queda "fijada" y ya no se recalcula.
+  const setCantidad = (id: string, valor: string) => {
+    const cant = parseFloat(valor.replace(',', '.')) || 0
+    const prod = productos.find((p) => p.producto_id === id)
     setEdits((prev) => {
       const next = new Map(prev)
       const actual = next.get(id) ?? { cant: 0, valor: 0 }
-      next.set(id, { ...actual, [campo]: n })
+      const fijado = valorManual.has(id)
+      const nuevoValor = fijado || !prod || prod.precio_ref <= 0
+        ? actual.valor
+        : Math.round(cant * prod.precio_ref * 100) / 100
+      next.set(id, { cant, valor: nuevoValor })
       return next
     })
     setDirty(true)
   }
 
-  // Calcular valor = cantidad × precio de lista B, solo donde hay cantidad y falta valor
-  const calcularValores = (soloVacios: boolean) => {
+  const setValorManual = (id: string, valor: string) => {
+    const n = parseFloat(valor.replace(',', '.')) || 0
+    setEdits((prev) => {
+      const next = new Map(prev)
+      const actual = next.get(id) ?? { cant: 0, valor: 0 }
+      next.set(id, { ...actual, valor: n })
+      return next
+    })
+    setValorManual_((prev) => new Set(prev).add(id))
+    setDirty(true)
+  }
+
+  // Devolver una fila al cálculo automático
+  const reautomatizar = (id: string) => {
+    const prod = productos.find((p) => p.producto_id === id)
+    setValorManual_((prev) => { const n = new Set(prev); n.delete(id); return n })
+    setEdits((prev) => {
+      const next = new Map(prev)
+      const actual = next.get(id) ?? { cant: 0, valor: 0 }
+      if (prod && prod.precio_ref > 0) {
+        next.set(id, { ...actual, valor: Math.round(actual.cant * prod.precio_ref * 100) / 100 })
+      }
+      return next
+    })
+    setDirty(true)
+  }
+
+  // Recalcular TODO con el precio promedio (respeta las filas fijadas a mano)
+  const recalcularTodo = () => {
     let n = 0
     setEdits((prev) => {
       const next = new Map(prev)
       productos.forEach((p) => {
         const e = next.get(p.producto_id)
-        if (!e || e.cant <= 0 || p.precio_ref <= 0) return
-        if (soloVacios && e.valor > 0) return
+        if (!e || e.cant <= 0 || p.precio_ref <= 0 || valorManual.has(p.producto_id)) return
         next.set(p.producto_id, { ...e, valor: Math.round(e.cant * p.precio_ref * 100) / 100 })
         n++
       })
       return next
     })
     setDirty(true)
-    toast.success(`${n} valores calculados (cantidad × precio promedio)`)
+    toast.success(`${n} valores recalculados con el precio promedio`)
   }
 
   const limpiarTodo = () => {
@@ -132,6 +178,7 @@ export default function CuotasPorProductoPage() {
     let ok = 0
     const noEncontrados: string[] = []
     const next = new Map(edits)
+    const manuales = new Set(valorManual)
 
     textoPegado.split(/\r?\n/).forEach((linea) => {
       if (!linea.trim()) return
@@ -141,13 +188,24 @@ export default function CuotasPorProductoPage() {
       const id = porCodigo.get(cod)
       if (!id) { if (noEncontrados.length < 12) noEncontrados.push(partes[0]); return }
       const cant = parseFloat((partes[1] || '0').replace(',', '.')) || 0
-      const valor = parseFloat((partes[2] || '0').replace(',', '.')) || 0
-      const actual = next.get(id) ?? { cant: 0, valor: 0 }
-      next.set(id, { cant, valor: partes.length >= 3 ? valor : actual.valor })
+      const prod = productos.find((p) => p.producto_id === id)
+      if (partes.length >= 3 && partes[2] !== '') {
+        // Trae valor explícito: se respeta y queda fijado a mano
+        next.set(id, { cant, valor: parseFloat(partes[2].replace(',', '.')) || 0 })
+        manuales.add(id)
+      } else {
+        // Solo cantidad: el valor se calcula con el precio promedio
+        next.set(id, {
+          cant,
+          valor: prod && prod.precio_ref > 0 ? Math.round(cant * prod.precio_ref * 100) / 100 : 0,
+        })
+        manuales.delete(id)
+      }
       ok++
     })
 
     setEdits(next)
+    setValorManual_(manuales)
     setDirty(true)
     setPegarAbierto(false)
     setTextoPegado('')
@@ -156,6 +214,34 @@ export default function CuotasPorProductoPage() {
       toast.warning(`${noEncontrados.length} códigos no existen`, { description: noEncontrados.join(', ') })
     }
     if (ok === 0 && noEncontrados.length === 0) toast.error('No se reconoció ninguna fila')
+  }
+
+  // Excel + impresión: Christopher los pidió para que los vendedores tengan
+  // su cuota del mes en físico mientras se acostumbran al sistema.
+  const exportarExcel = () => {
+    const vend = vendedores.find((v) => v.id === vendedorId)?.nombre ?? ''
+    const filas: string[] = []
+    filas.push(`CUOTAS POR PRODUCTO;${MESES[mes-1]} ${anio};${vend}`)
+    filas.push('LINEA;CODIGO;DESCRIPCION;CUOTA CANTIDAD;PRECIO PROMEDIO;CUOTA VALOR S/')
+    grupos.forEach((g) => {
+      g.items.forEach((p) => {
+        const e = edits.get(p.producto_id) ?? { cant: 0, valor: 0 }
+        if (e.cant === 0 && e.valor === 0) return
+        filas.push([
+          `${g.codigo} - ${g.nombre}`, p.codigo, `"${p.descripcion.replace(/"/g, "'")}"`,
+          num(e.cant), num(p.precio_ref), num(e.valor),
+        ].join(';'))
+      })
+      filas.push(`;;TOTAL LINEA ${g.codigo} - ${g.nombre};;;${num(totalLinea(g.items))}`)
+    })
+    filas.push(`;;TOTAL GENERAL;;;${num(totales.valor)}`)
+
+    const blob = new Blob(['﻿' + filas.join('\r\n')], { type: 'text/csv;charset=utf-8;' })
+    const a = document.createElement('a')
+    a.href = URL.createObjectURL(blob)
+    a.download = `cuotas_${anio}${String(mes).padStart(2, '0')}_${vend.replace(/\s+/g, '_')}.csv`
+    a.click()
+    URL.revokeObjectURL(a.href)
   }
 
   const guardar = async () => {
@@ -225,9 +311,93 @@ export default function CuotasPorProductoPage() {
   const totalLinea = (items: ProductoRow[]) =>
     items.reduce((a, p) => a + (edits.get(p.producto_id)?.valor ?? 0), 0)
 
+  const vendedorNombre = vendedores.find((v) => v.id === vendedorId)?.nombre ?? '—'
+
   return (
     <div className="space-y-4">
-      <div className="flex items-center gap-3">
+      <style>{`@media print {
+        @page { size: A4 portrait; margin: 10mm; }
+        .no-print { display: none !important; }
+        body { background: white !important; }
+        .hoja-cuotas table { font-size: 8pt !important; }
+        .hoja-cuotas tr { break-inside: avoid; }
+      }`}</style>
+
+      {/* Hoja imprimible: la cuota del mes para entregarle al vendedor en físico */}
+      <div className="hidden print:block hoja-cuotas">
+        <div className="pb-2 mb-2 border-b-2 border-black">
+          <div className="flex items-start justify-between">
+            <div>
+              <p className="font-bold text-base">{EMPRESA.razon_social} · RUC {EMPRESA.ruc}</p>
+              <p style={{ fontFamily: SLOGAN_FONT_STACK, fontSize: 14 }}>{EMPRESA.slogan}</p>
+            </div>
+            <div className="text-right text-xs">
+              <p className="font-bold text-sm">CUOTA DEL MES POR PRODUCTO</p>
+              <p>{MESES[mes-1]} {anio}</p>
+            </div>
+          </div>
+          <p className="mt-2 text-sm font-bold uppercase">VENDEDOR: {vendedorNombre}</p>
+        </div>
+
+        <table className="w-full border-collapse text-[10px]">
+          <thead>
+            <tr className="border-y border-black">
+              <th className="text-left px-1 py-1">CÓDIGO</th>
+              <th className="text-left px-1 py-1">DESCRIPCIÓN</th>
+              <th className="text-right px-1 py-1 w-[70px]">CANTIDAD</th>
+              <th className="text-right px-1 py-1 w-[80px]">P. PROM.</th>
+              <th className="text-right px-1 py-1 w-[90px]">VALOR S/</th>
+            </tr>
+          </thead>
+          <tbody>
+            {grupos.map((g) => {
+              const conCuota = g.items.filter((p) => {
+                const e = edits.get(p.producto_id)
+                return e && (e.cant > 0 || e.valor > 0)
+              })
+              if (conCuota.length === 0) return null
+              return (
+                <Fragment key={`print-${g.codigo}-${g.nombre}`}>
+                  <tr>
+                    <td colSpan={5} className="px-1 pt-2 pb-0.5 font-bold uppercase">
+                      LÍNEA: {g.codigo} - {g.nombre}
+                    </td>
+                  </tr>
+                  {conCuota.map((p) => {
+                    const e = edits.get(p.producto_id)!
+                    return (
+                      <tr key={`print-${p.producto_id}`}>
+                        <td className="px-1 py-0.5 font-mono">{p.codigo}</td>
+                        <td className="px-1 py-0.5">{p.descripcion}</td>
+                        <td className="px-1 py-0.5 text-right font-mono">{num(e.cant)}</td>
+                        <td className="px-1 py-0.5 text-right font-mono">{num(p.precio_ref)}</td>
+                        <td className="px-1 py-0.5 text-right font-mono">{num(e.valor)}</td>
+                      </tr>
+                    )
+                  })}
+                  <tr className="border-y border-gray-400 font-bold">
+                    <td colSpan={4} className="px-1 py-0.5 text-right uppercase">
+                      TOTAL LÍNEA {g.codigo} - {g.nombre}
+                    </td>
+                    <td className="px-1 py-0.5 text-right font-mono">{num(totalLinea(g.items))}</td>
+                  </tr>
+                </Fragment>
+              )
+            })}
+            <tr className="border-t-2 border-black font-bold text-[11px]">
+              <td colSpan={4} className="px-1 py-2 text-right">TOTAL CUOTA DEL MES</td>
+              <td className="px-1 py-2 text-right font-mono">S/ {num(totales.valor)}</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <div className="mt-10 flex justify-between text-[10px]">
+          <div className="border-t border-black pt-1 w-[45%] text-center">Firma del vendedor</div>
+          <div className="border-t border-black pt-1 w-[45%] text-center">Firma de gerencia</div>
+        </div>
+      </div>
+
+      <div className="flex items-center gap-3 no-print">
         <button onClick={() => router.back()} className="p-2 hover:bg-gray-100 rounded-lg">
           <ArrowLeft className="w-4 h-4" />
         </button>
@@ -251,7 +421,7 @@ export default function CuotasPorProductoPage() {
       </div>
 
       {/* Barra de control */}
-      <div className="bg-white border border-gray-200 rounded-lg p-3 space-y-3">
+      <div className="bg-white border border-gray-200 rounded-lg p-3 space-y-3 no-print">
         <div className="flex flex-wrap items-end gap-3">
           <div className="min-w-[220px]">
             <Label className="text-[10px] text-gray-500">Vendedor</Label>
@@ -307,8 +477,14 @@ export default function CuotasPorProductoPage() {
           <Button variant="outline" size="sm" onClick={() => setPegarAbierto(true)} className="gap-1 h-8 text-xs">
             <ClipboardPaste className="w-3.5 h-3.5" /> Pegar desde Excel
           </Button>
-          <Button variant="outline" size="sm" onClick={() => calcularValores(true)} className="gap-1 h-8 text-xs">
-            <Calculator className="w-3.5 h-3.5" /> Calcular valores
+          <Button variant="outline" size="sm" onClick={recalcularTodo} className="gap-1 h-8 text-xs">
+            <Calculator className="w-3.5 h-3.5" /> Recalcular precios
+          </Button>
+          <Button variant="outline" size="sm" onClick={exportarExcel} className="gap-1 h-8 text-xs">
+            <Download className="w-3.5 h-3.5" /> Excel
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => window.print()} className="gap-1 h-8 text-xs">
+            <Printer className="w-3.5 h-3.5" /> Imprimir
           </Button>
           <Button variant="outline" size="sm" onClick={limpiarTodo} className="gap-1 h-8 text-xs text-red-600 hover:bg-red-50">
             <Eraser className="w-3.5 h-3.5" /> Limpiar
@@ -317,7 +493,7 @@ export default function CuotasPorProductoPage() {
       </div>
 
       {/* Resumen */}
-      <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-3 gap-3 no-print">
         <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
           <p className="text-[10px] uppercase font-semibold text-blue-700">CUOTA TOTAL DEL MES</p>
           <p className="text-xl font-bold text-blue-900">S/ {num(totales.valor)}</p>
@@ -333,7 +509,7 @@ export default function CuotasPorProductoPage() {
       </div>
 
       {/* Tabla */}
-      <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
+      <div className="bg-white border border-gray-200 rounded-lg overflow-hidden no-print">
         {loading ? (
           <div className="flex items-center justify-center py-12"><Loader2 className="w-6 h-6 animate-spin text-gray-400" /></div>
         ) : grupos.length === 0 ? (
@@ -346,8 +522,14 @@ export default function CuotasPorProductoPage() {
                   <th className="text-left p-2 font-semibold border-b w-[80px]">Código</th>
                   <th className="text-left p-2 font-semibold border-b">Descripción</th>
                   <th className="text-right p-2 font-semibold border-b w-[95px]">Precio prom.</th>
-                  <th className="text-center p-2 font-semibold border-b w-[110px]">Cuota cantidad</th>
-                  <th className="text-center p-2 font-semibold border-b w-[130px]">Cuota valor S/</th>
+                  <th className="text-center p-2 font-semibold border-b w-[110px]">
+                    Cuota cantidad
+                    <span className="block text-[9px] font-normal text-blue-600">← escriba aquí</span>
+                  </th>
+                  <th className="text-center p-2 font-semibold border-b w-[135px]">
+                    Cuota valor S/
+                    <span className="block text-[9px] font-normal text-gray-400">se calcula solo</span>
+                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -365,6 +547,7 @@ export default function CuotasPorProductoPage() {
                     {g.items.map((p) => {
                       const e = edits.get(p.producto_id) ?? { cant: 0, valor: 0 }
                       const conCuota = e.cant > 0 || e.valor > 0
+                      const fijado = valorManual.has(p.producto_id)
                       return (
                         <tr key={p.producto_id} className={`border-b border-gray-100 ${conCuota ? 'bg-yellow-50/40' : ''}`}>
                           <td className="p-1.5 font-mono text-gray-600">{p.codigo}</td>
@@ -378,20 +561,24 @@ export default function CuotasPorProductoPage() {
                           </td>
                           <td className="p-1">
                             <Input type="number" min="0" step="1" value={e.cant || ''} placeholder="0"
-                              onChange={(ev) => setValor(p.producto_id, 'cant', ev.target.value)}
+                              onChange={(ev) => setCantidad(p.producto_id, ev.target.value)}
                               className="h-7 text-xs text-right font-mono" />
                           </td>
                           <td className="p-1">
                             <div className="flex items-center gap-1">
                               <Input type="number" min="0" step="10" value={e.valor || ''} placeholder="0"
-                                onChange={(ev) => setValor(p.producto_id, 'valor', ev.target.value)}
-                                className="h-7 text-xs text-right font-mono" />
-                              {p.precio_ref > 0 && e.cant > 0 && (
-                                <button type="button"
-                                  title={`Calcular: ${num(e.cant)} × ${num(p.precio_ref)}`}
-                                  onClick={() => setValor(p.producto_id, 'valor', String(Math.round(e.cant * p.precio_ref * 100) / 100))}
-                                  className="p-1 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded">
-                                  <Calculator className="w-3.5 h-3.5" />
+                                onChange={(ev) => setValorManual(p.producto_id, ev.target.value)}
+                                title={fijado
+                                  ? 'Valor digitado a mano — no se recalcula'
+                                  : `Calculado: ${num(e.cant)} × ${num(p.precio_ref)}`}
+                                className={`h-7 text-xs text-right font-mono ${
+                                  fijado ? 'border-amber-400 bg-amber-50' : 'bg-gray-50 text-gray-700'
+                                }`} />
+                              {fijado && (
+                                <button type="button" title="Volver al cálculo automático"
+                                  onClick={() => reautomatizar(p.producto_id)}
+                                  className="p-1 text-amber-600 hover:bg-amber-100 rounded">
+                                  <RotateCcw className="w-3.5 h-3.5" />
                                 </button>
                               )}
                             </div>
@@ -407,7 +594,7 @@ export default function CuotasPorProductoPage() {
         )}
       </div>
 
-      <div className="text-[11px] text-gray-500 space-y-1">
+      <div className="text-[11px] text-gray-500 space-y-1 no-print">
         <p>
           💡 <b>Precio prom.</b> es el precio promedio de venta real del mes anterior
           (total vendido ÷ cantidad vendida), por eso varía cada mes. Si el producto no se vendió
