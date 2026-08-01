@@ -1,7 +1,7 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import type { Database } from "@/types/database";
-import { canAccessErpPath, homeForRole, isPwaRole } from "@/lib/access-control";
+import { canAccessErpPath, canAccessPwaPath, homeForRole, isPwaRole } from "@/lib/access-control";
 
 export async function updateSession(request: NextRequest) {
   let supabaseResponse = NextResponse.next({ request });
@@ -62,6 +62,13 @@ export async function updateSession(request: NextRequest) {
   // Vendedores y repartidores: solo PWA. Si intentan entrar al ERP → su home PWA
   if (isPwaRole(role)) {
     if (!isPwaPath && pathname !== "/") {
+      const url = request.nextUrl.clone();
+      url.pathname = homeForRole(role);
+      return NextResponse.redirect(url);
+    }
+    // Acceso granular DENTRO del PWA: el vendedor no entra a pantallas del
+    // repartidor y viceversa (pedido de Daniel en la reunión).
+    if (isPwaPath && !canAccessPwaPath(role, pathname)) {
       const url = request.nextUrl.clone();
       url.pathname = homeForRole(role);
       return NextResponse.redirect(url);

@@ -4,8 +4,9 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { ShoppingCart, Users, DollarSign, MapPin, User, Map } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { canAccessPwaPath } from '@/lib/access-control'
 
-const navItems = [
+const NAV_ITEMS = [
   { href: '/pwa/mi-zona', label: 'Mi Zona', icon: Map },
   { href: '/pwa/pedidos', label: 'Pedidos', icon: ShoppingCart },
   { href: '/pwa/clientes', label: 'Clientes', icon: Users },
@@ -14,8 +15,21 @@ const navItems = [
   { href: '/pwa/cuenta', label: 'Cuenta', icon: User },
 ]
 
-export default function BottomNav() {
+// El repartidor no toma pedidos: vende directo desde el camión
+const LABELS_POR_ROL: Record<string, Record<string, string>> = {
+  repartidor: { '/pwa/pedidos': 'Venta' },
+  chofer: { '/pwa/pedidos': 'Venta' },
+}
+
+export default function BottomNav({ role }: { role?: string }) {
   const pathname = usePathname()
+
+  const navItems = NAV_ITEMS
+    .filter((item) => !role || canAccessPwaPath(role, item.href))
+    .map((item) => ({
+      ...item,
+      label: (role && LABELS_POR_ROL[role]?.[item.href]) || item.label,
+    }))
 
   return (
     <nav className="fixed bottom-0 left-0 right-0 z-50 bg-white border-t border-gray-200 shadow-[0_-4px_12px_rgba(0,0,0,0.08)] rounded-t-2xl">

@@ -31,7 +31,7 @@ export default async function PWALayout({ children }: { children: React.ReactNod
       </main>
 
       {/* Fixed bottom navigation */}
-      <BottomNav />
+      <BottomNav role={profile.role as string} />
     </div>
   )
 }

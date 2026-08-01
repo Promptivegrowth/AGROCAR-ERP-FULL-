@@ -86,6 +86,50 @@ const ERP_ACCESS: Record<UserRole, string[] | '*'> = {
   chofer: [],
 }
 
+/**
+ * Rutas del PWA permitidas por rol (reunión con Daniel):
+ *
+ * - vendedor: "solamente sus cuotas mensuales, sus clientes y sus cobranzas...
+ *   tenemos vendedores que se van y vienen y no quisiera que vea todo el
+ *   movimiento que hay dentro".
+ * - repartidor / chofer: "las ventas del día, deben tener opción para hacer
+ *   cobranza y la venta directa tienen que tener acceso ellos". No manejan
+ *   cuota ni zona propia ni check-in de visitas, así que esas quedan fuera.
+ */
+const PWA_ACCESS: Record<string, string[]> = {
+  vendedor: [
+    '/pwa/mi-zona',
+    '/pwa/pedidos',
+    '/pwa/clientes',
+    '/pwa/cobros',
+    '/pwa/checkin',
+    '/pwa/mis-cuotas',
+    '/pwa/mis-cobranzas',
+    '/pwa/mi-reporte',
+    '/pwa/cuenta',
+  ],
+  repartidor: [
+    '/pwa/pedidos',        // venta directa desde el camión
+    '/pwa/clientes',       // buscar al cliente de cualquier zona
+    '/pwa/cobros',
+    '/pwa/mis-cobranzas',
+    '/pwa/mi-reporte',     // su rendición del día
+    '/pwa/cuenta',
+  ],
+}
+PWA_ACCESS.chofer = PWA_ACCESS.repartidor // Daniel: el chofer trabaja igual que el repartidor
+
+export function canAccessPwaPath(role: string, pathname: string): boolean {
+  const permitidas = PWA_ACCESS[role]
+  // Roles del ERP que entren al PWA se manejan aparte (el middleware los saca)
+  if (!permitidas) return true
+  return permitidas.some((p) => pathname === p || pathname.startsWith(p + '/'))
+}
+
+export function pwaPathsForRole(role: string): string[] {
+  return PWA_ACCESS[role] ?? []
+}
+
 export function canAccessErpPath(role: string, pathname: string): boolean {
   const r = role as UserRole
   const access = ERP_ACCESS[r]

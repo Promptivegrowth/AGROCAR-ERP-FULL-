@@ -10,6 +10,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { formatCurrency } from '@/lib/utils'
 import { hoyLima } from '@/lib/fechas-pe'
+import { canAccessPwaPath } from '@/lib/access-control'
 import type { Profile } from '@/types'
 
 interface ResumenDia {
@@ -389,14 +390,16 @@ export default function CuentaPage() {
           Mi Reporte (historial + Excel/PDF)
         </Button>
 
-        {/* Mis cuotas del mes por familia */}
-        <Button
-          onClick={() => router.push('/pwa/mis-cuotas')}
-          variant="outline"
-          className="w-full h-12 border-yellow-300 text-yellow-800 hover:bg-yellow-50 font-semibold"
-        >
-          🎯 Mis cuotas del mes (metas por familia)
-        </Button>
+        {/* Mis cuotas del mes — solo el vendedor maneja cuota asignada */}
+        {canAccessPwaPath(profile?.role ?? '', '/pwa/mis-cuotas') && (
+          <Button
+            onClick={() => router.push('/pwa/mis-cuotas')}
+            variant="outline"
+            className="w-full h-12 border-yellow-300 text-yellow-800 hover:bg-yellow-50 font-semibold"
+          >
+            🎯 Mis cuotas del mes (metas por familia y producto)
+          </Button>
+        )}
 
         {/* Cuentas por cobrar a mi cargo — página PWA nativa (la ruta del
             ERP estaba bloqueada para el rol vendedor) */}
