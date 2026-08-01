@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
-import { ArrowLeft, Loader2, Target, TrendingUp, Users, ChevronDown, ChevronRight, Package } from 'lucide-react'
+import { ArrowLeft, Loader2, Target, TrendingUp, ChevronDown, ChevronRight, Package } from 'lucide-react'
 import { formatCurrency } from '@/lib/utils'
 
 const MESES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Setiembre','Octubre','Noviembre','Diciembre']
@@ -36,10 +36,6 @@ export default function MisCuotasPage() {
   const miPct = data && Number(data.mi_cuota_total) > 0
     ? (Number(data.mi_vendido_total) / Number(data.mi_cuota_total)) * 100
     : null
-  const equipoPct = data && Number(data.equipo_cuota_total) > 0
-    ? (Number(data.equipo_vendido_total) / Number(data.equipo_cuota_total)) * 100
-    : null
-
   const colorPct = (pct: number | null) =>
     pct === null ? 'text-gray-400'
     : pct >= 100 ? 'text-green-600'
@@ -196,25 +192,6 @@ export default function MisCuotasPage() {
                   )
                 })}
               </div>
-            )}
-          </div>
-
-          {/* TOTAL DEL EQUIPO */}
-          <div className="bg-gray-900 text-white rounded-2xl p-4">
-            <p className="text-xs font-bold uppercase text-gray-400 flex items-center gap-1">
-              <Users className="w-3.5 h-3.5" /> TODO EL EQUIPO (todos los vendedores)
-            </p>
-            <div className="flex justify-between mt-2 text-sm">
-              <span className="text-gray-300">Vendido: <strong className="text-white">{formatCurrency(data.equipo_vendido_total)}</strong></span>
-              <span className="text-gray-300">Meta: <strong className="text-white">{formatCurrency(data.equipo_cuota_total)}</strong></span>
-            </div>
-            {equipoPct !== null && (
-              <>
-                <div className="w-full bg-white/10 rounded-full h-2 mt-2 overflow-hidden">
-                  <div className="bg-[#FBE600] h-full" style={{ width: `${Math.min(equipoPct, 100)}%` }}></div>
-                </div>
-                <p className="text-right text-[#FBE600] font-bold text-sm mt-1">{equipoPct.toFixed(0)}% del equipo</p>
-              </>
             )}
           </div>
 

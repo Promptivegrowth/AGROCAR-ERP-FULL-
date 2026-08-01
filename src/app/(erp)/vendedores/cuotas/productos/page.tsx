@@ -22,6 +22,7 @@ interface ProductoRow {
   cuota_cantidad: number
   cuota_valor: number
   precio_ref: number
+  precio_es_promedio: boolean
 }
 
 const MESES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Setiembre','Octubre','Noviembre','Diciembre']
@@ -112,7 +113,7 @@ export default function CuotasPorProductoPage() {
       return next
     })
     setDirty(true)
-    toast.success(`${n} valores calculados (cantidad × precio lista B)`)
+    toast.success(`${n} valores calculados (cantidad × precio promedio)`)
   }
 
   const limpiarTodo = () => {
@@ -344,7 +345,7 @@ export default function CuotasPorProductoPage() {
                 <tr>
                   <th className="text-left p-2 font-semibold border-b w-[80px]">Código</th>
                   <th className="text-left p-2 font-semibold border-b">Descripción</th>
-                  <th className="text-right p-2 font-semibold border-b w-[90px]">Precio lista B</th>
+                  <th className="text-right p-2 font-semibold border-b w-[95px]">Precio prom.</th>
                   <th className="text-center p-2 font-semibold border-b w-[110px]">Cuota cantidad</th>
                   <th className="text-center p-2 font-semibold border-b w-[130px]">Cuota valor S/</th>
                 </tr>
@@ -370,6 +371,10 @@ export default function CuotasPorProductoPage() {
                           <td className="p-1.5">{p.descripcion}</td>
                           <td className="p-1.5 text-right font-mono text-gray-500">
                             {p.precio_ref > 0 ? num(p.precio_ref) : '—'}
+                            {p.precio_ref > 0 && !p.precio_es_promedio && (
+                              <span title="No se vendió el mes pasado: se usa el precio de lista B"
+                                className="ml-1 text-[9px] text-amber-600 font-sans">L</span>
+                            )}
                           </td>
                           <td className="p-1">
                             <Input type="number" min="0" step="1" value={e.cant || ''} placeholder="0"
@@ -402,10 +407,16 @@ export default function CuotasPorProductoPage() {
         )}
       </div>
 
-      <div className="text-[11px] text-gray-500">
-        💡 Al guardar, la <b>cuota por familia</b> se recalcula automáticamente como la suma de las cuotas
-        de sus productos — el vendedor la ve al instante en su aplicativo y en el reporte de cumplimiento.
-        Cantidad y valor en 0 = producto sin cuota.
+      <div className="text-[11px] text-gray-500 space-y-1">
+        <p>
+          💡 <b>Precio prom.</b> es el precio promedio de venta real del mes anterior
+          (total vendido ÷ cantidad vendida), por eso varía cada mes. Si el producto no se vendió
+          el mes pasado se usa el precio de lista B y se marca con una <b className="text-amber-600">L</b>.
+        </p>
+        <p>
+          Al guardar, la <b>cuota por familia</b> se recalcula automáticamente como la suma de las cuotas
+          de sus productos — el vendedor la ve al instante en su aplicativo. Cantidad y valor en 0 = sin cuota.
+        </p>
       </div>
 
       {/* Modal pegar desde Excel */}
