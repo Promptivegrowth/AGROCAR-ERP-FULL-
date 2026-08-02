@@ -106,6 +106,7 @@ const PWA_ACCESS: Record<string, string[]> = {
     '/pwa/mis-cuotas',
     '/pwa/mis-cobranzas',
     '/pwa/mi-reporte',
+    '/pwa/deposito',       // depositar al banco sin cargar efectivo
     '/pwa/cuenta',
   ],
   repartidor: [
@@ -114,6 +115,7 @@ const PWA_ACCESS: Record<string, string[]> = {
     '/pwa/cobros',
     '/pwa/mis-cobranzas',
     '/pwa/mi-reporte',     // su rendición del día
+    '/pwa/deposito',
     '/pwa/cuenta',
   ],
 }

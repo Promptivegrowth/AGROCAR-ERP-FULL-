@@ -390,6 +390,15 @@ export default function CuentaPage() {
           🧾 Mi rendición de hoy (para entregar en caja)
         </Button>
 
+        {/* Depósito al banco: para no trasladar efectivo desde la zona */}
+        <Button
+          onClick={() => router.push('/pwa/deposito')}
+          variant="outline"
+          className="w-full h-12 border-gray-800 text-gray-900 hover:bg-gray-100 font-semibold"
+        >
+          🏦 Depositar al banco (con voucher)
+        </Button>
+
         {/* Mi Reporte (historial + descargas) */}
         <Button
           onClick={() => router.push('/pwa/mi-reporte')}

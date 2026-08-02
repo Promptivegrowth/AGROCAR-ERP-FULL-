@@ -26,6 +26,14 @@ interface Rendicion {
       total: number; nro_operacion: string | null; tiene_voucher: boolean
     }[]
   }
+  depositos: {
+    count: number; monto: number
+    detalle: {
+      hora: string; monto: number; banco: string | null
+      nro_operacion: string | null; estado: string; tiene_voucher: boolean
+    }[]
+  }
+  efectivo_a_entregar: number
 }
 
 const ROL_LABEL: Record<string, string> = {
@@ -85,7 +93,8 @@ export default function RendicionPage({ params }: { params: Promise<{ id: string
     )
   }
 
-  const sinMovimiento = data.ventas.count === 0 && data.cobros.count === 0
+  const sinMovimiento =
+    data.ventas.count === 0 && data.cobros.count === 0 && (data.depositos?.count ?? 0) === 0
 
   return (
     <div className="min-h-dvh bg-gray-200 print:bg-white py-6 print:py-0">
@@ -143,10 +152,26 @@ export default function RendicionPage({ params }: { params: Promise<{ id: string
               </p>
               <table className="w-full">
                 <tbody>
-                  <tr className="border-b border-gray-300">
-                    <td className="p-2 font-bold w-[30%]">EFECTIVO</td>
-                    <td className="p-2 text-right font-mono font-bold text-[15px]">S/ {num(data.cobros.efectivo)}</td>
-                    <td className="p-2 text-[10px] text-gray-600 w-[40%]">Debe entregar en caja o depositar</td>
+                  <tr className="border-b border-gray-200">
+                    <td className="p-2 font-bold w-[30%]">EFECTIVO COBRADO</td>
+                    <td className="p-2 text-right font-mono font-bold">S/ {num(data.cobros.efectivo)}</td>
+                    <td className="p-2 text-[10px] text-gray-600 w-[40%]">Total recibido en efectivo</td>
+                  </tr>
+                  {(data.depositos?.count ?? 0) > 0 && (
+                    <tr className="border-b border-gray-200">
+                      <td className="p-2">(−) Depositado al banco</td>
+                      <td className="p-2 text-right font-mono">S/ {num(data.depositos.monto)}</td>
+                      <td className="p-2 text-[10px] text-gray-500">
+                        {data.depositos.count} depósito(s) — ver detalle abajo
+                      </td>
+                    </tr>
+                  )}
+                  <tr className="border-b border-gray-300 bg-yellow-50">
+                    <td className="p-2 font-bold">EFECTIVO A ENTREGAR</td>
+                    <td className="p-2 text-right font-mono font-bold text-[15px]">
+                      S/ {num(data.efectivo_a_entregar ?? data.cobros.efectivo)}
+                    </td>
+                    <td className="p-2 text-[10px] text-gray-600">Es lo único que entrega físicamente</td>
                   </tr>
                   <tr className="border-b border-gray-200">
                     <td className="p-2">Yape</td>
@@ -213,6 +238,43 @@ export default function RendicionPage({ params }: { params: Promise<{ id: string
                     <tr className="border-t border-black font-bold">
                       <td colSpan={3} className="px-1 py-1 text-right">TOTAL VENDIDO</td>
                       <td className="px-1 py-1 text-right font-mono">S/ {num(data.ventas.monto)}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {/* DEPÓSITOS AL BANCO */}
+            {(data.depositos?.count ?? 0) > 0 && (
+              <div className="mb-4">
+                <p className="font-bold border-b border-black pb-0.5 mb-1 text-[12px]">
+                  DEPÓSITOS AL BANCO ({data.depositos.count})
+                </p>
+                <table className="w-full border-collapse">
+                  <thead>
+                    <tr className="border-y border-black text-[10px]">
+                      <th className="text-left px-1 py-0.5 w-[38px]">HORA</th>
+                      <th className="text-left px-1 py-0.5">BANCO</th>
+                      <th className="text-left px-1 py-0.5 w-[100px]">N° OPERACIÓN</th>
+                      <th className="text-left px-1 py-0.5 w-[80px]">ESTADO</th>
+                      <th className="text-right px-1 py-0.5 w-[80px]">MONTO</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data.depositos.detalle.map((d, i) => (
+                      <tr key={i} className="border-b border-gray-200">
+                        <td className="px-1 py-0.5 font-mono text-[10px]">{d.hora}</td>
+                        <td className="px-1 py-0.5">{d.banco ?? '—'}</td>
+                        <td className="px-1 py-0.5 font-mono text-[10px]">
+                          {d.nro_operacion || '—'}{d.tiene_voucher ? ' 📎' : ''}
+                        </td>
+                        <td className="px-1 py-0.5 text-[10px] uppercase">{d.estado}</td>
+                        <td className="px-1 py-0.5 text-right font-mono">{num(d.monto)}</td>
+                      </tr>
+                    ))}
+                    <tr className="border-t border-black font-bold">
+                      <td colSpan={4} className="px-1 py-1 text-right">TOTAL DEPOSITADO</td>
+                      <td className="px-1 py-1 text-right font-mono">S/ {num(data.depositos.monto)}</td>
                     </tr>
                   </tbody>
                 </table>
