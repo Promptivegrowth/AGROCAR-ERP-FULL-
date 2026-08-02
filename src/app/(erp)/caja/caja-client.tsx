@@ -1038,7 +1038,7 @@ export default function CajaClient({
                       <tr>
                         {[
                           'Cobrador', 'Rol', 'N° cobros', 'Efectivo', 'Yape', 'Plin',
-                          'Transfer.', 'Total',
+                          'Transfer.', 'Total', '',
                         ].map((h) => (
                           <th
                             key={h}
@@ -1086,6 +1086,22 @@ export default function CajaClient({
                             </td>
                             <td className="py-2.5 px-3 font-bold text-green-600">
                               {formatCurrency(l.total)}
+                            </td>
+                            <td className="py-2.5 px-3">
+                              {/* Constancia que caja le imprime al vendedor
+                                  cuando entrega su cobranza (pedido de Daniel) */}
+                              {l.cobrador_id && (
+                                <a
+                                  href={`/rendicion/${l.cobrador_id}?fecha=${today}`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  onClick={(e) => e.stopPropagation()}
+                                  className="text-[11px] px-2 py-1 bg-[#FBE600] hover:bg-[#E5D100] text-black rounded font-semibold whitespace-nowrap"
+                                  title="Imprimir su hoja de rendición"
+                                >
+                                  🧾 Rendición
+                                </a>
+                              )}
                             </td>
                           </tr>
                         )

@@ -380,6 +380,16 @@ export default function CuentaPage() {
           </Card>
         )}
 
+        {/* Rendición del día: lo que debe entregar en caja. Daniel lo pidió
+            para que el vendedor cierre su cuenta desde el celular a cualquier
+            hora, sin esperar el cierre de caja. */}
+        <Button
+          onClick={() => router.push(`/rendicion/${profile?.id}?fecha=${hoyLima()}`)}
+          className="w-full h-14 bg-[#FBE600] hover:bg-[#E5D100] text-black font-bold"
+        >
+          🧾 Mi rendición de hoy (para entregar en caja)
+        </Button>
+
         {/* Mi Reporte (historial + descargas) */}
         <Button
           onClick={() => router.push('/pwa/mi-reporte')}

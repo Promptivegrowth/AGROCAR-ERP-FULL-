@@ -58,10 +58,13 @@ export async function updateSession(request: NextRequest) {
 
   const role = profile.role as string;
   const isPwaPath = pathname.startsWith("/pwa");
+  // Documentos compartidos ERP ↔ PWA: la rendición diaria la genera tanto caja
+  // como el propio vendedor desde su celular. La RPC decide quién ve qué.
+  const isSharedPath = pathname.startsWith("/rendicion");
 
   // Vendedores y repartidores: solo PWA. Si intentan entrar al ERP → su home PWA
   if (isPwaRole(role)) {
-    if (!isPwaPath && pathname !== "/") {
+    if (!isPwaPath && !isSharedPath && pathname !== "/") {
       const url = request.nextUrl.clone();
       url.pathname = homeForRole(role);
       return NextResponse.redirect(url);
@@ -84,7 +87,7 @@ export async function updateSession(request: NextRequest) {
   }
 
   // Verificar acceso granular del ERP
-  if (pathname !== "/" && !canAccessErpPath(role, pathname)) {
+  if (pathname !== "/" && !isSharedPath && !canAccessErpPath(role, pathname)) {
     const url = request.nextUrl.clone();
     url.pathname = homeForRole(role);
     return NextResponse.redirect(url);

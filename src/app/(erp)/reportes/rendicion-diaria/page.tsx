@@ -194,7 +194,17 @@ export default async function RendicionDiariaPage({
                     className="text-blue-700 hover:underline no-print"
                     title="Ver historial detallado"
                   >
-                    {r.nombre} →
+                    {r.nombre}
+                  </a>
+                  {/* Hoja individual de rendición para entregarle a esa persona */}
+                  <a
+                    href={`/rendicion/${r.id}?fecha=${fechaSel}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="ml-1.5 text-[10px] px-1.5 py-0.5 bg-yellow-100 hover:bg-yellow-200 text-yellow-900 rounded font-semibold no-print"
+                    title="Imprimir su hoja de rendición individual"
+                  >
+                    🧾 Rendición
                   </a>
                   <span className="hidden print:inline">{r.nombre}</span>
                 </td>
