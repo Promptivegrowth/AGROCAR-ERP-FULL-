@@ -13,7 +13,7 @@ export const EMPRESA = {
   direccion_comercial: 'CALLE EMILIO FORERO 553-A · PARA GRANDE · TACNA',
   direccion_fundo: 'FUNDO PARA GRANDE · PARCELA 31 SUB.LT.1 · TACNA',
   telefono: '952901119',
-  correo: 'info@agrocarsrl.com',
+  correo: 'Administracion@agrocar.com.pe',
   rubro: 'Distribuidor de Línea de Frío',
 }
 

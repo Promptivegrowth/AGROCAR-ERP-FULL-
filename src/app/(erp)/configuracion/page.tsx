@@ -34,12 +34,12 @@ export default function ConfiguracionPage() {
   const [msg, setMsg] = useState('')
 
   const [empresa, setEmpresa] = useState({
-    razon_social: 'AGROCAR SRL',
-    ruc: '20532768516',
-    direccion: 'Av. Bolognesi 1234, Tacna',
-    telefono: '052 123456',
-    email: 'info@agrocarsrl.com',
-    representante: 'Gerente General',
+    razon_social: 'AGROCAR S.R.L.',
+    ruc: '20519883296',
+    direccion: 'Calle Emilio Forero # 553-A Tacna, Fundo Para Grande Parcela 31 Sub. Lt.01',
+    telefono: '952901119',
+    email: 'Administracion@agrocar.com.pe',
+    representante: 'Daniel Caichihua Baca',
   })
 
   const [userDialog, setUserDialog] = useState(false)
@@ -77,7 +77,10 @@ export default function ConfiguracionPage() {
     const [{ data: u }, { data: s }, { data: p }, { data: conf }, { data: zs }, { data: pz }] = await Promise.all([
       supabase.from('profiles').select('id, full_name, email, role, activo, codigo, dni, telefono, zona_id, zonas!profiles_zona_id_fkey(nombre)').order('full_name'),
       sb.from('series_correlativos').select('*').order('tipo_comprobante'),
-      sb.from('parametros_sistema').select('clave, valor'),
+      // Todo vive en la tabla `configuracion`. Antes se leía y escribía en
+      // `parametros_sistema`, que no existe en la base: por eso el botón
+      // "Guardar Datos" de Empresa no persistía nada.
+      sb.from('configuracion').select('clave, valor'),
       sb.from('configuracion').select('clave, valor').in('clave', ['almacen_nombre', 'almacen_direccion', 'almacen_lat', 'almacen_lng']),
       sb.from('zonas').select('id, nombre').eq('activo', true).order('nombre'),
       sb.from('v_profile_zonas_resumen').select('profile_id, total_zonas, zonas_nombres'),
@@ -108,6 +111,18 @@ export default function ConfiguracionPage() {
 
     const paramMap: Record<string, string> = {}
     ;(p ?? []).forEach((pr: any) => { paramMap[pr.clave] = pr.valor })
+
+    // Datos de empresa guardados (claves empresa_*). Si aún no se guardó
+    // ninguno, se mantiene el valor por defecto del formulario.
+    setEmpresa((prev) => ({
+      razon_social: paramMap.empresa_razon_social || prev.razon_social,
+      ruc:          paramMap.empresa_ruc || prev.ruc,
+      direccion:    paramMap.empresa_direccion || prev.direccion,
+      telefono:     paramMap.empresa_telefono || prev.telefono,
+      email:        paramMap.empresa_email || prev.email,
+      representante: paramMap.empresa_representante || prev.representante,
+    }))
+
     setParametros({
       gps_radio: paramMap.gps_radio ?? '50',
       pedido_minimo: paramMap.pedido_minimo ?? '30',
@@ -122,12 +137,11 @@ export default function ConfiguracionPage() {
 
   const saveEmpresa = async () => {
     setSaving(true)
-    // Guardar en tabla de configuración o parametros_sistema
     const sb = supabase as any
     let errorOcurrido: string | null = null
     for (const [key, value] of Object.entries(empresa)) {
-      const { error } = await sb.from('parametros_sistema').upsert(
-        { clave: `empresa_${key}`, valor: String(value) },
+      const { error } = await sb.from('configuracion').upsert(
+        { clave: `empresa_${key}`, valor: String(value), updated_at: new Date().toISOString() },
         { onConflict: 'clave' }
       )
       if (error && !errorOcurrido) errorOcurrido = error.message
@@ -190,8 +204,8 @@ export default function ConfiguracionPage() {
     const sb2 = supabase as any
     let errorOcurrido: string | null = null
     for (const [key, value] of Object.entries(parametros)) {
-      const { error } = await sb2.from('parametros_sistema').upsert(
-        { clave: key, valor: String(value) },
+      const { error } = await sb2.from('configuracion').upsert(
+        { clave: key, valor: String(value), updated_at: new Date().toISOString() },
         { onConflict: 'clave' }
       )
       if (error && !errorOcurrido) errorOcurrido = error.message
