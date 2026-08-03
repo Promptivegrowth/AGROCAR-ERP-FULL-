@@ -96,7 +96,7 @@ export default async function ImprimirLotePage({
   })
 
   return (
-    <div className="bg-gray-200 print:bg-white">
+    <div className="envoltura bg-gray-200 print:bg-white">
       <AutoPrint count={lista.length} esTicket={!esA4} />
       <style>{`
         @media print {
@@ -124,6 +124,10 @@ export default async function ImprimirLotePage({
              si el contenido se pasa un milímetro del alto calculado, empuja el
              ticket completo a la hoja siguiente y deja la anterior en blanco.
              Medido con Chrome, eso duplicaba las páginas del lote. */
+          /* Los contenedores salen del flujo de impresión. Si generan caja,
+             el navegador abre una hoja para ellos ANTES del primer ticket y
+             el lote sale con una hoja en blanco de más. */
+          .envoltura { display: contents !important; }
           /* FIDELIDAD pantalla = papel: ancho útil de 72mm, sin reescalado */
           .pagebreak {
             width: 72mm !important;
@@ -164,7 +168,7 @@ export default async function ImprimirLotePage({
       {/* print:py-0 es imprescindible: ese relleno de 24 px (6.4 mm) también
           se aplica al imprimir, empuja el ticket hacia abajo y hace que no
           quepa en su propia página, partiéndolo en dos hojas. */}
-      <div className="py-6 print:py-0">
+      <div className="envoltura py-6 print:py-0">
         {lista.map((comp: any) => {
           const cliente: any = comp.clientes
           const facturador: any = comp.profiles

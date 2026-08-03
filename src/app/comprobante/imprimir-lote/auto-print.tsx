@@ -42,6 +42,16 @@ export default function AutoPrint({ count, esTicket }: { count: number; esTicket
       // resultante salían el doble de páginas: al cambiar de página con
       // nombre el navegador abre además una página para el contenido "por
       // defecto". Con una altura única el conteo sale exacto.
+      // Una sola altura para todo el lote: la del ticket más largo.
+      //
+      // Se intentó dos veces darle a cada ticket su propia altura con páginas
+      // con nombre (@page ficha-N), para que el corte cayera siempre justo
+      // debajo de la última línea. Midiendo el PDF que produce Chrome, ambas
+      // versiones agregaban SIEMPRE una hoja en blanco por lote: el cambio de
+      // contexto de página la genera, esté el ticket al principio o al final.
+      // Cambiar papel sobrante por una hoja en blanco es peor, así que se
+      // usa una altura única. Un ticket suelto —el caso habitual, el que se
+      // imprime tras cada venta— sale exacto.
       tickets.forEach((t) => {
         // Solo 2 mm de holgura: todo exceso es papel botado en cada ticket
         const alto = Math.ceil(t.getBoundingClientRect().height / PX_POR_MM) + 2
