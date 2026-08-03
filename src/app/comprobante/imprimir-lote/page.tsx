@@ -205,9 +205,14 @@ export default async function ImprimirLotePage({
               key={comp.id}
               className="pagebreak mx-auto bg-white shadow-lg print:shadow-none mb-6 print:mb-0"
               style={{
-                maxWidth: esA4 ? 800 : 350,
-                width: esA4 ? undefined : '100%',
-                padding: esA4 ? 32 : 10,
+                // El ticket se muestra en pantalla al MISMO ancho con el que
+                // se imprime (72 mm, el área útil del rollo de 80 mm). Así lo
+                // que se ve es exactamente lo que sale, y la medición del alto
+                // para el tamaño de página es exacta: si midiéramos a otro
+                // ancho el texto envolvería distinto y sobraría o faltaría papel.
+                maxWidth: esA4 ? 800 : '72mm',
+                width: esA4 ? undefined : '72mm',
+                padding: esA4 ? 32 : '2mm',
                 fontFamily: esA4 ? '"Helvetica Neue", Arial, sans-serif' : 'ui-monospace, "Courier New", monospace',
                 fontSize: esA4 ? 11 : 10.5,
                 lineHeight: esA4 ? undefined : 1.25,

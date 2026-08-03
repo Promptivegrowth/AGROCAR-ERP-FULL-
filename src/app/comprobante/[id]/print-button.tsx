@@ -14,8 +14,10 @@ export function ajustarPaginaTicket() {
   const ticket = document.querySelector<HTMLElement>('.ticket')
   if (!ticket) return
 
+  // El ticket ya se muestra a 72 mm, el mismo ancho de impresión, así que la
+  // altura medida es la real. Solo 2 mm de holgura para no botar papel.
   const PX_POR_MM = 96 / 25.4
-  const altoMm = Math.ceil(ticket.getBoundingClientRect().height / PX_POR_MM) + 4
+  const altoMm = Math.ceil(ticket.getBoundingClientRect().height / PX_POR_MM) + 2
 
   document.getElementById('page-size-ticket')?.remove()
   const style = document.createElement('style')

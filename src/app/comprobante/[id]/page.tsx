@@ -413,7 +413,8 @@ export default async function ComprobantePage({
 
       <ToggleFormato />
 
-      <div className="ticket mx-auto bg-white shadow-lg print:shadow-none" style={{ maxWidth: 350, width: '100%', padding: 10, fontFamily: 'ui-monospace, "Courier New", monospace', fontSize: 10.5, lineHeight: 1.25, color: '#000' }}>
+      {/* Ancho de 72 mm en pantalla y en papel: lo que se ve es lo que sale */}
+      <div className="ticket mx-auto bg-white shadow-lg print:shadow-none" style={{ maxWidth: '72mm', width: '72mm', padding: '2mm', fontFamily: 'ui-monospace, "Courier New", monospace', fontSize: 10.5, lineHeight: 1.25, color: '#000' }}>
         {/* Logo + encabezado compactado */}
         <div style={{ textAlign: 'center' }}>
           {/* eslint-disable-next-line @next/next/no-img-element */}

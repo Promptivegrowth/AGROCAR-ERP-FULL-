@@ -17,24 +17,42 @@ export default function AutoPrint({ count, esTicket }: { count: number; esTicket
     if (count === 0) return
     let cancelled = false
 
-    /** Fija el alto de página al del ticket más largo del lote */
+    /**
+     * Le da a CADA ticket una página del alto exacto de su contenido.
+     *
+     * Si a todo el lote se le pusiera el alto del ticket más largo, cada
+     * ticket corto se llevaría la diferencia en papel en blanco. Con páginas
+     * con nombre (@page ficha-N) cada uno avanza solo lo suyo.
+     */
     const ajustarPagina = () => {
       if (!esTicket) return
       const tickets = Array.from(document.querySelectorAll<HTMLElement>('.pagebreak'))
       if (tickets.length === 0) return
 
-      // px → mm usando el DPI del navegador (96 px por pulgada = 25.4 mm)
+      // px → mm (96 px por pulgada = 25.4 mm). Como el ticket ya se muestra a
+      // 72 mm, el mismo ancho con el que se imprime, esta medida es la real.
       const PX_POR_MM = 96 / 25.4
-      const altoMaxPx = Math.max(...tickets.map((t) => t.getBoundingClientRect().height))
-      // Un pelín de holgura para que la última línea nunca se corte
-      const altoMm = Math.ceil(altoMaxPx / PX_POR_MM) + 4
+      const reglas: string[] = []
+      let altoMaximo = 0
 
-      const anterior = document.getElementById('page-size-ticket')
-      if (anterior) anterior.remove()
+      tickets.forEach((t, i) => {
+        // Solo 2 mm de holgura: todo exceso es papel botado en cada ticket
+        const alto = Math.ceil(t.getBoundingClientRect().height / PX_POR_MM) + 2
+        altoMaximo = Math.max(altoMaximo, alto)
+        t.classList.add(`ficha-${i}`)
+        reglas.push(`@page ficha-${i} { size: 80mm ${alto}mm; margin: 0; }`)
+        reglas.push(`.ficha-${i} { page: ficha-${i}; }`)
+      })
 
+      document.getElementById('page-size-ticket')?.remove()
       const style = document.createElement('style')
       style.id = 'page-size-ticket'
-      style.textContent = `@media print { @page { size: 80mm ${altoMm}mm; margin: 0; } }`
+      // El @page suelto queda de respaldo por si el navegador no soporta
+      // páginas con nombre: peor un alto único que volver a caer en A4.
+      style.textContent = `@media print {
+        @page { size: 80mm ${altoMaximo}mm; margin: 0; }
+        ${reglas.join('\n')}
+      }`
       document.head.appendChild(style)
     }
 
