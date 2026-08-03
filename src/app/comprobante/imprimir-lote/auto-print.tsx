@@ -35,25 +35,37 @@ export default function AutoPrint({ count, esTicket }: { count: number; esTicket
       const reglas: string[] = []
       let altoMaximo = 0
 
-      tickets.forEach((t, i) => {
+      // Una sola altura para todo el lote, la del ticket más largo.
+      //
+      // Se probó darle a cada ticket su propia página con nombre (@page
+      // ficha-N) para que ninguno desperdiciara papel, pero al medir el PDF
+      // resultante salían el doble de páginas: al cambiar de página con
+      // nombre el navegador abre además una página para el contenido "por
+      // defecto". Con una altura única el conteo sale exacto.
+      tickets.forEach((t) => {
         // Solo 2 mm de holgura: todo exceso es papel botado en cada ticket
         const alto = Math.ceil(t.getBoundingClientRect().height / PX_POR_MM) + 2
         altoMaximo = Math.max(altoMaximo, alto)
-        t.classList.add(`ficha-${i}`)
-        reglas.push(`@page ficha-${i} { size: 80mm ${alto}mm; margin: 0; }`)
-        reglas.push(`.ficha-${i} { page: ficha-${i}; }`)
       })
+
+      // Escape hatch: si en alguna impresora hiciera falta un alto distinto,
+      // se puede forzar desde la URL con ?altoMm=180 sin tocar el código.
+      const forzado = Number(new URLSearchParams(location.search).get('altoMm'))
+      if (forzado > 0) altoMaximo = forzado
 
       document.getElementById('page-size-ticket')?.remove()
       const style = document.createElement('style')
       style.id = 'page-size-ticket'
-      // El @page suelto queda de respaldo por si el navegador no soporta
-      // páginas con nombre: peor un alto único que volver a caer en A4.
       style.textContent = `@media print {
         @page { size: 80mm ${altoMaximo}mm; margin: 0; }
         ${reglas.join('\n')}
       }`
-      document.head.appendChild(style)
+      // IMPORTANTE: va al FINAL del body, no al head. El <style> de la página
+      // se renderiza dentro del body, y entre reglas de igual peso gana la que
+      // viene después en el documento: desde el head la nuestra quedaba pisada
+      // y el papel se quedaba en el alto de respaldo.
+      document.body.appendChild(style)
+      document.body.dataset.altoTicket = String(altoMaximo)
     }
 
     // Esperar a que las imágenes (logo + QR) terminen de cargar: si se mide

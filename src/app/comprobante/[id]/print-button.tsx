@@ -23,7 +23,9 @@ export function ajustarPaginaTicket() {
   const style = document.createElement('style')
   style.id = 'page-size-ticket'
   style.textContent = `@media print { @page { size: 80mm ${altoMm}mm; margin: 0; } }`
-  document.head.appendChild(style)
+  // Al final del body: el <style> de la página también vive en el body y entre
+  // reglas de igual peso gana la última del documento.
+  document.body.appendChild(style)
 }
 
 export default function PrintButton() {

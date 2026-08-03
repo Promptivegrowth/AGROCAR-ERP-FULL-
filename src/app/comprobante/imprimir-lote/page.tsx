@@ -119,7 +119,11 @@ export default async function ImprimirLotePage({
           /* Sin esto el último ticket arrastra una hoja en blanco: con un solo
              comprobante el diálogo mostraba "2 páginas". */
           .pagebreak:last-child { page-break-after: auto; break-after: auto; }
-          .pagebreak { page-break-inside: avoid; break-inside: avoid; }
+          /* OJO: aquí NO va page-break-inside: avoid. Como cada ticket ya
+             ocupa su propia página, esa regla es redundante y además dañina:
+             si el contenido se pasa un milímetro del alto calculado, empuja el
+             ticket completo a la hoja siguiente y deja la anterior en blanco.
+             Medido con Chrome, eso duplicaba las páginas del lote. */
           /* FIDELIDAD pantalla = papel: ancho útil de 72mm, sin reescalado */
           .pagebreak {
             width: 72mm !important;
@@ -157,7 +161,10 @@ export default async function ImprimirLotePage({
         </div>
       </div>
 
-      <div className="py-6">
+      {/* print:py-0 es imprescindible: ese relleno de 24 px (6.4 mm) también
+          se aplica al imprimir, empuja el ticket hacia abajo y hace que no
+          quepa en su propia página, partiéndolo en dos hojas. */}
+      <div className="py-6 print:py-0">
         {lista.map((comp: any) => {
           const cliente: any = comp.clientes
           const facturador: any = comp.profiles
@@ -284,12 +291,15 @@ export default async function ImprimirLotePage({
                   {/* Items */}
                   <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: 8, fontSize: 9.5, lineHeight: 1.2 }}>
                     <thead>
-                      <tr style={{ background: '#000', color: '#fff' }}>
-                        <th style={{ padding: '3px 4px', textAlign: 'center', border: '1px solid #000', width: 45 }}>CANT.</th>
-                        <th style={{ padding: '3px 4px', textAlign: 'center', border: '1px solid #000', width: 70 }}>CÓDIGO</th>
-                        <th style={{ padding: '3px 4px', textAlign: 'left', border: '1px solid #000' }}>DESCRIPCIÓN</th>
-                        <th style={{ padding: '3px 4px', textAlign: 'right', border: '1px solid #000', width: 80 }}>P. UNIT.</th>
-                        <th style={{ padding: '3px 4px', textAlign: 'right', border: '1px solid #000', width: 90 }}>IMPORTE</th>
+                      {/* Encabezado en NEGRO sobre blanco. Antes era blanco
+                          sobre fondo negro y, como el navegador no imprime
+                          fondos por defecto, el texto quedaba casi invisible. */}
+                      <tr style={{ color: '#000', fontWeight: 'bold' }}>
+                        <th style={{ padding: '3px 4px', textAlign: 'center', border: '1.5px solid #000', width: 45 }}>CANT.</th>
+                        <th style={{ padding: '3px 4px', textAlign: 'center', border: '1.5px solid #000', width: 70 }}>CÓDIGO</th>
+                        <th style={{ padding: '3px 4px', textAlign: 'left', border: '1.5px solid #000' }}>DESCRIPCIÓN</th>
+                        <th style={{ padding: '3px 4px', textAlign: 'right', border: '1.5px solid #000', width: 80 }}>P. UNIT.</th>
+                        <th style={{ padding: '3px 4px', textAlign: 'right', border: '1.5px solid #000', width: 90 }}>IMPORTE</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -303,12 +313,12 @@ export default async function ImprimirLotePage({
                         const pu = Number(it.precio_unitario ?? 0)
                         const sub = Number(it.subtotal ?? cant * pu)
                         return (
-                          <tr key={it.id}>
-                            <td style={{ padding: '2px 4px', textAlign: 'center', border: '1px solid #ccc' }}>{cant.toFixed(2)}</td>
-                            <td style={{ padding: '2px 4px', textAlign: 'center', border: '1px solid #ccc', fontFamily: 'monospace', fontSize: 8.5 }}>{prod?.codigo ?? '—'}</td>
-                            <td style={{ padding: '2px 4px', textAlign: 'left', border: '1px solid #ccc' }}>{it.descripcion || prod?.descripcion?.trim() || prod?.nombre || '—'}</td>
-                            <td style={{ padding: '2px 4px', textAlign: 'right', border: '1px solid #ccc', fontFamily: 'monospace' }}>{fmtNum(pu)}</td>
-                            <td style={{ padding: '2px 4px', textAlign: 'right', border: '1px solid #ccc', fontFamily: 'monospace' }}>{fmtNum(sub)}</td>
+                          <tr key={it.id} style={{ color: '#000' }}>
+                            <td style={{ padding: '2px 4px', textAlign: 'center', border: '1px solid #666' }}>{cant.toFixed(2)}</td>
+                            <td style={{ padding: '2px 4px', textAlign: 'center', border: '1px solid #666', fontFamily: 'monospace', fontSize: 8.5 }}>{prod?.codigo ?? '—'}</td>
+                            <td style={{ padding: '2px 4px', textAlign: 'left', border: '1px solid #666' }}>{it.descripcion || prod?.descripcion?.trim() || prod?.nombre || '—'}</td>
+                            <td style={{ padding: '2px 4px', textAlign: 'right', border: '1px solid #666', fontFamily: 'monospace' }}>{fmtNum(pu)}</td>
+                            <td style={{ padding: '2px 4px', textAlign: 'right', border: '1px solid #666', fontFamily: 'monospace' }}>{fmtNum(sub)}</td>
                           </tr>
                         )
                       })}
@@ -374,7 +384,12 @@ export default async function ImprimirLotePage({
                   {/* Logo + encabezado */}
                   <div style={{ textAlign: 'center' }}>
                     {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src="/logo-agrocar.png" alt="AGROCAR" style={{ maxWidth: 130, margin: '0 auto 1px', display: 'block' }} />
+                    {/* Alto explícito (130 × 221/390 = 74): sin él la imagen
+                        no ocupa espacio hasta cargar y la medición del alto
+                        del ticket sale ~20 mm corta, con lo que el ticket no
+                        cabe en su página y se parte en dos hojas. */}
+                    <img src="/logo-agrocar.png" alt="AGROCAR" width={130} height={74}
+                      style={{ width: 130, height: 74, margin: '0 auto 1px', display: 'block' }} />
                     <div style={{ fontFamily: SLOGAN_FONT_STACK, fontSize: 14, color: '#000', marginBottom: 2 }}>
                       {EMPRESA.slogan}
                     </div>

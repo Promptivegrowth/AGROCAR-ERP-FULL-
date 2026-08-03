@@ -418,7 +418,10 @@ export default async function ComprobantePage({
         {/* Logo + encabezado compactado */}
         <div style={{ textAlign: 'center' }}>
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/logo-agrocar.png" alt="AGROCAR" style={{ maxWidth: 130, margin: '0 auto 1px', display: 'block' }} />
+          {/* Alto explícito para que el ticket mida igual antes y después de
+              que cargue la imagen (130 × 221/390 = 74) */}
+          <img src="/logo-agrocar.png" alt="AGROCAR" width={130} height={74}
+            style={{ width: 130, height: 74, margin: '0 auto 1px', display: 'block' }} />
           <div style={{ fontFamily: SLOGAN_FONT_STACK, fontSize: 14, color: '#000', marginBottom: 2 }}>
             {EMPRESA.slogan}
           </div>
