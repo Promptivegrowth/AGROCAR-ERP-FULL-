@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState, useCallback, Fragment } from 'react'
+import { useEffect, useMemo, useState, useCallback, Fragment, memo } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { Loader2, MapPin, Info } from 'lucide-react'
 import { Input } from '@/components/ui/input'
@@ -51,6 +51,88 @@ type Seleccion =
   | { tipo: 'cliente'; id: string }
   | { tipo: 'grupo'; id: string }
   | null
+
+/**
+ * Barra horizontal del tablero. Vive fuera del componente y memoizada: si se
+ * definiera adentro, React la trataría como un tipo nuevo en cada render y
+ * remontaría las ~60 barras en cada clic, perdiendo las transiciones.
+ */
+const Barra = memo(function Barra({
+  etiqueta, total, parte, max, color, seleccionado, atenuado, onClick, textoValor,
+}: {
+  etiqueta: string; total: number; parte: number | null; max: number
+  color: string; seleccionado: boolean; atenuado: boolean
+  onClick: () => void; textoValor: string
+}) {
+  const pctTotal = max > 0 ? Math.min(100, (Math.abs(total) / max) * 100) : 0
+  const pctParte = parte != null && max > 0 ? Math.min(100, (Math.abs(parte) / max) * 100) : 0
+  return (
+    <button type="button" onClick={onClick}
+      className="w-full flex items-center gap-2 py-1.5 text-left">
+      <span className={`w-[110px] shrink-0 text-[11px] truncate ${atenuado ? 'text-gray-400' : 'text-gray-700'}`}
+        title={etiqueta}>
+        {etiqueta}
+      </span>
+      <span className="relative flex-1 h-6 rounded-sm overflow-hidden bg-gray-100">
+        {/* Barra completa (atenuada cuando hay algo seleccionado) */}
+        <span className="absolute inset-y-0 left-0 rounded-sm transition-all"
+          style={{
+            width: `${pctTotal}%`,
+            backgroundColor: color,
+            opacity: parte != null ? 0.28 : atenuado ? 0.3 : 1,
+          }} />
+        {/* Segmento resaltado de lo seleccionado */}
+        {parte != null && pctParte > 0 && (
+          <span className="absolute inset-y-0 left-0 rounded-sm transition-all"
+            style={{ width: `${pctParte}%`, backgroundColor: color }} />
+        )}
+        <span className={`absolute inset-y-0 flex items-center px-1.5 text-[10px] font-semibold text-gray-800 ${
+          parte != null ? 'justify-start' : 'right-1'
+        }`}
+          style={parte != null ? { left: `${Math.max(pctParte, 2)}%` } : undefined}>
+          {parte != null ? textoValor : ''}
+        </span>
+        {seleccionado && <span className="absolute inset-0 ring-2 ring-black/60 rounded-sm" />}
+      </span>
+      <span className={`w-[92px] shrink-0 text-right text-[11px] font-mono ${
+        atenuado ? 'text-gray-400' : 'text-gray-800'
+      }`}>
+        {parte == null ? textoValor : ''}
+      </span>
+    </button>
+  )
+})
+
+/** Mini barra de fondo dentro de una celda de la tabla */
+const Celda = memo(function Celda({
+  valor, max, texto, color,
+}: { valor: number; max: number; texto: string; color: string }) {
+  return (
+    <span className="relative inline-flex items-center justify-end w-full h-5 px-1 rounded-sm overflow-hidden">
+      <span className="absolute inset-y-0 left-0 rounded-sm"
+        style={{
+          width: `${max > 0 ? Math.min(100, (Math.abs(valor) / max) * 100) : 0}%`,
+          backgroundColor: color, opacity: 0.35,
+        }} />
+      <span className="relative text-[10px] font-mono">{texto}</span>
+    </span>
+  )
+})
+
+function Toggle({ modo, set }: { modo: Modo; set: (m: Modo) => void }) {
+  return (
+    <div className="flex justify-center gap-2 pt-2">
+      {(['visual', 'tabular'] as const).map((m) => (
+        <button key={m} type="button" onClick={() => set(m)}
+          className={`px-4 py-1 rounded text-xs font-bold ${
+            modo === m ? 'bg-[#FBE600] text-black' : 'bg-[#FEF3C7] text-gray-600 hover:bg-[#FDE68A]'
+          }`}>
+          {m}
+        </button>
+      ))}
+    </div>
+  )
+}
 
 export default function ZonificadoTab() {
   const supabase = createClient()
@@ -235,81 +317,12 @@ export default function ZonificadoTab() {
 
   const zonasAproximadas = grupos.filter((g) => g.aproximado).length
 
-  // ── Barra reutilizable
-  const Barra = ({
-    etiqueta, total, parte, max, color, seleccionado, atenuado, onClick, textoValor,
-  }: {
-    etiqueta: string; total: number; parte: number | null; max: number
-    color: string; seleccionado: boolean; atenuado: boolean
-    onClick: () => void; textoValor: string
-  }) => {
-    const pctTotal = max > 0 ? Math.min(100, (Math.abs(total) / max) * 100) : 0
-    const pctParte = parte != null && max > 0 ? Math.min(100, (Math.abs(parte) / max) * 100) : 0
-    return (
-      <button type="button" onClick={onClick}
-        className="w-full flex items-center gap-2 py-1.5 text-left group">
-        <span className={`w-[110px] shrink-0 text-[11px] truncate ${atenuado ? 'text-gray-400' : 'text-gray-700'}`}
-          title={etiqueta}>
-          {etiqueta}
-        </span>
-        <span className="relative flex-1 h-6 rounded-sm overflow-hidden bg-gray-100">
-          {/* Barra completa (atenuada cuando hay selección) */}
-          <span className="absolute inset-y-0 left-0 rounded-sm transition-all"
-            style={{
-              width: `${pctTotal}%`,
-              backgroundColor: color,
-              opacity: parte != null ? 0.28 : atenuado ? 0.3 : 1,
-            }} />
-          {/* Segmento resaltado del elemento seleccionado */}
-          {parte != null && pctParte > 0 && (
-            <span className="absolute inset-y-0 left-0 rounded-sm transition-all"
-              style={{ width: `${pctParte}%`, backgroundColor: color }} />
-          )}
-          <span className={`absolute inset-y-0 flex items-center px-1.5 text-[10px] font-semibold ${
-            parte != null ? 'left-0 justify-start text-gray-800' : 'right-1 text-gray-800'
-          }`}
-            style={parte != null ? { left: `${Math.max(pctParte, 2)}%` } : undefined}>
-            {parte != null ? textoValor : ''}
-          </span>
-          {seleccionado && <span className="absolute inset-0 ring-2 ring-black/60 rounded-sm" />}
-        </span>
-        <span className={`w-[92px] shrink-0 text-right text-[11px] font-mono ${
-          atenuado ? 'text-gray-400' : 'text-gray-800'
-        }`}>
-          {parte == null ? textoValor : ''}
-        </span>
-      </button>
-    )
-  }
-
-  // Mini barra de fondo para las celdas de la tabla
-  const Celda = ({ valor, max, texto, color }: { valor: number; max: number; texto: string; color: string }) => (
-    <span className="relative inline-flex items-center justify-end w-full h-5 px-1 rounded-sm overflow-hidden">
-      <span className="absolute inset-y-0 left-0 rounded-sm"
-        style={{ width: `${max > 0 ? Math.min(100, (Math.abs(valor) / max) * 100) : 0}%`, backgroundColor: color, opacity: 0.35 }} />
-      <span className="relative text-[10px] font-mono">{texto}</span>
-    </span>
-  )
-
   const maxProducto = Math.max(1, ...productos.map((p) => Math.abs(p.ventas)))
   const maxCantidad = Math.max(1, ...productos.map((p) => Math.abs(p.cantidad)))
   const maxPeso = Math.max(1, ...productos.map((p) => Math.abs(p.peso)))
   const maxClienteVenta = Math.max(1, ...clientesVisibles.map((c) => Math.abs(c.ventas)))
   const maxClienteVisita = Math.max(1, ...clientesVisibles.map((c) => c.visitas))
   const maxCliente = metricaCliente === 'visitas' ? maxClienteVisita : maxClienteVenta
-
-  const Toggle = ({ modo, set }: { modo: Modo; set: (m: Modo) => void }) => (
-    <div className="flex justify-center gap-2 pt-2">
-      {(['visual', 'tabular'] as const).map((m) => (
-        <button key={m} type="button" onClick={() => { set(m); setSel(null) }}
-          className={`px-4 py-1 rounded text-xs font-bold ${
-            modo === m ? 'bg-[#FBE600] text-black' : 'bg-[#FEF3C7] text-gray-600 hover:bg-[#FDE68A]'
-          }`}>
-          {m}
-        </button>
-      ))}
-    </div>
-  )
 
   return (
     <div className="space-y-3">
@@ -429,7 +442,7 @@ export default function ZonificadoTab() {
                     grupos={productosPorFamilia.grupos} rank={productosPorFamilia.rank}
                     totales={datos.totales} maxV={maxProducto} maxC={maxCantidad} maxP={maxPeso}
                     sel={sel} onSel={(id: string) => alternar({ tipo: 'producto', id })}
-                    valorProducto={valorProducto} Celda={Celda} />
+                    valorProducto={valorProducto} />
                 )
               ) : (
                 modoIzq === 'visual' ? (
@@ -449,11 +462,11 @@ export default function ZonificadoTab() {
                 ) : (
                   <TablaClientes
                     clientes={clientesVisibles} maxV={maxClienteVenta} maxVis={maxClienteVisita}
-                    sel={sel} onSel={(id: string) => alternar({ tipo: 'cliente', id })} Celda={Celda} />
+                    sel={sel} onSel={(id: string) => alternar({ tipo: 'cliente', id })} />
                 )
               )}
             </div>
-            <Toggle modo={modoIzq} set={setModoIzq} />
+            <Toggle modo={modoIzq} set={(m) => { setModoIzq(m); setSel(null) }} />
           </div>
 
           {/* ── Panel 2: puntos de venta */}
@@ -506,7 +519,7 @@ export default function ZonificadoTab() {
                 </table>
               )}
             </div>
-            <Toggle modo={modoDer} set={setModoDer} />
+            <Toggle modo={modoDer} set={(m) => { setModoDer(m); setSel(null) }} />
           </div>
 
           {/* ── Panel 3: mapa */}
@@ -561,7 +574,7 @@ function Kpi({ titulo, valor, color }: { titulo: string; valor: string; color: s
 
 // ── Tabla de productos: familia con subtotal y total general
 function TablaProductos({
-  grupos, rank, totales, maxV, maxC, maxP, sel, onSel, valorProducto, Celda,
+  grupos, totales, maxV, maxC, maxP, sel, onSel, valorProducto,
 }: any) {
   return (
     <table className="w-full text-[11px]">
@@ -621,7 +634,7 @@ function TablaProductos({
 }
 
 // ── Tabla de clientes: ventas, visitas y ticket promedio
-function TablaClientes({ clientes, maxV, maxVis, sel, onSel, Celda }: any) {
+function TablaClientes({ clientes, maxV, maxVis, sel, onSel }: any) {
   const tv = clientes.reduce((a: number, c: Cliente) => a + Number(c.ventas), 0)
   const tvis = clientes.reduce((a: number, c: Cliente) => a + c.visitas, 0)
   return (

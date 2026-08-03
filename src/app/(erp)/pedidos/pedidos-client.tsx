@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useState, useCallback } from 'react'
+import { useMemo, useState, useCallback, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   ShoppingCart, Search, Eye, Loader2, ChevronLeft, ChevronRight, MapPin,
@@ -160,8 +160,10 @@ export default function PedidosClient({ pedidosIniciales }: { pedidosIniciales: 
   }
 
   // ─── Agregar producto ─────────────────────────────────────
-  // Buscar productos cuando el usuario tipea (incluye precio de lista A si existe)
-  useMemo(() => {
+  // Buscar productos cuando el usuario tipea (incluye precio de lista A si existe).
+  // Va en useEffect y no en useMemo: llama a setState y hacerlo durante el
+  // render disparaba un bucle infinito que tumbaba la pantalla de Pedidos.
+  useEffect(() => {
     if (!editMode || !debouncedProductoSearch.trim()) {
       setProductosOpciones([])
       return

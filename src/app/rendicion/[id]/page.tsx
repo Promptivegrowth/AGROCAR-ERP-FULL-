@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useCallback, use } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Loader2, Printer, AlertTriangle } from 'lucide-react'
@@ -47,8 +47,9 @@ const TIPO_CORTO: Record<string, string> = {
 const num = (v: number | string | null | undefined) =>
   Number(v ?? 0).toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
-export default function RendicionPage({ params }: { params: Promise<{ id: string }> }) {
-  const { id } = use(params)
+// En Next.js 14 los params llegan como objeto plano, no como promesa
+export default function RendicionPage({ params }: { params: { id: string } }) {
+  const { id } = params
   const search = useSearchParams()
   const supabase = createClient()
 
