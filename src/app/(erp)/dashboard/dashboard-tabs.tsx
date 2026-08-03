@@ -2,11 +2,12 @@
 
 import { ReactNode } from 'react'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { LayoutDashboard, Users, Target, TrendingUp, CreditCard } from 'lucide-react'
+import { LayoutDashboard, Users, Target, TrendingUp, CreditCard, MapPin } from 'lucide-react'
 import VendedoresTab from './vendedores-tab'
 import CuotasTab from './cuotas-tab'
 import VentasTab from './ventas-tab'
 import CobranzasTab from './cobranzas-tab'
+import ZonificadoTab from './zonificado-tab'
 
 export default function DashboardTabs({ children }: { children: ReactNode }) {
   return (
@@ -27,6 +28,9 @@ export default function DashboardTabs({ children }: { children: ReactNode }) {
         <TabsTrigger value="cobranzas" className="rounded-lg text-sm data-[state=active]:bg-white data-[state=active]:shadow-sm gap-2">
           <CreditCard className="w-4 h-4" /> Cobranzas
         </TabsTrigger>
+        <TabsTrigger value="zonificado" className="rounded-lg text-sm data-[state=active]:bg-white data-[state=active]:shadow-sm gap-2">
+          <MapPin className="w-4 h-4" /> Análisis zonificado
+        </TabsTrigger>
       </TabsList>
 
       <TabsContent value="overview" className="mt-4">{children}</TabsContent>
@@ -34,6 +38,7 @@ export default function DashboardTabs({ children }: { children: ReactNode }) {
       <TabsContent value="cuotas" className="mt-4"><CuotasTab /></TabsContent>
       <TabsContent value="ventas" className="mt-4"><VentasTab /></TabsContent>
       <TabsContent value="cobranzas" className="mt-4"><CobranzasTab /></TabsContent>
+      <TabsContent value="zonificado" className="mt-4"><ZonificadoTab /></TabsContent>
     </Tabs>
   )
 }

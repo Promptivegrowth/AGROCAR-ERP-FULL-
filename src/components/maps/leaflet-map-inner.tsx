@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect } from 'react'
-import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap, useMapEvents, LayersControl } from 'react-leaflet'
+import { MapContainer, TileLayer, Marker, Popup, Polyline, Circle, CircleMarker, Tooltip, useMap, useMapEvents, LayersControl } from 'react-leaflet'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 
@@ -68,17 +68,60 @@ export interface MapPolyline {
   dashed?: boolean
 }
 
+/**
+ * Círculo de tamaño proporcional para el análisis zonificado: el radio se da
+ * en píxeles, así el punto conserva su tamaño relativo aunque se haga zoom.
+ */
+export interface MapCircle {
+  id: string
+  lat: number
+  lng: number
+  radiusPx: number
+  color?: string
+  /** Atenuado cuando hay otro seleccionado */
+  dimmed?: boolean
+  /** Borde punteado: la ubicación es aproximada */
+  approximate?: boolean
+  label?: string
+  value?: string
+  onClick?: () => void
+}
+
+/** Círculo de alcance: engloba un grupo de zonas cercanas */
+export interface MapCoverage {
+  lat: number
+  lng: number
+  radiusMeters: number
+  color?: string
+}
+
 interface LeafletMapInnerProps {
   center?: [number, number]
   zoom?: number
   height?: string
   markers?: MapMarker[]
   polylines?: MapPolyline[]
+  circles?: MapCircle[]
+  coverage?: MapCoverage | null
   pickable?: boolean
   pickedPosition?: [number, number] | null
   onPick?: (lat: number, lng: number) => void
   fitBounds?: boolean
   flyTo?: { lat: number; lng: number; zoom?: number; key?: string | number } | null
+}
+
+/** Ajusta la vista para que entren todos los círculos */
+function FitCircles({ circles }: { circles?: MapCircle[] }) {
+  const map = useMap()
+  const clave = (circles ?? []).map((c) => `${c.lat},${c.lng}`).join('|')
+  useEffect(() => {
+    if (!circles || circles.length === 0) return
+    const pts = circles.map((c) => [c.lat, c.lng] as [number, number])
+    if (pts.length === 1) map.setView(pts[0], 13)
+    else map.fitBounds(pts, { padding: [50, 50], maxZoom: 14 })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [clave, map])
+  return null
 }
 
 function FlyTo({ target }: { target?: { lat: number; lng: number; zoom?: number; key?: string | number } | null }) {
@@ -121,6 +164,8 @@ export default function LeafletMapInner({
   height = '420px',
   markers = [],
   polylines = [],
+  circles = [],
+  coverage = null,
   pickable = false,
   pickedPosition = null,
   onPick,
@@ -165,6 +210,50 @@ export default function LeafletMapInner({
             />
           </LayersControl.BaseLayer>
         </LayersControl>
+        {/* Círculo de alcance: agrupa las zonas cercanas */}
+        {coverage && (
+          <Circle
+            center={[coverage.lat, coverage.lng]}
+            radius={coverage.radiusMeters}
+            pathOptions={{
+              color: coverage.color ?? '#dc2626',
+              weight: 2,
+              opacity: 0.7,
+              fillOpacity: 0.04,
+            }}
+          />
+        )}
+
+        {/* Puntos proporcionales por zona */}
+        {circles.map((c) => (
+          <CircleMarker
+            key={c.id}
+            center={[c.lat, c.lng]}
+            radius={c.radiusPx}
+            pathOptions={{
+              color: c.color ?? '#F59E0B',
+              weight: c.approximate ? 2 : 1,
+              dashArray: c.approximate ? '4 3' : undefined,
+              opacity: c.dimmed ? 0.35 : 0.95,
+              fillColor: c.color ?? '#F59E0B',
+              fillOpacity: c.dimmed ? 0.2 : 0.85,
+            }}
+            eventHandlers={c.onClick ? { click: c.onClick } : undefined}
+          >
+            {(c.label || c.value) && (
+              <Tooltip direction="top" offset={[0, -4]}>
+                <div style={{ fontSize: 12 }}>
+                  {c.label && <div style={{ fontWeight: 700 }}>{c.label}</div>}
+                  {c.value && <div>{c.value}</div>}
+                  {c.approximate && (
+                    <div style={{ color: '#b45309', fontSize: 10 }}>Ubicación aproximada</div>
+                  )}
+                </div>
+              </Tooltip>
+            )}
+          </CircleMarker>
+        ))}
+
         {polylines.map((pl) => (
           <Polyline
             key={pl.id}
@@ -203,7 +292,12 @@ export default function LeafletMapInner({
           </Marker>
         )}
         {pickable && onPick && <LocationPicker onPick={onPick} />}
-        {fitBounds && !flyTo && <FitBounds markers={markers} pickedPosition={pickedPosition} />}
+        {fitBounds && !flyTo && markers.length > 0 && (
+          <FitBounds markers={markers} pickedPosition={pickedPosition} />
+        )}
+        {fitBounds && !flyTo && markers.length === 0 && circles.length > 0 && (
+          <FitCircles circles={circles} />
+        )}
         <FlyTo target={flyTo} />
       </MapContainer>
     </div>

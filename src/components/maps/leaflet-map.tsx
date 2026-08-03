@@ -16,4 +16,4 @@ const LeafletMapInner = dynamic(() => import('./leaflet-map-inner'), {
 })
 
 export default LeafletMapInner
-export type { MapMarker, MapPolyline } from './leaflet-map-inner'
+export type { MapMarker, MapPolyline, MapCircle, MapCoverage } from './leaflet-map-inner'

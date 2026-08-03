@@ -51,6 +51,8 @@ export default function ZonasPage() {
   const [activoVal, setActivoVal] = useState(true)
   const [ubigeoVal, setUbigeoVal] = useState<UbigeoValue>(UBIGEO_EMPTY)
   const [centro, setCentro] = useState<[number, number] | null>(null)
+  const [centroAprox, setCentroAprox] = useState(false)
+  const [coordPegar, setCoordPegar] = useState('')
   const [radioKm, setRadioKm] = useState<number>(1.5)
   const [colorHex, setColorHex] = useState<string>('#2563eb')
   const [clientesEnZona, setClientesEnZona] = useState<any[]>([])
@@ -75,7 +77,7 @@ export default function ZonasPage() {
     setLoading(true)
     let query = supabase
       .from('zonas')
-      .select('id, nombre, descripcion, referencias, activo, created_at, ubigeo, departamento, provincia, distrito, centro_lat, centro_lng, radio_km, color_hex, dias_visita', { count: 'exact' })
+      .select('id, nombre, descripcion, referencias, activo, created_at, ubigeo, departamento, provincia, distrito, centro_lat, centro_lng, centro_aproximado, radio_km, color_hex, dias_visita', { count: 'exact' })
       .order('nombre')
 
     if (debouncedSearch) query = query.ilike('nombre', `%${debouncedSearch}%`)
@@ -109,6 +111,8 @@ export default function ZonasPage() {
     setActivoVal(true)
     setUbigeoVal(UBIGEO_EMPTY)
     setCentro(null)
+    setCentroAprox(false)
+    setCoordPegar('')
     setRadioKm(1.5)
     setColorHex('#2563eb')
     setClientesEnZona([])
@@ -139,6 +143,8 @@ export default function ZonasPage() {
       ubigeo: zona.ubigeo ?? null,
     })
     setCentro(zona.centro_lat != null && zona.centro_lng != null ? [Number(zona.centro_lat), Number(zona.centro_lng)] : null)
+    setCentroAprox(!!zona.centro_aproximado)
+    setCoordPegar('')
     setRadioKm(Number(zona.radio_km ?? 1.5))
     setColorHex(zona.color_hex ?? '#2563eb')
     setDiasVisita((zona.dias_visita ?? []) as DiaSemana[])
@@ -230,6 +236,8 @@ export default function ZonasPage() {
         distrito: ubigeoVal.distrito,
         centro_lat: centro ? centro[0] : null,
         centro_lng: centro ? centro[1] : null,
+        // Si alguien la ubicó a mano deja de ser aproximada
+        centro_aproximado: centro ? centroAprox : false,
         radio_km: data.radio_km ?? null,
         color_hex: colorHex,
         dias_visita: diasVisita,
@@ -461,6 +469,83 @@ export default function ZonasPage() {
               <Label className="text-xs font-semibold text-gray-700">Ubicación administrativa</Label>
               <div className="mt-1">
                 <UbigeoSelector value={ubigeoVal} onChange={setUbigeoVal} layout="columns" showLabels />
+              </div>
+            </div>
+
+            {/* Centro de la zona: alimenta el mapa del análisis zonificado */}
+            <div className="border border-gray-200 rounded-lg p-3 bg-gray-50/60">
+              <Label className="text-xs font-semibold text-gray-700 flex items-center gap-1.5">
+                <MapPin className="w-3.5 h-3.5 text-gray-500" />
+                Centro de la zona en el mapa
+              </Label>
+              <p className="text-[11px] text-gray-500 mt-0.5 mb-2">
+                Es el punto donde esta zona aparece en el <b>Análisis zonificado</b>.
+                Ábrela en Google Maps, haz clic derecho sobre el lugar, copia las coordenadas y pégalas aquí.
+              </p>
+
+              <div className="flex gap-2">
+                <Input
+                  value={coordPegar}
+                  onChange={(e) => setCoordPegar(e.target.value)}
+                  onPaste={(e) => {
+                    const txt = e.clipboardData.getData('text')
+                    if (parsearCoordenadas(txt)) {
+                      e.preventDefault()
+                      setCoordPegar(txt)
+                      const c = parsearCoordenadas(txt)!
+                      setCentro(c)
+                      setCentroAprox(false)
+                      toast.success('Coordenadas reconocidas', {
+                        description: `${c[0].toFixed(6)}, ${c[1].toFixed(6)}`,
+                      })
+                    }
+                  }}
+                  placeholder="-18.014600, -70.253600  ·  o pega el enlace de Google Maps"
+                  className="h-9 text-xs font-mono flex-1"
+                />
+                <Button type="button" variant="outline" size="sm" className="h-9"
+                  onClick={() => {
+                    const c = parsearCoordenadas(coordPegar)
+                    if (!c) {
+                      toast.error('No pude leer esas coordenadas', {
+                        description: 'Usa el formato -18.0146, -70.2536 o pega el enlace de Google Maps.',
+                      })
+                      return
+                    }
+                    setCentro(c)
+                    setCentroAprox(false)
+                    toast.success('Ubicación fijada', { description: `${c[0].toFixed(6)}, ${c[1].toFixed(6)}` })
+                  }}>
+                  Fijar
+                </Button>
+              </div>
+
+              <div className="flex items-center gap-2 mt-2 text-[11px]">
+                {centro ? (
+                  <>
+                    <span className="font-mono text-gray-700">
+                      {centro[0].toFixed(6)}, {centro[1].toFixed(6)}
+                    </span>
+                    {centroAprox && (
+                      <span className="text-amber-800 bg-amber-100 border border-amber-200 rounded px-1.5 py-0.5 font-semibold">
+                        Aproximada — conviene afinarla
+                      </span>
+                    )}
+                    <a
+                      href={`https://www.google.com/maps?q=${centro[0]},${centro[1]}`}
+                      target="_blank" rel="noopener noreferrer"
+                      className="text-blue-600 underline"
+                    >
+                      Ver en Google Maps
+                    </a>
+                    <button type="button" onClick={() => { setCentro(null); setCoordPegar('') }}
+                      className="text-red-600 underline ml-auto">
+                      Quitar
+                    </button>
+                  </>
+                ) : (
+                  <span className="text-gray-400">Sin ubicación — esta zona no saldrá en el mapa</span>
+                )}
               </div>
             </div>
 
@@ -905,6 +990,45 @@ function distanciaKmSimple(a: [number, number], b: [number, number]): number {
   const lat2 = toRad(b[0])
   const h = Math.sin(dLat / 2) ** 2 + Math.sin(dLng / 2) ** 2 * Math.cos(lat1) * Math.cos(lat2)
   return 2 * R * Math.asin(Math.sqrt(h))
+}
+
+/**
+ * Lee coordenadas de lo que sea que peguen: el par suelto que copia Google
+ * Maps con clic derecho, o el enlace completo del navegador.
+ * Acepta "-18.0146, -70.2536", "-18.0146 -70.2536",
+ * ".../@-18.0146,-70.2536,17z" y "...?q=-18.0146,-70.2536".
+ */
+function parsearCoordenadas(texto: string): [number, number] | null {
+  if (!texto) return null
+  const t = texto.trim()
+
+  // Enlaces de Google Maps: @lat,lng  ·  q=lat,lng  ·  !3dlat!4dlng
+  const patrones = [
+    /@(-?\d{1,3}\.\d+),\s*(-?\d{1,3}\.\d+)/,
+    /[?&]q=(-?\d{1,3}\.\d+),\s*(-?\d{1,3}\.\d+)/,
+    /!3d(-?\d{1,3}\.\d+)!4d(-?\d{1,3}\.\d+)/,
+  ]
+  for (const re of patrones) {
+    const m = t.match(re)
+    if (m) {
+      const lat = parseFloat(m[1]); const lng = parseFloat(m[2])
+      if (esCoordValida(lat, lng)) return [lat, lng]
+    }
+  }
+
+  // Par suelto separado por coma, punto y coma o espacios
+  const m = t.match(/^\s*(-?\d{1,3}(?:\.\d+)?)\s*[,;\s]\s*(-?\d{1,3}(?:\.\d+)?)\s*$/)
+  if (m) {
+    const lat = parseFloat(m[1]); const lng = parseFloat(m[2])
+    if (esCoordValida(lat, lng)) return [lat, lng]
+  }
+  return null
+}
+
+function esCoordValida(lat: number, lng: number): boolean {
+  return Number.isFinite(lat) && Number.isFinite(lng) &&
+    lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180 &&
+    !(lat === 0 && lng === 0)
 }
 
 function generarCirculo(centro: [number, number], radioKm: number, puntos = 36): [number, number][] {
