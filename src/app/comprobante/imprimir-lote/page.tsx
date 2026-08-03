@@ -97,10 +97,12 @@ export default async function ImprimirLotePage({
 
   return (
     <div className="bg-gray-200 print:bg-white">
-      <AutoPrint count={lista.length} />
+      <AutoPrint count={lista.length} esTicket={!esA4} />
       <style>{`
         @media print {
-          @page { size: ${esA4 ? 'A4' : '80mm auto'}; margin: ${esA4 ? '8mm' : '0'}; }
+          /* En ticket, AutoPrint reemplaza este tamaño por 80mm × alto real:
+             "80mm auto" no es CSS válido y hace que el navegador caiga a A4. */
+          @page { size: ${esA4 ? 'A4' : '80mm 200mm'}; margin: ${esA4 ? '8mm' : '0'}; }
           body { margin: 0; }
           .no-print { display: none !important; }
           ${esA4 ? `
@@ -114,6 +116,9 @@ export default async function ImprimirLotePage({
              dispara la guillotina automática de la ticketera — así CADA
              ticket sale cortado, incluido el último del lote. */
           .pagebreak { page-break-after: always; break-after: page; }
+          /* Sin esto el último ticket arrastra una hoja en blanco: con un solo
+             comprobante el diálogo mostraba "2 páginas". */
+          .pagebreak:last-child { page-break-after: auto; break-after: auto; }
           .pagebreak { page-break-inside: avoid; break-inside: avoid; }
           /* FIDELIDAD pantalla = papel: ancho útil de 72mm, sin reescalado */
           .pagebreak {

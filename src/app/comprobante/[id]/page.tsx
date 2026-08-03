@@ -389,7 +389,9 @@ export default async function ComprobantePage({
              Si la impresora es A4 normal y no soporta 80mm, el ticket
              quedará en la esquina superior izquierda — para esos casos
              el usuario debe usar el formato A4 SUNAT (avisado en pantalla). */
-          @page { size: 80mm auto; margin: 0; }
+          /* PrintButton reemplaza este tamaño por 80mm × alto real antes de
+             imprimir. "80mm auto" no es válido y hace caer el papel a A4. */
+          @page { size: 80mm 200mm; margin: 0; }
           body { margin: 0; }
           .no-print { display: none !important; }
           /* FIDELIDAD pantalla = papel: ancho fijo de 72mm (área útil de
