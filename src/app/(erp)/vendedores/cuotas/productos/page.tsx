@@ -24,6 +24,9 @@ interface ProductoRow {
   cuota_valor: number
   precio_ref: number
   precio_es_promedio: boolean
+  /** Lo que este vendedor vendió del producto el mes anterior */
+  vendido_ant_cant: number
+  vendido_ant_valor: number
 }
 
 const MESES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Setiembre','Octubre','Noviembre','Diciembre']
@@ -80,6 +83,8 @@ export default function CuotasPorProductoPage() {
       cuota_cantidad: Number(p.cuota_cantidad),
       cuota_valor: Number(p.cuota_valor),
       precio_ref: Number(p.precio_ref),
+      vendido_ant_cant: Number(p.vendido_ant_cant ?? 0),
+      vendido_ant_valor: Number(p.vendido_ant_valor ?? 0),
     })) as ProductoRow[]
     setProductos(rows)
     const m = new Map<string, { cant: number; valor: number }>()
@@ -521,6 +526,10 @@ export default function CuotasPorProductoPage() {
                 <tr>
                   <th className="text-left p-2 font-semibold border-b w-[80px]">Código</th>
                   <th className="text-left p-2 font-semibold border-b">Descripción</th>
+                  <th className="text-right p-2 font-semibold border-b w-[110px]">
+                    Vendió mes ant.
+                    <span className="block text-[9px] font-normal text-gray-400">referencia</span>
+                  </th>
                   <th className="text-right p-2 font-semibold border-b w-[95px]">Precio prom.</th>
                   <th className="text-center p-2 font-semibold border-b w-[110px]">
                     Cuota cantidad
@@ -536,7 +545,7 @@ export default function CuotasPorProductoPage() {
                 {grupos.map((g) => (
                   <Fragment key={`${g.codigo}-${g.nombre}`}>
                     <tr className="bg-gray-100">
-                      <td colSpan={4} className="px-2 py-1 font-bold uppercase text-gray-800">
+                      <td colSpan={5} className="px-2 py-1 font-bold uppercase text-gray-800">
                         LÍNEA: {g.codigo} - {g.nombre}
                         <span className="ml-2 font-normal text-gray-500">({g.items.length} productos)</span>
                       </td>
@@ -552,6 +561,18 @@ export default function CuotasPorProductoPage() {
                         <tr key={p.producto_id} className={`border-b border-gray-100 ${conCuota ? 'bg-yellow-50/40' : ''}`}>
                           <td className="p-1.5 font-mono text-gray-600">{p.codigo}</td>
                           <td className="p-1.5">{p.descripcion}</td>
+                          <td className="p-1.5 text-right">
+                            {p.vendido_ant_cant > 0 ? (
+                              <button type="button"
+                                onClick={() => setCantidad(p.producto_id, String(p.vendido_ant_cant))}
+                                title={`Usar ${num(p.vendido_ant_cant)} como cuota (vendió S/ ${num(p.vendido_ant_valor)})`}
+                                className="font-mono text-[11px] text-blue-700 hover:bg-blue-50 rounded px-1 py-0.5 underline decoration-dotted">
+                                {num(p.vendido_ant_cant)}
+                              </button>
+                            ) : (
+                              <span className="font-mono text-gray-300">—</span>
+                            )}
+                          </td>
                           <td className="p-1.5 text-right font-mono text-gray-500">
                             {p.precio_ref > 0 ? num(p.precio_ref) : '—'}
                             {p.precio_ref > 0 && !p.precio_es_promedio && (
@@ -596,7 +617,11 @@ export default function CuotasPorProductoPage() {
 
       <div className="text-[11px] text-gray-500 space-y-1 no-print">
         <p>
-          💡 <b>Precio prom.</b> es el precio promedio de venta real del mes anterior
+          💡 <b>Vendió mes ant.</b> es lo que este vendedor vendió de ese producto el mes
+          pasado. Haz clic en el número para usarlo como cuota y ajustarlo desde ahí.
+        </p>
+        <p>
+          <b>Precio prom.</b> es el precio promedio de venta real del mes anterior
           (total vendido ÷ cantidad vendida), por eso varía cada mes. Si el producto no se vendió
           el mes pasado se usa el precio de lista B y se marca con una <b className="text-amber-600">L</b>.
         </p>
