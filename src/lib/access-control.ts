@@ -110,14 +110,26 @@ const PWA_ACCESS: Record<string, string[]> = {
     '/pwa/cuenta',
   ],
   // Daniel, 02/08: "el repartidor SOLO tiene que tener acceso al reparto del
-  // día, venta directa, cobranza, activar cliente y condición de venta
-  // crédito o contado". Es una restricción: antes también entraba a sus
-  // cobranzas pendientes, a su reporte histórico y a los depósitos.
+  // día, venta directa, cobranza, activar cliente y condición de venta".
+  //
+  // Ese "solo" es sobre no ver el movimiento de los demás ni el del negocio
+  // —"no quisiera que vea todo el movimiento que hay dentro"—, no sobre
+  // quitarle sus propias herramientas. En la misma reunión pidió que el
+  // repartidor rinda la venta del día y que el personal deposite en el banco
+  // para no cargar efectivo, así que su reporte, sus cobranzas pendientes y
+  // sus depósitos se quedan: los tres muestran únicamente lo suyo.
+  //
+  // Fuera quedan las herramientas de la ruta programada del vendedor (zona
+  // propia y check-in de visitas), las cuotas —el repartidor no tiene meta
+  // asignada— y todo el ERP.
   repartidor: [
     '/pwa/reparto',        // lo que le toca entregar hoy
     '/pwa/pedidos',        // venta directa, con condición contado o crédito
     '/pwa/clientes',       // buscar y activar al cliente al que le va a vender
     '/pwa/cobros',         // cobranza
+    '/pwa/mis-cobranzas',  // a quién le tiene que cobrar
+    '/pwa/mi-reporte',     // su rendición del día
+    '/pwa/deposito',       // depositar sin cargar el efectivo de vuelta
     '/pwa/cuenta',         // su perfil y cerrar sesión
   ],
 }
