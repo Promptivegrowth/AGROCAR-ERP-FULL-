@@ -2,11 +2,12 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { ShoppingCart, Users, DollarSign, MapPin, User, Map } from 'lucide-react'
+import { ShoppingCart, Users, DollarSign, MapPin, User, Map, Truck } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { canAccessPwaPath } from '@/lib/access-control'
 
 const NAV_ITEMS = [
+  { href: '/pwa/reparto', label: 'Reparto', icon: Truck },
   { href: '/pwa/mi-zona', label: 'Mi Zona', icon: Map },
   { href: '/pwa/pedidos', label: 'Pedidos', icon: ShoppingCart },
   { href: '/pwa/clientes', label: 'Clientes', icon: Users },

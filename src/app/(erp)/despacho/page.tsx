@@ -93,6 +93,18 @@ async function getInitialData() {
     } as PedidoListo
   })
 
+  // Quiénes pueden salir a repartir: el despacho se les asigna para que el
+  // reparto del día les aparezca en el celular.
+  const { data: repartidoresRaw } = await supabase
+    .from('profiles')
+    .select('id, full_name, email')
+    .in('role', ['repartidor', 'chofer'])
+    .eq('activo', true)
+    .order('full_name')
+  const repartidores = (repartidoresRaw ?? []).map((r: any) => ({
+    id: r.id, nombre: r.full_name || r.email,
+  }))
+
   const vehiculos: VehiculoDisponible[] = (vehiculosRaw ?? []).map((v: any) => ({
     id: v.id,
     placa: v.placa,
@@ -131,11 +143,11 @@ async function getInitialData() {
     }
   })
 
-  return { pedidos, vehiculos, almacen, flota, plantillaDelDia, diaActual }
+  return { pedidos, vehiculos, almacen, flota, plantillaDelDia, diaActual, repartidores }
 }
 
 export default async function DespachoPage() {
-  const { pedidos, vehiculos, almacen, flota, plantillaDelDia, diaActual } = await getInitialData()
+  const { pedidos, vehiculos, almacen, flota, plantillaDelDia, diaActual, repartidores } = await getInitialData()
   const total = flota.enRuta.length + flota.enPreparacion.length
   return (
     <div className="space-y-3">
@@ -176,6 +188,7 @@ export default async function DespachoPage() {
         almacen={almacen}
         plantillaDelDia={plantillaDelDia}
         diaActual={diaActual}
+        repartidores={repartidores}
       />
     </div>
   )

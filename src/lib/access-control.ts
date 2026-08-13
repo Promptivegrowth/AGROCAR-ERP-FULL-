@@ -109,14 +109,16 @@ const PWA_ACCESS: Record<string, string[]> = {
     '/pwa/deposito',       // depositar al banco sin cargar efectivo
     '/pwa/cuenta',
   ],
+  // Daniel, 02/08: "el repartidor SOLO tiene que tener acceso al reparto del
+  // día, venta directa, cobranza, activar cliente y condición de venta
+  // crédito o contado". Es una restricción: antes también entraba a sus
+  // cobranzas pendientes, a su reporte histórico y a los depósitos.
   repartidor: [
-    '/pwa/pedidos',        // venta directa desde el camión
-    '/pwa/clientes',       // buscar al cliente de cualquier zona
-    '/pwa/cobros',
-    '/pwa/mis-cobranzas',
-    '/pwa/mi-reporte',     // su rendición del día
-    '/pwa/deposito',
-    '/pwa/cuenta',
+    '/pwa/reparto',        // lo que le toca entregar hoy
+    '/pwa/pedidos',        // venta directa, con condición contado o crédito
+    '/pwa/clientes',       // buscar y activar al cliente al que le va a vender
+    '/pwa/cobros',         // cobranza
+    '/pwa/cuenta',         // su perfil y cerrar sesión
   ],
 }
 PWA_ACCESS.chofer = PWA_ACCESS.repartidor // Daniel: el chofer trabaja igual que el repartidor

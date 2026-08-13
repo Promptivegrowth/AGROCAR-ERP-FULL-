@@ -383,23 +383,28 @@ export default function CuentaPage() {
         {/* Rendición del día: lo que debe entregar en caja. Daniel lo pidió
             para que el vendedor cierre su cuenta desde el celular a cualquier
             hora, sin esperar el cierre de caja. */}
-        <Button
-          onClick={() => router.push(`/rendicion/${profile?.id}?fecha=${hoyLima()}`)}
-          className="w-full h-14 bg-[#FBE600] hover:bg-[#E5D100] text-black font-bold"
-        >
-          🧾 Mi rendición de hoy (para entregar en caja)
-        </Button>
+        {canAccessPwaPath(profile?.role ?? '', '/pwa/mi-reporte') && (
+          <Button
+            onClick={() => router.push(`/rendicion/${profile?.id}?fecha=${hoyLima()}`)}
+            className="w-full h-14 bg-[#FBE600] hover:bg-[#E5D100] text-black font-bold"
+          >
+            🧾 Mi rendición de hoy (para entregar en caja)
+          </Button>
+        )}
 
         {/* Depósito al banco: para no trasladar efectivo desde la zona */}
-        <Button
-          onClick={() => router.push('/pwa/deposito')}
-          variant="outline"
-          className="w-full h-12 border-gray-800 text-gray-900 hover:bg-gray-100 font-semibold"
-        >
-          🏦 Depositar al banco (con voucher)
-        </Button>
+        {canAccessPwaPath(profile?.role ?? '', '/pwa/deposito') && (
+          <Button
+            onClick={() => router.push('/pwa/deposito')}
+            variant="outline"
+            className="w-full h-12 border-gray-800 text-gray-900 hover:bg-gray-100 font-semibold"
+          >
+            🏦 Depositar al banco (con voucher)
+          </Button>
+        )}
 
         {/* Mi Reporte (historial + descargas) */}
+        {canAccessPwaPath(profile?.role ?? '', '/pwa/mi-reporte') && (
         <Button
           onClick={() => router.push('/pwa/mi-reporte')}
           variant="outline"
@@ -408,6 +413,7 @@ export default function CuentaPage() {
           <TrendingUp className="w-4 h-4" />
           Mi Reporte (historial + Excel/PDF)
         </Button>
+        )}
 
         {/* Mis cuotas del mes — solo el vendedor maneja cuota asignada */}
         {canAccessPwaPath(profile?.role ?? '', '/pwa/mis-cuotas') && (
@@ -422,6 +428,7 @@ export default function CuentaPage() {
 
         {/* Cuentas por cobrar a mi cargo — página PWA nativa (la ruta del
             ERP estaba bloqueada para el rol vendedor) */}
+        {canAccessPwaPath(profile?.role ?? '', '/pwa/mis-cobranzas') && (
         <Button
           onClick={() => router.push('/pwa/mis-cobranzas')}
           variant="outline"
@@ -430,6 +437,7 @@ export default function CuentaPage() {
           <DollarSign className="w-4 h-4" />
           Mis cuentas por cobrar (clientes con deuda)
         </Button>
+        )}
 
         {/* Cerrar sesión */}
         <Button

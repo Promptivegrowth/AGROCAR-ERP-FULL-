@@ -24,13 +24,15 @@ type Props = {
   almacen: { nombre: string; direccion: string; lat: number; lng: number }
   plantillaDelDia?: Record<string, string> // zona_id → vehiculo_id
   diaActual?: string // 'lun' | 'mar' | ...
+  /** Quiénes pueden salir a repartir y cobrar */
+  repartidores?: { id: string; nombre: string }[]
 }
 
 const DIA_LABELS: Record<string, string> = {
   lun: 'Lunes', mar: 'Martes', mie: 'Miércoles', jue: 'Jueves', vie: 'Viernes', sab: 'Sábado', dom: 'Domingo',
 }
 
-export default function DespachoClient({ pedidosIniciales, vehiculos, almacen, plantillaDelDia, diaActual }: Props) {
+export default function DespachoClient({ pedidosIniciales, vehiculos, almacen, plantillaDelDia, diaActual, repartidores = [] }: Props) {
   const supabase = createClient()
   const router = useRouter()
   const sensors = useSensors(
@@ -45,6 +47,9 @@ export default function DespachoClient({ pedidosIniciales, vehiculos, almacen, p
   const [detalleOpen, setDetalleOpen] = useState(false)
   const [pedidoDetalle, setPedidoDetalle] = useState<PedidoListo | null>(null)
   const [consolidandoVehiculo, setConsolidandoVehiculo] = useState<string | null>(null)
+  // Quién sale con cada unidad: sin esto el reparto no le aparece a nadie
+  // en el celular, porque el despacho no queda ligado a ningún usuario.
+  const [repartidorPorVehiculo, setRepartidorPorVehiculo] = useState<Record<string, string>>({})
   const [vehiculoFocus, setVehiculoFocus] = useState<string | null>(null)
   const [gruposColapsados, setGruposColapsados] = useState<Set<string>>(new Set())
   // IDs de pedidos que fueron pre-asignados automáticamente por la plantilla del día
@@ -416,6 +421,7 @@ export default function DespachoClient({ pedidosIniciales, vehiculos, almacen, p
           peso_total_kg: pesoTotal,
           orden_entrega: ordenEntrega,
           hoja_ruta_emitida_at: new Date().toISOString(),
+          repartidor_id: repartidorPorVehiculo[vehiculoId] || null,
         })
         .select('id, numero')
         .single()
@@ -677,6 +683,26 @@ export default function DespachoClient({ pedidosIniciales, vehiculos, almacen, p
                     onClick={() => setVehiculoFocus(v.id === vehiculoFocus ? null : v.id)}
                     className="cursor-pointer"
                   >
+                    {/* Repartidor asignado: es quien ve este reparto en su celular */}
+                    {repartidores.length > 0 && pedidosVeh.length > 0 && (
+                      <div className="mb-1.5 flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+                        <label className="text-[11px] font-semibold text-gray-600 shrink-0">
+                          Reparte:
+                        </label>
+                        <select
+                          value={repartidorPorVehiculo[v.id] ?? ''}
+                          onChange={(e) => setRepartidorPorVehiculo((prev) => ({ ...prev, [v.id]: e.target.value }))}
+                          className={`h-7 flex-1 px-1.5 text-[11px] border rounded bg-white ${
+                            repartidorPorVehiculo[v.id] ? 'border-gray-300' : 'border-amber-400 bg-amber-50'
+                          }`}
+                        >
+                          <option value="">Sin asignar — no lo verá en su celular</option>
+                          {repartidores.map((r) => (
+                            <option key={r.id} value={r.id}>{r.nombre}</option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
                     <VehiculoCard
                       vehiculo={v}
                       pedidos={ordenados}

@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import { Search, Plus, Minus, Trash2, AlertCircle, Loader2, Package, Receipt, Banknote, Smartphone, Building2, UserCircle2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { createClient } from '@/lib/supabase/client'
@@ -205,6 +205,41 @@ export default function VentaDirectaDialog({ open, onOpenChange, onCreated }: Pr
     ).slice(0, 8)
   })()
 
+  /**
+   * Carga los precios de una lista sobre el catálogo.
+   * Si no se indica lista se usa la C (venta al detalle), que es la que
+   * corresponde al consumidor final y sirve de respaldo para un cliente
+   * registrado al que nadie le asignó lista todavía.
+   */
+  const cargarPrecios = useCallback(async (listaPrecioId?: string | null) => {
+    let listaId = listaPrecioId ?? null
+
+    if (!listaId) {
+      const { data: listaC } = await (supabase as any)
+        .from('listas_precio')
+        .select('id')
+        .eq('nombre', 'C')
+        .eq('activo', true)
+        .maybeSingle()
+      listaId = listaC?.id ?? null
+    }
+
+    if (!listaId) {
+      setProductos((prev) => prev.map((p) => ({ ...p, precio: 0 })))
+      return
+    }
+
+    const { data: items } = await supabase
+      .from('lista_precio_items')
+      .select('producto_id, precio')
+      .eq('lista_precio_id', listaId)
+      .eq('activo', true)
+
+    const precioMap = new Map<string, number>()
+    ;(items ?? []).forEach((i: any) => precioMap.set(i.producto_id, Number(i.precio ?? 0)))
+    setProductos((prev) => prev.map((p) => ({ ...p, precio: precioMap.get(p.id) ?? 0 })))
+  }, [supabase])
+
   async function seleccionarCliente(c: Cliente) {
     setClienteSeleccionado(c)
     setClienteSearch(c.razon_social)
@@ -215,18 +250,7 @@ export default function VentaDirectaDialog({ open, onOpenChange, onCreated }: Pr
     setTipoComprobante(tipoPref as any)
     setSerie(tipoPref === 'factura' ? 'F001' : 'B001')
 
-    if (c.lista_precio_id) {
-      const { data: items } = await supabase
-        .from('lista_precio_items')
-        .select('producto_id, precio')
-        .eq('lista_precio_id', c.lista_precio_id)
-        .eq('activo', true)
-      const precioMap = new Map<string, number>()
-      ;(items ?? []).forEach((i: any) => precioMap.set(i.producto_id, Number(i.precio ?? 0)))
-      setProductos((prev) => prev.map((p) => ({ ...p, precio: precioMap.get(p.id) ?? 0 })))
-    } else {
-      setProductos((prev) => prev.map((p) => ({ ...p, precio: 0 })))
-    }
+    await cargarPrecios(c.lista_precio_id)
   }
 
   function agregarProducto(p: Producto) {
@@ -527,7 +551,13 @@ export default function VentaDirectaDialog({ open, onOpenChange, onCreated }: Pr
                 </button>
                 <button
                   type="button"
-                  onClick={() => setModoCliente('consumidor_final')}
+                  onClick={() => {
+                    setModoCliente('consumidor_final')
+                    setClienteSeleccionado(null)
+                    setCarrito([])
+                    // Consumidor final = lista C (venta al detalle)
+                    cargarPrecios(null)
+                  }}
                   className={`px-3 py-1.5 rounded ${modoCliente === 'consumidor_final' ? 'bg-green-600 text-white font-semibold' : 'text-gray-600 hover:bg-gray-50'}`}
                 >
                   <UserCircle2 className="w-3.5 h-3.5 inline mr-1" />
