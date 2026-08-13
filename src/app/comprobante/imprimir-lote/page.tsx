@@ -128,12 +128,14 @@ export default async function ImprimirLotePage({
              el navegador abre una hoja para ellos ANTES del primer ticket y
              el lote sale con una hoja en blanco de más. */
           .envoltura { display: contents !important; }
-          /* FIDELIDAD pantalla = papel: ancho útil de 72mm, sin reescalado */
+          /* A TODO EL ANCHO del papel, sin margen a los lados: el ticket
+             ocupa los 80mm completos con apenas 1mm de aire para que la
+             tinta no toque el borde. */
           .pagebreak {
-            width: 72mm !important;
-            max-width: 72mm !important;
-            margin: 0 auto !important;
-            padding: 2mm !important;
+            width: 100% !important;
+            max-width: 100% !important;
+            margin: 0 !important;
+            padding: 1mm !important;
             box-shadow: none !important;
             -webkit-print-color-adjust: exact;
             print-color-adjust: exact;
@@ -221,12 +223,18 @@ export default async function ImprimirLotePage({
                 // que se ve es exactamente lo que sale, y la medición del alto
                 // para el tamaño de página es exacta: si midiéramos a otro
                 // ancho el texto envolvería distinto y sobraría o faltaría papel.
-                maxWidth: esA4 ? 800 : '72mm',
-                width: esA4 ? undefined : '72mm',
-                padding: esA4 ? 32 : '2mm',
-                fontFamily: esA4 ? '"Helvetica Neue", Arial, sans-serif' : 'ui-monospace, "Courier New", monospace',
-                fontSize: esA4 ? 11 : 10.5,
-                lineHeight: esA4 ? undefined : 1.25,
+                // En pantalla se ve al mismo ancho que en papel (80mm) para
+                // que lo que se ve sea lo que sale y la medición sea exacta
+                maxWidth: esA4 ? 800 : '80mm',
+                width: esA4 ? undefined : '80mm',
+                padding: esA4 ? 32 : '1mm',
+                // Letra normal, no monoespaciada: a igual tamaño entra más
+                // texto por línea y se lee mucho mejor en térmica. Los números
+                // se alinean con tabular-nums sin necesidad de monoespaciada.
+                fontFamily: '"Helvetica Neue", Arial, Helvetica, sans-serif',
+                fontVariantNumeric: 'tabular-nums',
+                fontSize: esA4 ? 11 : 11.5,
+                lineHeight: esA4 ? undefined : 1.2,
                 // Ticket: TODO en negrita — la térmica imprimía muy claro (pedido de Daniel)
                 fontWeight: esA4 ? 'normal' : 'bold',
                 color: '#000',
@@ -385,33 +393,31 @@ export default async function ImprimirLotePage({
                    Todo en negrita por pedido de Daniel: la térmica imprimía muy
                    claro y no se leía bien. */
                 <>
-                  {/* Logo + encabezado */}
-                  <div style={{ textAlign: 'center' }}>
+                  {/* Encabezado compacto: el logo y las direcciones son lo que
+                      más papel consumía. Logo a 95px (95 × 221/390 = 54 de
+                      alto) y direcciones en una línea cada una. */}
+                  <div style={{ textAlign: 'center', lineHeight: 1.1 }}>
                     {/* eslint-disable-next-line @next/next/no-img-element */}
-                    {/* Alto explícito (130 × 221/390 = 74): sin él la imagen
-                        no ocupa espacio hasta cargar y la medición del alto
-                        del ticket sale ~20 mm corta, con lo que el ticket no
-                        cabe en su página y se parte en dos hojas. */}
-                    <img src="/logo-agrocar.png" alt="AGROCAR" width={130} height={74}
-                      style={{ width: 130, height: 74, margin: '0 auto 1px', display: 'block' }} />
-                    <div style={{ fontFamily: SLOGAN_FONT_STACK, fontSize: 14, color: '#000', marginBottom: 2 }}>
+                    <img src="/logo-agrocar.png" alt="AGROCAR" width={112} height={63}
+                      style={{ width: 112, height: 63, margin: '0 auto', display: 'block' }} />
+                    <div style={{ fontFamily: SLOGAN_FONT_STACK, fontSize: 14, color: '#000' }}>
                       {EMPRESA.slogan}
                     </div>
-                    <div style={{ fontWeight: 'bold', fontSize: 12 }}>{EMPRESA.razon_social} · RUC {EMPRESA.ruc}</div>
-                    <div style={{ fontSize: 9.5 }}>{EMPRESA.direccion_comercial}</div>
-                    <div style={{ fontSize: 9.5 }}>{EMPRESA.direccion_fundo}</div>
-                    <div style={{ fontSize: 9.5 }}>Tel. {EMPRESA.telefono} · {EMPRESA.correo}</div>
+                    <div style={{ fontWeight: 'bold', fontSize: 12.5 }}>{EMPRESA.razon_social} · RUC {EMPRESA.ruc}</div>
+                    <div style={{ fontSize: 10 }}>{EMPRESA.direccion_comercial}</div>
+                    <div style={{ fontSize: 10 }}>{EMPRESA.direccion_fundo}</div>
+                    <div style={{ fontSize: 10 }}>Tel. {EMPRESA.telefono} · {EMPRESA.correo}</div>
                   </div>
 
                   {/* Título y correlativo */}
-                  <div style={{ textAlign: 'center', fontWeight: 'bold', fontSize: 11, marginTop: 5 }}>{titulo}</div>
-                  <div style={{ textAlign: 'center', fontWeight: 'bold', fontSize: 13 }}>{correlativo}</div>
+                  <div style={{ textAlign: 'center', fontWeight: 'bold', fontSize: 12.5, marginTop: 4 }}>{titulo}</div>
+                  <div style={{ textAlign: 'center', fontWeight: 'bold', fontSize: 14, lineHeight: 1.15 }}>{correlativo}</div>
                   {comp.editado && (
                     <div style={{ textAlign: 'center', fontSize: 9, fontWeight: 'bold' }}>⚠ COMPROBANTE EDITADO</div>
                   )}
 
                   {/* Cabecera */}
-                  <div style={{ marginTop: 4, fontSize: 10 }}>
+                  <div style={{ marginTop: 3, fontSize: 10.5, lineHeight: 1.25 }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                       <span>F. Emisión: {fechaEmision}</span>
                       <span>Cond: {condicion}</span>
@@ -428,7 +434,7 @@ export default async function ImprimirLotePage({
                   </div>
 
                   {/* Ítems en 2 líneas: descripción completa arriba, cifras abajo */}
-                  <table style={{ width: '100%', fontSize: 9.5, borderCollapse: 'collapse', marginTop: 4 }}>
+                  <table style={{ width: '100%', fontSize: 10.5, borderCollapse: 'collapse', marginTop: 3, lineHeight: 1.2 }}>
                     <thead>
                       <tr style={{ borderTop: '1px solid #000', borderBottom: '1px solid #000' }}>
                         <th style={{ textAlign: 'left', padding: '1px 0', width: 60 }}>CODIGO</th>
@@ -446,16 +452,16 @@ export default async function ImprimirLotePage({
                       ) : items.map((it: any) => (
                         <Fragment key={it.id}>
                           <tr style={{ verticalAlign: 'top' }}>
-                            <td style={{ padding: '2px 2px 0 0', fontSize: 9 }}>{it.productos?.codigo ?? '—'}</td>
-                            <td colSpan={4} style={{ padding: '2px 0 0 2px' }}>
+                            <td style={{ padding: '2px 3px 0 0', fontSize: 9.5 }}>{it.productos?.codigo ?? '—'}</td>
+                            <td colSpan={4} style={{ padding: '1px 0 0 2px' }}>
                               {(it.descripcion ?? it.productos?.descripcion ?? it.productos?.nombre ?? '—').trim()}
                             </td>
                           </tr>
                           <tr>
                             <td colSpan={2}></td>
-                            <td style={{ textAlign: 'right', padding: '0 2px 2px' }}>{Number(it.cantidad).toFixed(0)}</td>
-                            <td style={{ textAlign: 'right', padding: '0 2px 2px' }}>{fmtNum(Number(it.precio_unitario))}</td>
-                            <td style={{ textAlign: 'right', padding: '0 0 2px 2px' }}>{fmtNum(Number(it.subtotal))}</td>
+                            <td style={{ textAlign: 'right', padding: '0 2px 1px' }}>{Number(it.cantidad).toFixed(0)}</td>
+                            <td style={{ textAlign: 'right', padding: '0 2px 1px' }}>{fmtNum(Number(it.precio_unitario))}</td>
+                            <td style={{ textAlign: 'right', padding: '0 0 1px 2px' }}>{fmtNum(Number(it.subtotal))}</td>
                           </tr>
                         </Fragment>
                       ))}
@@ -463,36 +469,38 @@ export default async function ImprimirLotePage({
                   </table>
 
                   {/* QR + totales lado a lado */}
-                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: 6, marginTop: 6, borderTop: '1px solid #000', paddingTop: 4 }}>
+                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: 5, marginTop: 4, borderTop: '1px solid #000', paddingTop: 3 }}>
                     {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={qrUrl} alt="QR" style={{ width: 65, height: 65, flexShrink: 0 }} />
-                    <div style={{ flex: 1, fontSize: 10 }}>
+                    <img src={qrUrl} alt="QR" width={60} height={60} style={{ width: 60, height: 60, flexShrink: 0 }} />
+                    <div style={{ flex: 1, fontSize: 10.5, lineHeight: 1.3 }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                         <span>OP. GRAVADA:</span><span>S/ {fmtNum(subtotalNum)}</span>
                       </div>
                       <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                         <span>IGV 18%:</span><span>S/ {fmtNum(igvNum)}</span>
                       </div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, borderTop: '1px solid #000', paddingTop: 1, marginTop: 1 }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, borderTop: '1px solid #000', paddingTop: 2, marginTop: 2 }}>
                         <span>IMPORTE TOTAL:</span><span>S/ {fmtNum(totalNum)}</span>
                       </div>
                     </div>
                   </div>
 
-                  <div style={{ fontSize: 9.5, marginTop: 3 }}>
+                  <div style={{ fontSize: 10, marginTop: 3, lineHeight: 1.25 }}>
                     SON: {totalLetras} {monedaLabel}
                   </div>
 
-                  <div style={{ fontSize: 9, marginTop: 4, display: 'flex', justifyContent: 'space-between' }}>
-                    <span>Usuario: {facturador?.full_name ?? '—'}</span>
-                    <span>VDR: {vendedorNombre}</span>
+                  <div style={{ fontSize: 9.5, marginTop: 3, lineHeight: 1.25 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span>Usuario: {facturador?.full_name ?? '—'}</span>
+                      <span>VDR: {vendedorNombre}</span>
+                    </div>
+                    <div>Impreso: {impreso}</div>
                   </div>
-                  <div style={{ fontSize: 9 }}>Impreso: {impreso}</div>
 
-                  <div style={{ textAlign: 'center', marginTop: 4 }}>
+                  <div style={{ textAlign: 'center', marginTop: 4, fontSize: 11 }}>
                     ** GRACIAS POR SU COMPRA **
                   </div>
-                  <div style={{ textAlign: 'center', fontSize: 8 }}>
+                  <div style={{ textAlign: 'center', fontSize: 8.5, lineHeight: 1.2 }}>
                     Representación impresa · Consulta www.sunat.gob.pe
                   </div>
                 </>
