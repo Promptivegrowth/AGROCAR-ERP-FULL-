@@ -10,12 +10,10 @@ import { formatCurrency } from '@/lib/utils'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Loader2, Zap, ChevronRight, ChevronDown, TrendingUp, History } from 'lucide-react'
+import { Loader2, Zap, ChevronRight, ChevronDown, TrendingUp, History, FileSpreadsheet } from 'lucide-react'
 
 const MESES = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic']
 const COLORS_PIE = ['#FBE600', '#0A0A0A', '#94a3b8', '#1e40af', '#16a34a', '#dc2626', '#7c3aed']
-// Margen fallback cuando los productos aún no tienen costo (BD recién poblada)
-const MARGEN_FALLBACK = 0.22
 
 export default function VentasTab() {
   const supabase = createClient()
@@ -49,7 +47,7 @@ export default function VentasTab() {
           .in('estado', ['facturado','despachado','entregado']),
         (supabase as any)
           .from('pedidos')
-          .select('fecha_pedido, total, subtotal, pedidos_items(cantidad, subtotal, utilidad)')
+          .select('fecha_pedido, total, subtotal, pedidos_items(cantidad, subtotal, costo_unitario, utilidad, productos(costo_promedio))')
           .in('estado', ['facturado','despachado','entregado']),
       ])
       setPedidos(p ?? [])
@@ -58,14 +56,44 @@ export default function VentasTab() {
     })()
   }, [anio])
 
-  // ─── Utilidad real con fallback ────────────────────────────────────────────
-  // Por línea: si tiene utilidad guardada (trigger), usar esa. Si no, fallback 22% del subtotal.
-  const utilidadDeLinea = (it: any) => {
-    if (it.utilidad != null && Number(it.utilidad) !== 0) return Number(it.utilidad)
-    return Number(it.subtotal ?? 0) * MARGEN_FALLBACK
+  // ─── Costo y utilidad reales ───────────────────────────────────────────────
+  /**
+   * Costo de la línea = precio de compra × cantidad.
+   *
+   * Christopher: "el precio de compra es el monto ingresado del almacén, el
+   * valor del costo por unidad o kilogramo que se compra al proveedor, en otras
+   * palabras el costo promedio".
+   *
+   * Se prefiere el costo que quedó congelado al vender —es el que de verdad
+   * costó esa mercadería— y si esa línea no lo tiene se usa el costo promedio
+   * que el producto tiene hoy en almacén. Devuelve null cuando el producto
+   * todavía no tiene ningún costo cargado: en ese caso no se inventa nada.
+   *
+   * Antes había un margen fijo del 22% para las líneas sin costo, y encima se
+   * confiaba en la utilidad que guardó el trigger aunque se hubiera calculado
+   * con costo cero. Por eso el CHORIZO CON ORÉGANO figuraba con 92% de margen
+   * y la MORTADELA con 100%: con el costo real son 15% y sin dato.
+   */
+  const costoDeLinea = (it: any): number | null => {
+    const cant = Number(it.cantidad ?? 0)
+    const congelado = Number(it.costo_unitario ?? 0)
+    if (congelado > 0) return congelado * cant
+    const promedio = Number(it.productos?.costo_promedio ?? 0)
+    if (promedio > 0) return promedio * cant
+    return null
   }
+  const utilidadDeLinea = (it: any) => {
+    const costo = costoDeLinea(it)
+    if (costo === null) return 0
+    return Number(it.subtotal ?? 0) - costo
+  }
+  /** Venta que sí tiene costo conocido: es sobre esta que el margen es honesto. */
+  const ventaCosteadaDeLinea = (it: any) =>
+    costoDeLinea(it) === null ? 0 : Number(it.subtotal ?? 0)
+
   const ventaDePedido = (p: any) => (p.pedidos_items ?? []).reduce((a: number, it: any) => a + Number(it.subtotal ?? 0), 0)
   const utilidadDePedido = (p: any) => (p.pedidos_items ?? []).reduce((a: number, it: any) => a + utilidadDeLinea(it), 0)
+  const ventaCosteadaDePedido = (p: any) => (p.pedidos_items ?? []).reduce((a: number, it: any) => a + ventaCosteadaDeLinea(it), 0)
 
   // ─── Filtro por familia ────────────────────────────────────────────────────
   const pedidosFiltrados = useMemo(() => {
@@ -78,7 +106,11 @@ export default function VentasTab() {
 
   const totalVentas = pedidosFiltrados.reduce((a, p) => a + ventaDePedido(p), 0)
   const totalUtilidad = pedidosFiltrados.reduce((a, p) => a + utilidadDePedido(p), 0)
-  const margenPct = totalVentas > 0 ? (totalUtilidad / totalVentas) * 100 : 0
+  // El margen se mide contra la venta que tiene costo conocido, no contra la
+  // venta total: si no, los productos sin costo lo hunden como si no dejaran nada.
+  const totalVentaCosteada = pedidosFiltrados.reduce((a, p) => a + ventaCosteadaDePedido(p), 0)
+  const margenPct = totalVentaCosteada > 0 ? (totalUtilidad / totalVentaCosteada) * 100 : 0
+  const ventaSinCosto = totalVentas - totalVentaCosteada
 
   // ─── Predictivo fin de año ─────────────────────────────────────────────────
   const totalDias = now.getFullYear() === anio
@@ -122,43 +154,54 @@ export default function VentasTab() {
       .sort((a, b) => b.total - a.total)
   }, [pedidosFiltrados])
 
-  // ─── Tabla familia → productos (expandible) con utilidad real ──────────────
+  // ─── Tabla familia → productos (expandible) ────────────────────────────────
+  // Además de ventas y utilidad lleva CANTIDAD y PRECIO PROMEDIO, que
+  // Christopher pidió a la derecha de la columna de ventas. El precio promedio
+  // es ventas ÷ cantidad, tal cual su ejemplo: 14,450.20 / 852 = 16.96.
+  type Acum = { ventas: number; costeada: number; utilidad: number; cantidad: number }
+  const nuevoAcum = (): Acum => ({ ventas: 0, costeada: 0, utilidad: 0, cantidad: 0 })
+
   const tablaFamilia = useMemo(() => {
-    const map = new Map<string, { familia: string; ventas: number; utilidad: number; productos: Map<string, { ventas: number; utilidad: number }> }>()
+    const map = new Map<string, Acum & { familia: string; productos: Map<string, Acum> }>()
     pedidosFiltrados.forEach((p: any) => {
       ;(p.pedidos_items ?? []).forEach((it: any) => {
         const fam = it.productos?.familias?.nombre ?? 'Sin familia'
-        const prev = map.get(fam) ?? { familia: fam, ventas: 0, utilidad: 0, productos: new Map() }
+        const prev = map.get(fam) ?? { familia: fam, ...nuevoAcum(), productos: new Map<string, Acum>() }
         const v = Number(it.subtotal ?? 0)
+        const c = Number(it.cantidad ?? 0)
         const u = utilidadDeLinea(it)
-        prev.ventas += v
-        prev.utilidad += u
+        const vc = ventaCosteadaDeLinea(it)
+        prev.ventas += v; prev.costeada += vc; prev.utilidad += u; prev.cantidad += c
         const pn = it.productos?.descripcion?.trim() || it.productos?.nombre || '—'
-        const pp = prev.productos.get(pn) ?? { ventas: 0, utilidad: 0 }
-        pp.ventas += v
-        pp.utilidad += u
+        const pp = prev.productos.get(pn) ?? nuevoAcum()
+        pp.ventas += v; pp.costeada += vc; pp.utilidad += u; pp.cantidad += c
         prev.productos.set(pn, pp)
         map.set(fam, prev)
       })
     })
+
+    // El margen se mide sobre la venta con costo conocido; si no hay ninguna,
+    // queda en null y la pantalla muestra "—" en vez de un porcentaje falso.
+    const armar = (r: Acum) => ({
+      ventas: Math.round(r.ventas),
+      cantidad: Math.round(r.cantidad * 100) / 100,
+      precioProm: r.cantidad > 0 ? r.ventas / r.cantidad : 0,
+      utilidad: r.costeada > 0 ? Math.round(r.utilidad) : null,
+      margen: r.costeada > 0 ? Math.round((r.utilidad / r.costeada) * 100) : null,
+      sinCosto: r.ventas - r.costeada > 0.009,
+    })
+
     return Array.from(map.values()).map((r) => ({
       familia: r.familia,
-      ventas: Math.round(r.ventas),
-      utilidad: Math.round(r.utilidad),
-      margen: r.ventas > 0 ? Math.round((r.utilidad / r.ventas) * 100) : 0,
+      ...armar(r),
       productos: Array.from(r.productos.entries())
-        .map(([nombre, v]) => ({
-          nombre,
-          ventas: Math.round(v.ventas),
-          utilidad: Math.round(v.utilidad),
-          margen: v.ventas > 0 ? Math.round((v.utilidad / v.ventas) * 100) : 0,
-        }))
+        .map(([nombre, v]) => ({ nombre, ...armar(v) }))
         .sort((a, b) => b.ventas - a.ventas),
     })).sort((a, b) => b.ventas - a.ventas)
   }, [pedidosFiltrados])
 
   const maxVentaFamilia = Math.max(1, ...tablaFamilia.map((f) => f.ventas))
-  const maxUtilidadFamilia = Math.max(1, ...tablaFamilia.map((f) => f.utilidad))
+  const maxUtilidadFamilia = Math.max(1, ...tablaFamilia.map((f) => f.utilidad ?? 0))
 
   // ─── Comparativa anual + ventas por año (línea) ────────────────────────────
   const comparativaAnual = useMemo(() => {
@@ -205,12 +248,74 @@ export default function VentasTab() {
   const maxVentaMes = Math.max(1, ...historico.map((h) => h.ventas))
   const maxUtilidadMes = Math.max(1, ...historico.map((h) => h.utilidad))
 
+  /**
+   * Exporta las cifras del tablero de ventas. Christopher: "sé que no saldrán
+   * idénticos como se muestra en el sistema, pero lo que busco es la
+   * información de los montos y valores que tienen".
+   */
+  const exportarExcel = () => {
+    const f: string[] = []
+    const famNombre = familiaSel === 'todas'
+      ? 'Todas las familias'
+      : (familias.find((x: any) => x.id === familiaSel)?.nombre ?? '')
+    f.push(`DASHBOARD DE VENTAS;Año ${anio};${famNombre}`)
+    f.push('')
+    f.push('RESUMEN')
+    f.push('Concepto;Valor')
+    f.push(`Total ventas;${totalVentas.toFixed(2)}`)
+    f.push(`Total utilidad;${totalUtilidad.toFixed(2)}`)
+    f.push(`Margen %;${margenPct.toFixed(1)}`)
+    f.push(`Venta sin costo cargado;${ventaSinCosto.toFixed(2)}`)
+    f.push(`Proyeccion fin de año;${proyeccionAnual.toFixed(2)}`)
+    f.push('')
+    f.push('TRIMESTRES')
+    f.push('Trimestre;Ventas;Utilidad;Margen %')
+    trimestres.forEach((t) => f.push(`${t.label};${t.ventas};${t.utilidad};${t.margen}`))
+    f.push('')
+    f.push('VENTAS POR FAMILIA (donut)')
+    f.push('Familia;Ventas')
+    porFamilia.forEach((r) => f.push(`"${r.nombre}";${r.total}`))
+    f.push('')
+    f.push('TOTALES POR FAMILIA Y PRODUCTOS')
+    f.push('Nivel;Familia;Producto;Ventas;Cantidad;Precio promedio;Utilidad;Margen %')
+    tablaFamilia.forEach((fam) => {
+      f.push([
+        'FAMILIA', `"${fam.familia}"`, '',
+        fam.ventas, fam.cantidad, fam.precioProm.toFixed(2),
+        fam.utilidad ?? '', fam.margen ?? '',
+      ].join(';'))
+      fam.productos.forEach((pr: any) => {
+        f.push([
+          'PRODUCTO', `"${fam.familia}"`, `"${String(pr.nombre).replace(/"/g, "'")}"`,
+          pr.ventas, pr.cantidad, pr.precioProm.toFixed(2),
+          pr.utilidad ?? '', pr.margen ?? '',
+        ].join(';'))
+      })
+    })
+    f.push('')
+    f.push('COMPARATIVA ANUAL')
+    f.push('Año;Ventas;Utilidad;Margen %')
+    comparativaAnual.forEach((r: any) => f.push(`${r.anio};${r.ventas};${r.utilidad};${r.margen}`))
+    f.push('')
+    f.push('HISTORICO MENSUAL')
+    f.push('Periodo;Ventas;Utilidad;Margen %')
+    historico.forEach((r: any) => f.push(`${r.label};${r.ventas};${r.utilidad};${r.margenPct}`))
+
+    const blob = new Blob([String.fromCharCode(65279) + f.join(String.fromCharCode(13, 10))],
+      { type: 'text/csv;charset=utf-8;' })
+    const a = document.createElement('a')
+    a.href = URL.createObjectURL(blob)
+    a.download = `dashboard_ventas_${anio}.csv`
+    a.click()
+    URL.revokeObjectURL(a.href)
+  }
+
   return (
     <div className="space-y-5">
       {/* Filtros */}
       <div className="bg-slate-800 text-white rounded-xl p-3">
         <p className="text-[10px] uppercase tracking-widest text-center text-slate-400 mb-2">Filtros</p>
-        <div className="grid grid-cols-2 gap-2">
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
           <Select value={String(anio)} onValueChange={(v) => setAnio(Number(v))}>
             <SelectTrigger className="h-9 bg-white text-gray-900 text-xs"><SelectValue /></SelectTrigger>
             <SelectContent>
@@ -224,6 +329,10 @@ export default function VentasTab() {
               {familias.map((f) => <SelectItem key={f.id} value={f.id}>{f.nombre}</SelectItem>)}
             </SelectContent>
           </Select>
+          <button type="button" onClick={exportarExcel}
+            className="h-9 inline-flex items-center justify-center gap-1.5 px-3 rounded-md bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-semibold">
+            <FileSpreadsheet className="w-3.5 h-3.5" /> Excel
+          </button>
         </div>
       </div>
 
@@ -259,7 +368,7 @@ export default function VentasTab() {
                   <p className="text-[11px] uppercase tracking-wide text-amber-900 font-bold">Proyección Fin de Año {anio}</p>
                   <p className="text-2xl font-bold text-gray-900">{formatCurrency(proyeccionAnual)}</p>
                   <p className="text-xs text-gray-700">
-                    Basado en el ritmo diario actual · Utilidad estimada {formatCurrency(proyeccionAnual * (margenPct / 100 || MARGEN_FALLBACK))}
+                    Basado en el ritmo diario actual · Utilidad estimada {formatCurrency(proyeccionAnual * (margenPct / 100))}
                   </p>
                 </div>
               </CardContent>
@@ -447,6 +556,8 @@ function TablaFamilia({ data, maxVenta, maxUtilidad }: { data: any[]; maxVenta: 
           <tr>
             <th className="text-left py-2 px-3 text-[11px] font-bold text-gray-700 uppercase">Familia / Producto</th>
             <th className="text-left py-2 px-3 text-[11px] font-bold text-gray-700 uppercase">Ventas</th>
+            <th className="text-right py-2 px-3 text-[11px] font-bold text-gray-700 uppercase whitespace-nowrap">Cantidad</th>
+            <th className="text-right py-2 px-3 text-[11px] font-bold text-gray-700 uppercase whitespace-nowrap">Precio prom.</th>
             <th className="text-left py-2 px-3 text-[11px] font-bold text-gray-700 uppercase">Utilidad</th>
             <th className="text-right py-2 px-3 text-[11px] font-bold text-gray-700 uppercase">Margen</th>
           </tr>
@@ -455,7 +566,7 @@ function TablaFamilia({ data, maxVenta, maxUtilidad }: { data: any[]; maxVenta: 
           {data.map((fam, i) => {
             const exp = expandidas.has(fam.familia)
             const maxProdVenta = Math.max(1, ...fam.productos.map((p: any) => p.ventas))
-            const maxProdUtil = Math.max(1, ...fam.productos.map((p: any) => p.utilidad))
+            const maxProdUtil = Math.max(1, ...fam.productos.map((p: any) => p.utilidad ?? 0))
             return (
               <>
                 <tr
@@ -470,19 +581,35 @@ function TablaFamilia({ data, maxVenta, maxUtilidad }: { data: any[]; maxVenta: 
                     </span>
                   </td>
                   <td className="py-2 px-3"><BarraMonto valor={fam.ventas} max={maxVenta} color="#FBE600" textColor="text-gray-900 font-semibold" /></td>
-                  <td className="py-2 px-3"><BarraMonto valor={fam.utilidad} max={maxUtilidad} color="#bfdbfe" textColor="text-blue-700" /></td>
+                  <td className="py-2 px-3 text-right text-xs font-semibold text-gray-800 tabular-nums">{cant(fam.cantidad)}</td>
+                  <td className="py-2 px-3 text-right text-xs font-semibold text-gray-800 tabular-nums whitespace-nowrap">{formatCurrency(fam.precioProm)}</td>
+                  <td className="py-2 px-3">
+                    {fam.utilidad === null
+                      ? <span className="text-xs text-gray-400">Sin costo</span>
+                      : <BarraMonto valor={fam.utilidad} max={maxUtilidad} color="#bfdbfe" textColor="text-blue-700" />}
+                  </td>
                   <td className="py-2 px-3 text-right">
-                    <span className={`inline-block px-2 py-0.5 rounded text-[11px] font-bold ${fam.margen >= 20 ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
-                      {fam.margen}%
-                    </span>
+                    {fam.margen === null ? (
+                      <span className="text-xs text-gray-400">—</span>
+                    ) : (
+                      <span className={`inline-block px-2 py-0.5 rounded text-[11px] font-bold ${fam.margen >= 20 ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                        {fam.margen}%{fam.sinCosto ? '*' : ''}
+                      </span>
+                    )}
                   </td>
                 </tr>
                 {exp && fam.productos.map((pr: any, j: number) => (
                   <tr key={`prod-${i}-${j}`} className="border-b border-gray-50 bg-white">
                     <td className="py-1.5 px-3 text-xs text-gray-600 pl-10">{pr.nombre}</td>
                     <td className="py-1.5 px-3"><BarraMonto valor={pr.ventas} max={maxProdVenta} color="#fde68a" textColor="text-gray-700" small /></td>
-                    <td className="py-1.5 px-3"><BarraMonto valor={pr.utilidad} max={maxProdUtil} color="#dbeafe" textColor="text-blue-600" small /></td>
-                    <td className="py-1.5 px-3 text-xs text-right text-gray-500">{pr.margen}%</td>
+                    <td className="py-1.5 px-3 text-xs text-right text-gray-700 tabular-nums">{cant(pr.cantidad)}</td>
+                    <td className="py-1.5 px-3 text-xs text-right text-gray-700 tabular-nums whitespace-nowrap">{formatCurrency(pr.precioProm)}</td>
+                    <td className="py-1.5 px-3">
+                      {pr.utilidad === null
+                        ? <span className="text-[10px] text-gray-400">Sin costo cargado</span>
+                        : <BarraMonto valor={pr.utilidad} max={maxProdUtil} color="#dbeafe" textColor="text-blue-600" small />}
+                    </td>
+                    <td className="py-1.5 px-3 text-xs text-right text-gray-500">{pr.margen === null ? '—' : `${pr.margen}%`}</td>
                   </tr>
                 ))}
               </>
@@ -490,8 +617,21 @@ function TablaFamilia({ data, maxVenta, maxUtilidad }: { data: any[]; maxVenta: 
           })}
         </tbody>
       </table>
+      {data.some((f: any) => f.sinCosto) && (
+        <p className="text-[10px] text-gray-500 px-3 py-2 border-t">
+          * Hay productos sin costo de compra cargado en almacén. Su venta se
+          cuenta, pero no entra al margen: se calcula solo sobre la venta con
+          costo conocido para no inflarlo.
+        </p>
+      )}
     </div>
   )
+}
+
+/** Cantidades: enteras cuando lo son, con decimales cuando se vende por kilo. */
+function cant(v: number) {
+  const n = Number(v ?? 0)
+  return n.toLocaleString('es-PE', { maximumFractionDigits: 2 })
 }
 
 function BarraMonto({ valor, max, color, textColor = '', small = false }: { valor: number; max: number; color: string; textColor?: string; small?: boolean }) {
