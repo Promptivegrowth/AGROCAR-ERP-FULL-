@@ -11,7 +11,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import {
   Users, TrendingUp, ShoppingCart, Target, Receipt, MapPin,
-  Loader2, Award, Activity, CreditCard,
+  Loader2, Award, Activity, CreditCard, FileSpreadsheet,
 } from 'lucide-react'
 
 type Vendedor = { id: string; full_name: string; email: string; zona: string | null }
@@ -36,7 +36,11 @@ export default function VendedoresTab() {
   const [loading, setLoading] = useState(true)
   const [vendedores, setVendedores] = useState<Vendedor[]>([])
   const [vendedorSel, setVendedorSel] = useState<string>('todos')
-  const [periodo, setPeriodo] = useState<Periodo>('30')
+  // Rango de fechas en vez del selector de "últimos N días". Christopher:
+  // "cambiar el periodo por rango de fechas, que tenga ese mismo modelo"
+  // —el del Análisis zonificado—, para poder mirar cualquier tramo.
+  const [desdeFecha, setDesdeFecha] = useState(toISODate(daysAgo(30)))
+  const [hastaFecha, setHastaFecha] = useState(toISODate(new Date()))
   const [pedidos, setPedidos] = useState<Pedido[]>([])
   const [cobros, setCobros] = useState<Cobro[]>([])
   const [checkins, setCheckins] = useState<Checkin[]>([])
@@ -59,7 +63,8 @@ export default function VendedoresTab() {
 
   // Cargar datos del período seleccionado
   useEffect(() => {
-    const desde = toISODate(daysAgo(Number(periodo)))
+    const desde = desdeFecha
+    const hasta = hastaFecha
     ;(async () => {
       setLoading(true)
       const [{ data: p }, { data: c }, { data: g }, { data: m }] = await Promise.all([
@@ -71,16 +76,19 @@ export default function VendedoresTab() {
             pedidos_items(cantidad, precio_unitario, subtotal, productos(nombre, descripcion, familias(nombre)))
           `)
           .gte('fecha_pedido', desde)
+          .lte('fecha_pedido', hasta)
           .in('estado', ['facturado','despachado','entregado'])
           .order('fecha_pedido', { ascending: true }),
         (supabase as any)
           .from('cobros')
           .select('cobrador_id, fecha, total')
-          .gte('fecha', desde),
+          .gte('fecha', desde)
+          .lte('fecha', hasta),
         (supabase as any)
           .from('gps_checkins')
           .select('usuario_id, cliente_id, created_at')
-          .gte('created_at', desde + 'T00:00:00'),
+          .gte('created_at', desde + 'T00:00:00')
+          .lte('created_at', hasta + 'T23:59:59'),
         (supabase as any)
           .from('metas_vendedor')
           .select('vendedor_id, anio, mes, monto_meta')
@@ -111,7 +119,7 @@ export default function VendedoresTab() {
       setMetas((m ?? []).map((x: any) => ({ vendedor_id: x.vendedor_id, anio: x.anio, mes: x.mes, monto_meta: Number(x.monto_meta) })))
       setLoading(false)
     })()
-  }, [periodo])
+  }, [desdeFecha, hastaFecha])
 
   // Filtrar por vendedor seleccionado
   const pedidosFiltrados = useMemo(
@@ -160,8 +168,9 @@ export default function VendedoresTab() {
   // 1. Ventas por día
   const ventasPorDia = useMemo(() => {
     const map = new Map<string, number>()
-    const desde = daysAgo(Number(periodo))
-    for (let d = new Date(desde); d <= now; d.setDate(d.getDate() + 1)) {
+    const ini = new Date(desdeFecha + 'T12:00:00')
+    const fin = new Date(hastaFecha + 'T12:00:00')
+    for (let d = new Date(ini); d <= fin; d.setDate(d.getDate() + 1)) {
       map.set(toISODate(d), 0)
     }
     pedidosFiltrados.forEach((p) => {
@@ -171,7 +180,7 @@ export default function VendedoresTab() {
       dia: new Date(d + 'T12:00:00').toLocaleDateString('es-PE', { day: '2-digit', month: 'short' }),
       total: Math.round(t * 100) / 100,
     }))
-  }, [pedidosFiltrados, periodo])
+  }, [pedidosFiltrados, desdeFecha, hastaFecha])
 
   // 2. Meta vs real por mes (últimos 3 meses)
   const metaVsReal = useMemo(() => {
@@ -275,6 +284,76 @@ export default function VendedoresTab() {
       .slice(0, 10)
   }, [pedidosFiltrados])
 
+  /**
+   * Exporta a Excel los datos que alimentan el tablero.
+   *
+   * Christopher: "sé que no saldrán idénticos como se muestra en el sistema,
+   * pero lo que busco es la información de los montos y valores". Por eso se
+   * exportan las CIFRAS de cada gráfico —una sección por bloque— y no una
+   * imagen: así se puede analizar y armar gráficos propios en Excel.
+   */
+  const exportarExcel = () => {
+    const f: string[] = []
+    const vendedorNombre = vendedorSel === 'todos'
+      ? 'Todos los vendedores'
+      : (vendedores.find((v) => v.id === vendedorSel)?.full_name ?? '')
+
+    f.push(`DASHBOARD DE VENDEDORES;${desdeFecha} a ${hastaFecha};${vendedorNombre}`)
+    f.push('')
+
+    f.push('INDICADORES')
+    f.push('Concepto;Valor')
+    f.push(`Ventas;${ventasTotal.toFixed(2)}`)
+    f.push(`Pedidos;${pedidosCount}`)
+    f.push(`Ticket promedio;${ticketPromedio.toFixed(2)}`)
+    f.push(`Clientes unicos;${clientesUnicos}`)
+    f.push(`Total cobrado;${totalCobrado.toFixed(2)}`)
+    f.push(`Tasa de cobro %;${tasaCobro.toFixed(1)}`)
+    f.push(`Visitas GPS;${visitasGps}`)
+    f.push(`Tasa de conversion %;${tasaConversion.toFixed(1)}`)
+    f.push(`Meta del mes;${metaMesActual.toFixed(2)}`)
+    f.push(`Ventas del mes;${ventasMesActual.toFixed(2)}`)
+    f.push(`Cumplimiento %;${pctMeta.toFixed(1)}`)
+    f.push('')
+
+    const seccion = (titulo: string, cabecera: string, filas: string[]) => {
+      if (filas.length === 0) return
+      f.push(titulo); f.push(cabecera); f.push(...filas); f.push('')
+    }
+
+    seccion('VENTAS POR DIA', 'Dia;Total',
+      ventasPorDia.map((d) => `${d.dia};${d.total.toFixed(2)}`))
+
+    seccion('META VS REAL', 'Mes;Meta;Real',
+      metaVsReal.map((m) => `${m.mes};${m.meta.toFixed(2)};${m.real.toFixed(2)}`))
+
+    seccion('RANKING DE VENDEDORES', 'Vendedor;Ventas',
+      rankingVendedores.map((r) => `"${r.nombre}";${r.ventas.toFixed(2)}`))
+
+    seccion('VENTAS POR FAMILIA', 'Familia;Total',
+      topFamilias.map((x: any) => `"${x.familia ?? x.nombre}";${Number(x.total ?? x.value ?? 0).toFixed(2)}`))
+
+    seccion('VENTAS POR ZONA', 'Zona;Total',
+      ventasPorZona.map((x: any) => `"${x.zona ?? x.nombre}";${Number(x.total ?? x.value ?? 0).toFixed(2)}`))
+
+    seccion('MIX DE COMPROBANTES', 'Tipo;Total',
+      mixComprobantes.map((x: any) => `"${x.name ?? x.tipo}";${Number(x.value ?? x.total ?? 0).toFixed(2)}`))
+
+    seccion('TOP CLIENTES', 'Cliente;Total',
+      topClientes.map((c) => `"${c.cliente.replace(/"/g, "'")}";${c.total.toFixed(2)}`))
+
+    seccion('TOP PRODUCTOS', 'Producto;Cantidad;Total',
+      topProductos.map((pr) => `"${pr.producto.replace(/"/g, "'")}";${pr.cantidad};${pr.total.toFixed(2)}`))
+
+    const blob = new Blob([String.fromCharCode(65279) + f.join(String.fromCharCode(13, 10))], { type: 'text/csv;charset=utf-8;' })
+
+    const a = document.createElement('a')
+    a.href = URL.createObjectURL(blob)
+    a.download = `dashboard_vendedores_${desdeFecha}_a_${hastaFecha}.csv`
+    a.click()
+    URL.revokeObjectURL(a.href)
+  }
+
   return (
     <div className="space-y-5">
       {/* Selectores */}
@@ -298,18 +377,23 @@ export default function VendedoresTab() {
               </SelectContent>
             </Select>
           </div>
-          <div className="flex-1 min-w-0">
-            <p className="text-xs text-gray-500 mb-1 font-medium uppercase tracking-wide">Período</p>
-            <Select value={periodo} onValueChange={(v) => setPeriodo(v as Periodo)}>
-              <SelectTrigger className="h-10">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="7">Últimos 7 días</SelectItem>
-                <SelectItem value="30">Últimos 30 días</SelectItem>
-                <SelectItem value="90">Últimos 90 días</SelectItem>
-              </SelectContent>
-            </Select>
+          <div className="min-w-0 order-last ml-auto self-end">
+            <button type="button" onClick={exportarExcel}
+              className="h-10 px-3 inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-md hover:bg-emerald-100">
+              <FileSpreadsheet className="w-4 h-4" /> Excel
+            </button>
+          </div>
+          <div className="min-w-0">
+            <p className="text-xs text-gray-500 mb-1 font-medium uppercase tracking-wide">Desde</p>
+            <input type="date" value={desdeFecha} max={hastaFecha}
+              onChange={(e) => setDesdeFecha(e.target.value)}
+              className="h-10 px-2 text-sm border border-gray-300 rounded-md bg-white w-[145px]" />
+          </div>
+          <div className="min-w-0">
+            <p className="text-xs text-gray-500 mb-1 font-medium uppercase tracking-wide">Hasta</p>
+            <input type="date" value={hastaFecha} min={desdeFecha}
+              onChange={(e) => setHastaFecha(e.target.value)}
+              className="h-10 px-2 text-sm border border-gray-300 rounded-md bg-white w-[145px]" />
           </div>
           <div className="flex-1 min-w-0">
             <p className="text-xs text-gray-500 mb-1 font-medium uppercase tracking-wide">Cumplimiento del mes</p>
