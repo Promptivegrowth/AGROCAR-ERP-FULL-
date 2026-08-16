@@ -1,8 +1,8 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { Fragment, useEffect, useMemo, useState } from 'react'
 import {
-  ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Cell,
+  ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
 } from 'recharts'
 import { createClient } from '@/lib/supabase/client'
 import { formatCurrency } from '@/lib/utils'
@@ -29,19 +29,20 @@ export default function CuotasTab() {
   const [pedidos, setPedidos] = useState<any[]>([])
   const [cobros, setCobros] = useState<any[]>([])
   const [cuotasMonto, setCuotasMonto] = useState<any[]>([])
-  const [cuotasProducto, setCuotasProducto] = useState<any[]>([])
-  const [productos, setProductos] = useState<any[]>([])
+  // Alcance de objetivos del rango: es la MISMA fuente que el reporte de
+  // Gestión de Vendedores, agrupado por línea (familia). Christopher: "la
+  // información debe provenir de la gestión de vendedor dentro de alcance de
+  // objetivos" y con el mismo modelo.
+  const [alcance, setAlcance] = useState<any>(null)
 
   useEffect(() => {
     ;(async () => {
-      const [{ data: v }, { data: f }, { data: p }] = await Promise.all([
+      const [{ data: v }, { data: f }] = await Promise.all([
         supabase.from('profiles').select('id, full_name').eq('role', 'vendedor').eq('activo', true).order('full_name'),
         supabase.from('familias').select('id, nombre').eq('activo', true).order('nombre'),
-        supabase.from('productos').select('id, codigo, nombre, descripcion, familia_id').eq('activo', true),
       ])
       setVendedores(v ?? [])
       setFamilias(f ?? [])
-      setProductos(p ?? [])
     })()
   }, [])
 
@@ -53,10 +54,7 @@ export default function CuotasTab() {
       const [{ data: peds }, { data: cobs }, { data: m }, { data: cp }] = await Promise.all([
         (supabase as any)
           .from('pedidos')
-          .select(`
-            id, vendedor_id, fecha_pedido, total, subtotal,
-            pedidos_items(producto_id, cantidad, subtotal, productos(id, codigo, nombre, descripcion, familia_id))
-          `)
+          .select('id, vendedor_id, fecha_pedido, total, subtotal')
           .gte('fecha_pedido', desde)
           .lte('fecha_pedido', hasta)
           .in('estado', ['facturado','despachado','entregado']),
@@ -73,23 +71,20 @@ export default function CuotasTab() {
           .from('cuotas_vendedor_familia')
           .select('vendedor_id, anio, mes, cuota_monto')
           .gt('cuota_monto', 0),
-        (supabase as any)
-          .from('cuotas_vendedor_producto')
-          .select('vendedor_id, producto_id, anio, mes, cuota_cantidad, cuota_valor'),
+        (supabase as any).rpc('alcance_objetivos_rango', {
+          p_desde: desde,
+          p_hasta: hasta,
+          p_vendedor_id: vendedorSel === 'todos' ? null : vendedorSel,
+          p_familia_id: familiaSel === 'todas' ? null : familiaSel,
+        }),
       ])
       setPedidos(peds ?? [])
       setCobros(cobs ?? [])
       setCuotasMonto(m ?? [])
-      setCuotasProducto(cp ?? [])
+      setAlcance(cp ?? null)
       setLoading(false)
     })()
-  }, [desdeFecha, hastaFecha])
-
-  // Filtro por vendedor/familia
-  const pedidosFiltrados = useMemo(() => {
-    if (vendedorSel === 'todos') return pedidos
-    return pedidos.filter((p) => p.vendedor_id === vendedorSel)
-  }, [pedidos, vendedorSel])
+  }, [desdeFecha, hastaFecha, vendedorSel, familiaSel])
 
   /**
    * Cuota que le corresponde al rango elegido.
@@ -168,56 +163,7 @@ export default function CuotasTab() {
   const proyeccion = promedioDiario * diasRango
   const pctProyectado = totalCuota > 0 ? (proyeccion / totalCuota) * 100 : 0
 
-  // Tabla detalle por producto (real vs cuota)
-  const porProducto = useMemo(() => {
-    const map = new Map<string, { prod: any; cantReal: number; valorReal: number }>()
-    pedidosFiltrados.forEach((p: any) => {
-      ;(p.pedidos_items ?? []).forEach((it: any) => {
-        const pid = it.producto_id
-        const prev = map.get(pid) ?? { prod: it.productos, cantReal: 0, valorReal: 0 }
-        prev.cantReal += Number(it.cantidad ?? 0)
-        prev.valorReal += Number(it.subtotal ?? 0)
-        map.set(pid, prev)
-      })
-    })
-
-    /**
-     * Cuota del producto dentro del rango. Igual que la cuota de monto, cada
-     * fila mes/año aporta solo la parte proporcional a los días que el rango
-     * cubre de ese mes: sin esto la tabla sumaba TODOS los meses cargados y la
-     * meta salía inflada apenas hubiera más de un mes en la base.
-     */
-    const cuotaProd = new Map<string, { cant: number; valor: number }>()
-    cuotasProducto.forEach((c: any) => {
-      if (vendedorSel !== 'todos' && c.vendedor_id !== vendedorSel) return
-      const f = factorMes(Number(c.anio), Number(c.mes))
-      if (f === 0) return
-      const prev = cuotaProd.get(c.producto_id) ?? { cant: 0, valor: 0 }
-      prev.cant += Number(c.cuota_cantidad ?? 0) * f
-      prev.valor += Number(c.cuota_valor ?? 0) * f
-      cuotaProd.set(c.producto_id, prev)
-    })
-
-    const result = Array.from(map.values()).map((r) => {
-      const c = cuotaProd.get(r.prod?.id)
-      const cantCuota = c?.cant ?? 0
-      const valorCuota = c?.valor ?? 0
-      return {
-        codigo: r.prod?.codigo ?? '—',
-        nombre: r.prod?.descripcion?.trim() || r.prod?.nombre || '—',
-        familia_id: r.prod?.familia_id,
-        cantReal: Math.round(r.cantReal * 100) / 100,
-        cantCuota: Math.round(cantCuota * 100) / 100,
-        margenCant: cantCuota > 0 ? (r.cantReal / cantCuota) * 100 : 0,
-        valorReal: Math.round(r.valorReal * 100) / 100,
-        valorCuota: Math.round(valorCuota * 100) / 100,
-        margenValor: valorCuota > 0 ? (r.valorReal / valorCuota) * 100 : 0,
-      }
-    })
-
-    if (familiaSel !== 'todas') return result.filter((r) => r.familia_id === familiaSel)
-    return result.sort((a, b) => b.valorReal - a.valorReal)
-  }, [pedidosFiltrados, cuotasProducto, vendedorSel, familiaSel, factorMes])
+  const lineas: any[] = alcance?.lineas ?? []
 
   /**
    * Exporta los montos y valores del tablero de cuotas. Christopher pidió las
@@ -246,15 +192,30 @@ export default function CuotasTab() {
       f.push(`"${v.nombre}";${v.cuota.toFixed(2)};${v.ventas.toFixed(2)};${pct.toFixed(1)};${v.cobrado.toFixed(2)}`)
     })
     f.push('')
-    f.push('POR PRODUCTO')
-    f.push('Codigo;Producto;Cant. real;Cant. cuota;Alc. cant %;Valor real;Valor cuota;Alc. valor %')
-    porProducto.forEach((r: any) => {
+    f.push('ALCANCE DE OBJETIVOS POR LINEA Y PRODUCTO')
+    f.push('Linea;Codigo;Descripcion;Cant. real;Cant. cuota;Alc. cant %;Valor real;Valor cuota;Alc. valor %')
+    lineas.forEach((l: any) => {
+      const linea = `LINEA ${l.codigo} - ${l.nombre}`
+      ;(l.productos ?? []).forEach((r: any) => {
+        f.push([
+          `"${linea}"`, r.codigo, `"${String(r.descripcion ?? '').replace(/"/g, "'")}"`,
+          r.cant_real, r.cant_cuota, r.alc_cant ?? '',
+          r.valor_real, r.valor_cuota, r.alc_valor ?? '',
+        ].join(';'))
+      })
       f.push([
-        r.codigo, `"${String(r.nombre).replace(/"/g, "'")}"`,
-        r.cantReal, r.cantCuota, (r.margenCant ?? 0).toFixed(1),
-        r.valorReal, r.valorCuota, (r.margenValor ?? 0).toFixed(1),
+        `"TOTAL ${linea}"`, '', '',
+        l.tot_cant_real, l.tot_cant_cuota, l.alc_cant ?? '',
+        l.tot_valor_real, l.tot_valor_cuota, l.alc_valor ?? '',
       ].join(';'))
     })
+    if (alcance) {
+      f.push([
+        '"TOTAL GENERAL"', '', '',
+        alcance.total_cant_real, alcance.total_cant_cuota, '',
+        alcance.total_valor_real, alcance.total_valor_cuota, alcance.alc_total ?? '',
+      ].join(';'))
+    }
     const blob = new Blob([String.fromCharCode(65279) + f.join(String.fromCharCode(13, 10))],
       { type: 'text/csv;charset=utf-8;' })
     const a = document.createElement('a')
@@ -378,60 +339,109 @@ export default function CuotasTab() {
             />
           </div>
 
-          {/* Tabla detallada por producto */}
+          {/* Alcance de objetivos: mismo modelo del reporte de Gestión de
+              Vendedores — productos clasificados por línea (familia), total por
+              línea y total general. */}
           <Card className="border-gray-200 shadow-sm">
             <CardHeader className="pb-2 bg-black text-white rounded-t-xl">
               <CardTitle className="text-base font-bold flex items-center gap-2">
                 <Package className="w-4 h-4" />
                 Descripción detallada de las cuotas por producto
               </CardTitle>
+              <p className="text-[11px] text-gray-300 font-normal">
+                Alcance de objetivos del rango · {alcance?.vendedor_nombre ?? '—'}
+              </p>
             </CardHeader>
             <CardContent className="p-0">
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead className="bg-gray-100 border-b">
                     <tr>
-                      {['Código', 'Descripción', 'Cant. Real', 'Cant. Cuota', 'Margen Cant.', 'Valor Real', 'Valor Cuota', 'Margen Valor'].map((h) => (
-                        <th key={h} className="text-left py-2 px-3 text-[11px] font-bold text-gray-700 uppercase tracking-wide">{h}</th>
+                      <th className="text-left py-2 px-3 text-[11px] font-bold text-gray-700 uppercase tracking-wide">Código</th>
+                      <th className="text-left py-2 px-3 text-[11px] font-bold text-gray-700 uppercase tracking-wide">Descripción</th>
+                      {['Cant. Real', 'Cant. Cuota', 'Alc. Cant.', 'Valor Real', 'Valor Cuota', 'Alc. Valor'].map((h) => (
+                        <th key={h} className="text-right py-2 px-3 text-[11px] font-bold text-gray-700 uppercase tracking-wide whitespace-nowrap">{h}</th>
                       ))}
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-gray-100">
-                    {porProducto.length === 0 ? (
-                      <tr><td colSpan={8} className="py-8 text-center text-gray-400 text-xs">Sin datos en el período</td></tr>
-                    ) : porProducto.map((p, i) => {
-                      const cantColor = p.margenCant >= 100 ? 'bg-green-50 text-green-700' : p.margenCant >= 70 ? 'bg-amber-50 text-amber-700' : 'bg-red-50 text-red-700'
-                      const valColor = p.margenValor >= 100 ? 'bg-green-50 text-green-700' : p.margenValor >= 70 ? 'bg-amber-50 text-amber-700' : 'bg-red-50 text-red-700'
-                      return (
-                        <tr key={i} className="hover:bg-gray-50">
-                          <td className="py-2 px-3 text-xs font-mono text-gray-600">{p.codigo}</td>
-                          <td className="py-2 px-3 text-xs font-medium text-gray-800">{p.nombre}</td>
-                          <td className="py-2 px-3 text-xs text-gray-700 text-center">{p.cantReal}</td>
-                          <td className="py-2 px-3 text-xs text-gray-500 text-center">{p.cantCuota || '—'}</td>
-                          <td className="py-2 px-3">
-                            <span className={`inline-block px-2 py-0.5 rounded text-[11px] font-semibold ${cantColor}`}>
-                              {p.cantCuota > 0 ? `${p.margenCant.toFixed(0)}%` : '—'}
-                            </span>
-                          </td>
-                          <td className="py-2 px-3 text-xs font-semibold text-gray-800">{formatCurrency(p.valorReal)}</td>
-                          <td className="py-2 px-3 text-xs text-gray-500">{p.valorCuota > 0 ? formatCurrency(p.valorCuota) : '—'}</td>
-                          <td className="py-2 px-3">
-                            <span className={`inline-block px-2 py-0.5 rounded text-[11px] font-semibold ${valColor}`}>
-                              {p.valorCuota > 0 ? `${p.margenValor.toFixed(0)}%` : '—'}
-                            </span>
+                  <tbody>
+                    {lineas.length === 0 ? (
+                      <tr><td colSpan={8} className="py-8 text-center text-gray-400 text-xs">Sin cuotas ni ventas en el rango</td></tr>
+                    ) : lineas.map((l: any) => (
+                      <Fragment key={l.codigo + l.nombre}>
+                        <tr className="bg-gray-800 text-white">
+                          <td colSpan={8} className="py-1.5 px-3 text-[11px] font-bold tracking-wide">
+                            LÍNEA {l.codigo} - {l.nombre}
                           </td>
                         </tr>
-                      )
-                    })}
+                        {(l.productos ?? []).map((r: any, i: number) => (
+                          <tr key={r.codigo + i} className="border-b border-gray-100 hover:bg-amber-50/40">
+                            <td className="py-1.5 px-3 text-xs font-mono text-gray-600 whitespace-nowrap">{r.codigo}</td>
+                            <td className="py-1.5 px-3 text-xs text-gray-800">{r.descripcion}</td>
+                            <td className="py-1.5 px-3 text-xs text-gray-700 text-right tabular-nums">{num(r.cant_real)}</td>
+                            <td className="py-1.5 px-3 text-xs text-gray-700 text-right tabular-nums">{num(r.cant_cuota)}</td>
+                            <td className={`py-1.5 px-3 text-xs text-right tabular-nums font-semibold ${colorAlc(r.alc_cant)}`}>{pct(r.alc_cant)}</td>
+                            <td className="py-1.5 px-3 text-xs text-gray-800 text-right tabular-nums">{num(r.valor_real)}</td>
+                            <td className="py-1.5 px-3 text-xs text-gray-700 text-right tabular-nums">{num(r.valor_cuota)}</td>
+                            <td className={`py-1.5 px-3 text-xs text-right tabular-nums font-semibold ${colorAlc(r.alc_valor)}`}>{pct(r.alc_valor)}</td>
+                          </tr>
+                        ))}
+                        <tr className="bg-gray-100 border-b-2 border-gray-300">
+                          <td colSpan={2} className="py-1.5 px-3 text-[11px] font-bold text-gray-800 text-right">
+                            TOTAL LÍNEA {l.codigo} - {l.nombre}
+                          </td>
+                          <td className="py-1.5 px-3 text-xs font-bold text-gray-800 text-right tabular-nums">{num(l.tot_cant_real)}</td>
+                          <td className="py-1.5 px-3 text-xs font-bold text-gray-800 text-right tabular-nums">{num(l.tot_cant_cuota)}</td>
+                          <td className={`py-1.5 px-3 text-xs text-right tabular-nums font-bold ${colorAlc(l.alc_cant)}`}>{pct(l.alc_cant)}</td>
+                          <td className="py-1.5 px-3 text-xs font-bold text-gray-800 text-right tabular-nums">{num(l.tot_valor_real)}</td>
+                          <td className="py-1.5 px-3 text-xs font-bold text-gray-800 text-right tabular-nums">{num(l.tot_valor_cuota)}</td>
+                          <td className={`py-1.5 px-3 text-xs text-right tabular-nums font-bold ${colorAlc(l.alc_valor)}`}>{pct(l.alc_valor)}</td>
+                        </tr>
+                      </Fragment>
+                    ))}
+                    {lineas.length > 0 && (
+                      <tr className="bg-[#FBE600]">
+                        <td colSpan={2} className="py-2 px-3 text-[11px] font-bold text-gray-900 text-right">TOTAL GENERAL</td>
+                        <td className="py-2 px-3 text-xs font-bold text-gray-900 text-right tabular-nums">{num(alcance?.total_cant_real)}</td>
+                        <td className="py-2 px-3 text-xs font-bold text-gray-900 text-right tabular-nums">{num(alcance?.total_cant_cuota)}</td>
+                        <td className="py-2 px-3" />
+                        <td className="py-2 px-3 text-xs font-bold text-gray-900 text-right tabular-nums">{num(alcance?.total_valor_real)}</td>
+                        <td className="py-2 px-3 text-xs font-bold text-gray-900 text-right tabular-nums">{num(alcance?.total_valor_cuota)}</td>
+                        <td className="py-2 px-3 text-xs font-bold text-gray-900 text-right tabular-nums">{pct(alcance?.alc_total)}</td>
+                      </tr>
+                    )}
                   </tbody>
                 </table>
               </div>
+              <p className="text-[10px] text-gray-500 px-3 py-2 border-t">
+                Venta facturada del rango: comprobantes emitidos con las notas
+                de crédito restando, igual que el reporte Alcance de objetivos
+                de Gestión de Vendedores. Puede no coincidir con «Total Venta»
+                de arriba, que cuenta los pedidos por su fecha de pedido y no
+                por la fecha de emisión del comprobante.
+              </p>
             </CardContent>
           </Card>
         </>
       )}
     </div>
   )
+}
+
+/** Miles con dos decimales, como en el reporte impreso. */
+function num(v: any) {
+  const n = Number(v ?? 0)
+  return n.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+}
+
+function pct(v: any) {
+  return v === null || v === undefined ? '—' : `${Number(v).toFixed(2)}%`
+}
+
+function colorAlc(v: any) {
+  if (v === null || v === undefined) return 'text-gray-400'
+  const n = Number(v)
+  return n >= 100 ? 'text-green-600' : n >= 70 ? 'text-amber-600' : 'text-red-600'
 }
 
 function KpiCuota({ label, value, icon: Icon, color, desc }: { label: string; value: string; icon: any; color: string; desc?: string }) {
