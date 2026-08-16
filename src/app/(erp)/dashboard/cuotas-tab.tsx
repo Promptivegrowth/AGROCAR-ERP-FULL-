@@ -8,9 +8,8 @@ import { createClient } from '@/lib/supabase/client'
 import { formatCurrency } from '@/lib/utils'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Target, TrendingUp, TrendingDown, Loader2, Award, Package } from 'lucide-react'
+import { Target, TrendingUp, TrendingDown, Loader2, Award, Package, FileSpreadsheet } from 'lucide-react'
 
-const MESES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
 const BRAND = '#FBE600'
 const GRAY = '#94a3b8'
 
@@ -18,8 +17,10 @@ export default function CuotasTab() {
   const supabase = createClient()
   const now = new Date()
   const [loading, setLoading] = useState(true)
-  const [anio, setAnio] = useState<number>(now.getFullYear())
-  const [mes, setMes] = useState<number>(now.getMonth() + 1)
+  // Rango de fechas, igual que el Análisis zonificado (pedido de Christopher)
+  const primeroDelMes = new Date(now.getFullYear(), now.getMonth(), 1)
+  const [desdeFecha, setDesdeFecha] = useState(primeroDelMes.toISOString().split('T')[0])
+  const [hastaFecha, setHastaFecha] = useState(now.toISOString().split('T')[0])
   const [vendedorSel, setVendedorSel] = useState<string>('todos')
   const [familiaSel, setFamiliaSel] = useState<string>('todas')
 
@@ -47,8 +48,8 @@ export default function CuotasTab() {
   useEffect(() => {
     ;(async () => {
       setLoading(true)
-      const desde = `${anio}-${String(mes).padStart(2, '0')}-01`
-      const hasta = new Date(anio, mes, 0).toISOString().split('T')[0]
+      const desde = desdeFecha
+      const hasta = hastaFecha
       const [{ data: peds }, { data: cobs }, { data: m }, { data: cp }] = await Promise.all([
         (supabase as any)
           .from('pedidos')
@@ -64,14 +65,17 @@ export default function CuotasTab() {
           .select('cobrador_id, fecha, total')
           .gte('fecha', desde)
           .lte('fecha', hasta),
+        // La cuota del vendedor sale del rollup por familia de las cuotas por
+        // producto. Antes se leía `metas_vendedor` y `cuotas_producto`, dos
+        // tablas que están VACÍAS: por eso todo el tablero mostraba cero
+        // aunque Daniel ya tenía sus cuotas cargadas.
         (supabase as any)
-          .from('metas_vendedor')
-          .select('vendedor_id, monto_meta')
-          .eq('anio', anio).eq('mes', mes).eq('periodo', 'mensual'),
+          .from('cuotas_vendedor_familia')
+          .select('vendedor_id, anio, mes, cuota_monto')
+          .gt('cuota_monto', 0),
         (supabase as any)
-          .from('cuotas_producto')
-          .select('vendedor_id, producto_id, cant_cuota, valor_cuota')
-          .eq('anio', anio).eq('mes', mes),
+          .from('cuotas_vendedor_producto')
+          .select('vendedor_id, producto_id, anio, mes, cuota_cantidad, cuota_valor'),
       ])
       setPedidos(peds ?? [])
       setCobros(cobs ?? [])
@@ -79,7 +83,7 @@ export default function CuotasTab() {
       setCuotasProducto(cp ?? [])
       setLoading(false)
     })()
-  }, [anio, mes])
+  }, [desdeFecha, hastaFecha])
 
   // Filtro por vendedor/familia
   const pedidosFiltrados = useMemo(() => {
@@ -87,32 +91,81 @@ export default function CuotasTab() {
     return pedidos.filter((p) => p.vendedor_id === vendedorSel)
   }, [pedidos, vendedorSel])
 
+  /**
+   * Cuota que le corresponde al rango elegido.
+   *
+   * La cuota se asigna por MES, pero el filtro es un rango libre. Sumar los
+   * meses completos que toca el rango inflaría la meta: un rango del 16/07 al
+   * 15/08 sumaría julio y agosto enteros cuando solo cubre media parte de cada
+   * uno. Por eso cada mes aporta en proporción a los días que el rango cubre
+   * de ese mes, y el porcentaje de cumplimiento queda comparable.
+   */
+  const factorMes = useMemo(() => {
+    const ini = new Date(desdeFecha + 'T12:00:00')
+    const fin = new Date(hastaFecha + 'T12:00:00')
+    return (anio: number, mes: number) => {
+      const primero = new Date(anio, mes - 1, 1)
+      const ultimo = new Date(anio, mes, 0)
+      const desdeEfec = ini > primero ? ini : primero
+      const hastaEfec = fin < ultimo ? fin : ultimo
+      if (hastaEfec < desdeEfec) return 0
+      const dias = Math.floor((hastaEfec.getTime() - desdeEfec.getTime()) / 86400000) + 1
+      return dias / ultimo.getDate()
+    }
+  }, [desdeFecha, hastaFecha])
+
+  const cuotaDelRango = useMemo(() => {
+    const porVendedor = new Map<string, number>()
+    cuotasMonto.forEach((c: any) => {
+      const f = factorMes(Number(c.anio), Number(c.mes))
+      if (f === 0) return
+      const parte = Number(c.cuota_monto ?? 0) * f
+      porVendedor.set(c.vendedor_id, (porVendedor.get(c.vendedor_id) ?? 0) + parte)
+    })
+    return porVendedor
+  }, [cuotasMonto, factorMes])
+
   // Ventas por vendedor + cobranzas
   const perVendedor = useMemo(() => {
-    return vendedores.map((v) => {
+    const lista = vendedorSel === 'todos'
+      ? vendedores
+      : vendedores.filter((v) => v.id === vendedorSel)
+    return lista.map((v) => {
       const ventas = pedidos.filter((p) => p.vendedor_id === v.id).reduce((a, p) => a + Number(p.total ?? 0), 0)
       const cobrado = cobros.filter((c) => c.cobrador_id === v.id).reduce((a, c) => a + Number(c.total ?? 0), 0)
-      const metas = cuotasMonto.filter((m) => m.vendedor_id === v.id).reduce((a, m) => a + Number(m.monto_meta ?? 0), 0)
       return {
         id: v.id,
+        // Solo el primer nombre y el primer apellido: con el nombre completo
+        // las etiquetas del eje no entran y el gráfico oculta algunas —por eso
+        // Daniel Caichihua aparecía sin nombre.
         nombre: v.full_name.split(' ').slice(0, 2).join(' '),
         ventas: Math.round(ventas),
-        cuota: Math.round(metas),
+        cuota: Math.round(cuotaDelRango.get(v.id) ?? 0),
         cobrado: Math.round(cobrado),
       }
     })
-  }, [vendedores, pedidos, cobros, cuotasMonto])
+  }, [vendedores, pedidos, cobros, cuotaDelRango, vendedorSel])
 
   const totalVenta = perVendedor.reduce((a, v) => a + v.ventas, 0)
   const totalCuota = perVendedor.reduce((a, v) => a + v.cuota, 0)
   const totalCobrado = perVendedor.reduce((a, v) => a + v.cobrado, 0)
   const pctCumplimiento = totalCuota > 0 ? (totalVenta / totalCuota) * 100 : 0
 
-  // Proyección predictiva: promedio diario × días restantes + ventas hasta hoy
-  const diasDelMes = new Date(anio, mes, 0).getDate()
-  const diaHoy = (anio === now.getFullYear() && mes === now.getMonth() + 1) ? now.getDate() : diasDelMes
-  const promedioDiario = diaHoy > 0 ? totalVenta / diaHoy : 0
-  const proyeccion = promedioDiario * diasDelMes
+  // Proyección: se toma el ritmo diario de lo vendido hasta hoy dentro del
+  // rango y se extiende al rango completo. Si el rango ya terminó, la
+  // proyección es lo vendido: no hay nada que proyectar.
+  const diasRango = Math.max(1,
+    Math.floor((new Date(hastaFecha + 'T12:00:00').getTime()
+              - new Date(desdeFecha + 'T12:00:00').getTime()) / 86400000) + 1)
+  const diasTranscurridos = (() => {
+    const fin = new Date(hastaFecha + 'T12:00:00')
+    const hoyD = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 12)
+    const corte = hoyD < fin ? hoyD : fin
+    const d = Math.floor((corte.getTime() - new Date(desdeFecha + 'T12:00:00').getTime()) / 86400000) + 1
+    return Math.max(1, Math.min(d, diasRango))
+  })()
+  const promedioDiario = totalVenta / diasTranscurridos
+  const proyeccion = promedioDiario * diasRango
   const pctProyectado = totalCuota > 0 ? (proyeccion / totalCuota) * 100 : 0
 
   // Tabla detalle por producto (real vs cuota)
@@ -128,28 +181,27 @@ export default function CuotasTab() {
       })
     })
 
-    // Cuota filtrada por vendedor si aplica, sino la general (vendedor_id=null)
-    const cuotaKey = (producto_id: string) => {
-      if (vendedorSel !== 'todos') {
-        const c = cuotasProducto.find((c) => c.vendedor_id === vendedorSel && c.producto_id === producto_id)
-        return c ?? null
-      }
-      // Suma de cuotas de todos los vendedores O cuotas a nivel empresa (vendedor_id null)
-      const porVend = cuotasProducto.filter((c) => c.vendedor_id && c.producto_id === producto_id)
-      if (porVend.length > 0) {
-        return {
-          cant_cuota: porVend.reduce((a, c) => a + Number(c.cant_cuota), 0),
-          valor_cuota: porVend.reduce((a, c) => a + Number(c.valor_cuota), 0),
-        }
-      }
-      const general = cuotasProducto.find((c) => !c.vendedor_id && c.producto_id === producto_id)
-      return general ?? null
-    }
+    /**
+     * Cuota del producto dentro del rango. Igual que la cuota de monto, cada
+     * fila mes/año aporta solo la parte proporcional a los días que el rango
+     * cubre de ese mes: sin esto la tabla sumaba TODOS los meses cargados y la
+     * meta salía inflada apenas hubiera más de un mes en la base.
+     */
+    const cuotaProd = new Map<string, { cant: number; valor: number }>()
+    cuotasProducto.forEach((c: any) => {
+      if (vendedorSel !== 'todos' && c.vendedor_id !== vendedorSel) return
+      const f = factorMes(Number(c.anio), Number(c.mes))
+      if (f === 0) return
+      const prev = cuotaProd.get(c.producto_id) ?? { cant: 0, valor: 0 }
+      prev.cant += Number(c.cuota_cantidad ?? 0) * f
+      prev.valor += Number(c.cuota_valor ?? 0) * f
+      cuotaProd.set(c.producto_id, prev)
+    })
 
     const result = Array.from(map.values()).map((r) => {
-      const c = cuotaKey(r.prod?.id)
-      const cantCuota = c ? Number(c.cant_cuota) : 0
-      const valorCuota = c ? Number(c.valor_cuota) : 0
+      const c = cuotaProd.get(r.prod?.id)
+      const cantCuota = c?.cant ?? 0
+      const valorCuota = c?.valor ?? 0
       return {
         codigo: r.prod?.codigo ?? '—',
         nombre: r.prod?.descripcion?.trim() || r.prod?.nombre || '—',
@@ -165,26 +217,71 @@ export default function CuotasTab() {
 
     if (familiaSel !== 'todas') return result.filter((r) => r.familia_id === familiaSel)
     return result.sort((a, b) => b.valorReal - a.valorReal)
-  }, [pedidosFiltrados, cuotasProducto, vendedorSel, familiaSel])
+  }, [pedidosFiltrados, cuotasProducto, vendedorSel, familiaSel, factorMes])
+
+  /**
+   * Exporta los montos y valores del tablero de cuotas. Christopher pidió las
+   * cifras, no una copia de los gráficos: con esto arma los suyos en Excel.
+   */
+  const exportarExcel = () => {
+    const f: string[] = []
+    const vendedorNombre = vendedorSel === 'todos'
+      ? 'Todos los vendedores'
+      : (vendedores.find((v: any) => v.id === vendedorSel)?.full_name ?? '')
+    f.push(`DASHBOARD DE CUOTAS;${desdeFecha} a ${hastaFecha};${vendedorNombre}`)
+    f.push('')
+    f.push('RESUMEN')
+    f.push('Concepto;Valor')
+    f.push(`Total venta;${totalVenta.toFixed(2)}`)
+    f.push(`Total cuota;${totalCuota.toFixed(2)}`)
+    f.push(`Cumplimiento %;${pctCumplimiento.toFixed(1)}`)
+    f.push(`Total cobrado;${totalCobrado.toFixed(2)}`)
+    f.push(`Proyeccion fin de rango;${proyeccion.toFixed(2)}`)
+    f.push(`Proyeccion %;${pctProyectado.toFixed(1)}`)
+    f.push('')
+    f.push('POR VENDEDOR')
+    f.push('Vendedor;Cuota;Ventas;Cumplimiento %;Cobrado')
+    perVendedor.forEach((v) => {
+      const pct = v.cuota > 0 ? (v.ventas / v.cuota) * 100 : 0
+      f.push(`"${v.nombre}";${v.cuota.toFixed(2)};${v.ventas.toFixed(2)};${pct.toFixed(1)};${v.cobrado.toFixed(2)}`)
+    })
+    f.push('')
+    f.push('POR PRODUCTO')
+    f.push('Codigo;Producto;Cant. real;Cant. cuota;Alc. cant %;Valor real;Valor cuota;Alc. valor %')
+    porProducto.forEach((r: any) => {
+      f.push([
+        r.codigo, `"${String(r.nombre).replace(/"/g, "'")}"`,
+        r.cantReal, r.cantCuota, (r.margenCant ?? 0).toFixed(1),
+        r.valorReal, r.valorCuota, (r.margenValor ?? 0).toFixed(1),
+      ].join(';'))
+    })
+    const blob = new Blob([String.fromCharCode(65279) + f.join(String.fromCharCode(13, 10))],
+      { type: 'text/csv;charset=utf-8;' })
+    const a = document.createElement('a')
+    a.href = URL.createObjectURL(blob)
+    a.download = `dashboard_cuotas_${desdeFecha}_a_${hastaFecha}.csv`
+    a.click()
+    URL.revokeObjectURL(a.href)
+  }
 
   return (
     <div className="space-y-5">
       {/* Filtros header */}
       <div className="bg-black text-white rounded-xl p-3">
         <p className="text-[10px] uppercase tracking-widest text-center text-gray-400 mb-2">Filtros</p>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-          <Select value={String(anio)} onValueChange={(v) => setAnio(Number(v))}>
-            <SelectTrigger className="h-9 bg-white text-gray-900 text-xs"><SelectValue /></SelectTrigger>
-            <SelectContent>
-              {[2024, 2025, 2026].map((y) => <SelectItem key={y} value={String(y)}>{y}</SelectItem>)}
-            </SelectContent>
-          </Select>
-          <Select value={String(mes)} onValueChange={(v) => setMes(Number(v))}>
-            <SelectTrigger className="h-9 bg-white text-gray-900 text-xs"><SelectValue /></SelectTrigger>
-            <SelectContent>
-              {MESES.map((m, i) => <SelectItem key={i} value={String(i + 1)}>{m}</SelectItem>)}
-            </SelectContent>
-          </Select>
+        <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+          <div>
+            <p className="text-[9px] uppercase text-gray-400 mb-0.5">Desde</p>
+            <input type="date" value={desdeFecha} max={hastaFecha}
+              onChange={(e) => setDesdeFecha(e.target.value)}
+              className="h-9 w-full px-2 rounded-md bg-white text-gray-900 text-xs border-0" />
+          </div>
+          <div>
+            <p className="text-[9px] uppercase text-gray-400 mb-0.5">Hasta</p>
+            <input type="date" value={hastaFecha} min={desdeFecha}
+              onChange={(e) => setHastaFecha(e.target.value)}
+              className="h-9 w-full px-2 rounded-md bg-white text-gray-900 text-xs border-0" />
+          </div>
           <Select value={vendedorSel} onValueChange={setVendedorSel}>
             <SelectTrigger className="h-9 bg-white text-gray-900 text-xs"><SelectValue /></SelectTrigger>
             <SelectContent>
@@ -199,7 +296,15 @@ export default function CuotasTab() {
               {familias.map((f) => <SelectItem key={f.id} value={f.id}>{f.nombre}</SelectItem>)}
             </SelectContent>
           </Select>
+          <button type="button" onClick={exportarExcel}
+            className="h-9 self-end inline-flex items-center justify-center gap-1.5 px-3 rounded-md bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-semibold">
+            <FileSpreadsheet className="w-3.5 h-3.5" /> Excel
+          </button>
         </div>
+        <p className="text-[10px] text-gray-400 text-center mt-2">
+          La cuota es mensual: cuando el rango cubre parte de un mes, se cuenta
+          la parte proporcional a los días para que el % sea comparable.
+        </p>
       </div>
 
       {loading ? (
@@ -218,7 +323,11 @@ export default function CuotasTab() {
                 <ResponsiveContainer width="100%" height={280}>
                   <BarChart data={perVendedor}>
                     <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
-                    <XAxis dataKey="nombre" fontSize={11} />
+                    {/* interval={0} obliga a dibujar TODAS las etiquetas: con
+                        el automático el gráfico saltaba una y Daniel Caichihua
+                        aparecía sin nombre. */}
+                    <XAxis dataKey="nombre" fontSize={9} interval={0}
+                      angle={-20} textAnchor="end" height={60} />
                     <YAxis tickFormatter={(v) => `S/ ${(v/1000).toFixed(0)}k`} fontSize={10} />
                     <Tooltip formatter={(v: any) => formatCurrency(Number(v))} />
                     <Legend wrapperStyle={{ fontSize: 12 }} />
@@ -261,7 +370,7 @@ export default function CuotasTab() {
               color={pctCumplimiento >= 100 ? 'bg-green-100 text-green-800' : pctCumplimiento >= 70 ? 'bg-yellow-50 text-yellow-700' : 'bg-red-50 text-red-700'}
             />
             <KpiCuota
-              label="Proyección Fin de Mes"
+              label="Proyección Fin de Rango"
               value={`${pctProyectado.toFixed(1)}%`}
               desc={`≈ ${formatCurrency(proyeccion)}`}
               icon={TrendingUp}
