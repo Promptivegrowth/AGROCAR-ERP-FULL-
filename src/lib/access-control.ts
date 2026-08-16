@@ -126,8 +126,11 @@ const PWA_ACCESS: Record<string, string[]> = {
     '/pwa/reparto',        // lo que le toca entregar hoy
     '/pwa/pedidos',        // venta directa, con condición contado o crédito
     '/pwa/clientes',       // buscar y activar al cliente al que le va a vender
-    '/pwa/cobros',         // cobranza
-    '/pwa/mis-cobranzas',  // a quién le tiene que cobrar
+    '/pwa/cobros',         // cobranza del día
+    // NO lleva /pwa/mis-cobranzas. Daniel lo revisó pantalla por pantalla:
+    // "mis cuentas por cobrar por cliente con deuda, eso hay que sacarlo; el
+    // repartidor no va a cobrar [deudas], eso solamente sería del vendedor".
+    // El repartidor cobra lo que vende en el día, no persigue deuda antigua.
     '/pwa/mi-reporte',     // su rendición del día
     '/pwa/deposito',       // depositar sin cargar el efectivo de vuelta
     '/pwa/cuenta',         // su perfil y cerrar sesión

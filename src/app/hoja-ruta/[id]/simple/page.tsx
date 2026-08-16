@@ -103,7 +103,14 @@ export default async function HojaRutaSimplePage({ params }: { params: { id: str
           /* Mantener table-layout y proporciones tal cual están en pantalla */
           .simple-table { table-layout: fixed !important; width: 100% !important; }
           .simple-table td, .simple-table th { overflow: hidden; }
-          .simple-table .col-cliente { white-space: nowrap; text-overflow: ellipsis; }
+          /* El nombre del cliente NO se trunca: antes salía cortado con "..."
+             y en una hoja de reparto el repartidor necesita leerlo completo.
+             Si no entra en una línea, envuelve. */
+          .simple-table .col-cliente { white-space: normal; word-break: break-word; }
+          /* Estos NO deben partirse nunca en dos líneas: al hacerlo duplicaban
+             el alto de cada fila y se desperdiciaba media hoja. */
+          .simple-table .nowrap { white-space: nowrap !important; }
+          tr { break-inside: avoid; }
         }
       `}</style>
 
@@ -121,25 +128,16 @@ export default async function HojaRutaSimplePage({ params }: { params: { id: str
       {/* Hoja imprimible — usa todo el ancho del A4 (igual que se ve en pantalla).
           La columna "Observación" al final tiene espacio para anotar a mano. */}
       <div className="max-w-5xl mx-auto print:mx-0 print:max-w-full bg-white p-6 print:p-0 shadow-sm my-3 print:my-0 print:shadow-none">
-        {/* Membrete */}
-        <div className="text-center pb-1 border-b border-gray-200">
-          <div className="font-bold text-sm">{EMPRESA.razon_social} · RUC {EMPRESA.ruc}</div>
-          <div style={{ fontFamily: SLOGAN_FONT_STACK, fontSize: 14, color: '#1f2937', lineHeight: 1 }}>{EMPRESA.slogan}</div>
-          <div className="text-[9px] text-gray-500">{EMPRESA.direccion_comercial} · Tel. {EMPRESA.telefono} · {EMPRESA.correo}</div>
-        </div>
-        {/* Header */}
-        <div className="flex items-start justify-between pb-2 mt-2 border-b-2 border-black">
-          <div>
-            <p className="text-[10px] text-gray-500">Desde: {new Date(despacho.fecha_despacho).toLocaleDateString('es-PE')} hasta: {new Date(despacho.fecha_despacho).toLocaleDateString('es-PE')}</p>
-            <p className="text-[10px] text-gray-500">Todos</p>
-          </div>
-          <div className="text-center flex-1">
-            <h1 className="text-base font-bold text-gray-900 underline">REPARTO/ENTREGA DE PEDIDOS</h1>
-          </div>
-          <div className="text-right text-[10px] text-gray-600">
-            <p>{fechaDoc}</p>
-            <p className="font-mono">{horaDoc}</p>
-          </div>
+        {/* Encabezado mínimo. Daniel: "que me lo quite, AGROCAR a un costadito
+            nada más… necesito lo más espacio posible para la mayor cantidad de
+            clientes que entre en cada A4". Se van el slogan, la dirección y el
+            teléfono: en una hoja de reparto interna no aportan. */}
+        <div className="flex items-baseline justify-between pb-1 border-b-2 border-black">
+          <span className="font-bold text-[10pt] whitespace-nowrap">{EMPRESA.razon_social}</span>
+          <h1 className="text-[12pt] font-bold text-gray-900 underline">REPARTO/ENTREGA DE PEDIDOS</h1>
+          <span className="text-[8pt] text-gray-600 whitespace-nowrap">
+            {new Date(despacho.fecha_despacho).toLocaleDateString('es-PE')} · {horaDoc}
+          </span>
         </div>
 
         {/* Metadatos */}
@@ -156,14 +154,17 @@ export default async function HojaRutaSimplePage({ params }: { params: { id: str
               contenido. Total: 100% — distribuido para que "Cliente" tenga
               espacio suficiente para nombres peruanos largos (3-4 palabras). */}
           <colgroup>
-            <col style={{ width: '12%' }} />{/* Pedido */}
-            <col style={{ width: '6%' }} />{/* Cod.Vend */}
+            <col style={{ width: '11%' }} />{/* Pedido */}
+            <col style={{ width: '5%' }} />{/* Cod.Vend */}
             <col style={{ width: '4%' }} />{/* T.D. */}
-            <col style={{ width: '11%' }} />{/* Comprob */}
-            <col style={{ width: '30%' }} />{/* Cliente — el más ancho */}
-            <col style={{ width: '9%' }} />{/* Total */}
-            <col style={{ width: '8%' }} />{/* Condic */}
-            <col style={{ width: '20%' }} />{/* Observación */}
+            {/* Comprob subió de 11% a 14%: con 11% "B001 00000358" se partía
+                en dos líneas y duplicaba el alto de todas las filas */}
+            <col style={{ width: '14%' }} />{/* Comprob */}
+            <col style={{ width: '30%' }} />{/* Cliente */}
+            {/* Total subió de 9% a 11%: el TOTAL GENERAL se partía en dos */}
+            <col style={{ width: '11%' }} />{/* Total */}
+            <col style={{ width: '7%' }} />{/* Condic */}
+            <col style={{ width: '18%' }} />{/* Observación */}
           </colgroup>
           <thead>
             <tr className="border-b border-gray-400">
@@ -183,9 +184,9 @@ export default async function HojaRutaSimplePage({ params }: { params: { id: str
                 <td className="px-1 py-0 font-mono text-[8.5pt] text-gray-700">{p.pedido_numero}</td>
                 <td className="px-1 py-0 font-mono text-[8.5pt] text-gray-700">{String(p.secuencia).padStart(3, '0')}</td>
                 <td className="px-1 py-0 font-mono text-[8.5pt] text-gray-700">{p.tipo_doc}</td>
-                <td className="px-1 py-0 font-mono text-[8.5pt] text-gray-700">{p.comprobante}</td>
+                <td className="nowrap px-1 py-0 font-mono text-[8.5pt] text-gray-700">{p.comprobante}</td>
                 <td className="col-cliente px-1 py-0 text-[8.5pt] text-gray-900 uppercase">{p.cliente}</td>
-                <td className="px-1 py-0 text-[8.5pt] text-right font-semibold">{p.total.toFixed(2)}</td>
+                <td className="nowrap px-1 py-0 text-[8.5pt] text-right font-semibold">{p.total.toFixed(2)}</td>
                 <td className="px-1 py-0 text-[8.5pt] text-gray-700">{p.condicion}</td>
                 <td className="px-1 py-0 text-[8.5pt] text-gray-600 border-b border-dotted border-gray-400"></td>
               </tr>
@@ -194,7 +195,7 @@ export default async function HojaRutaSimplePage({ params }: { params: { id: str
           <tfoot>
             <tr className="border-t-2 border-black">
               <td colSpan={5} className="px-1 py-1.5 text-[9pt] font-bold text-right">TOTAL GENERAL:</td>
-              <td className="px-1 py-1.5 text-[10pt] font-bold text-right">S/ {totalGeneral.toFixed(2)}</td>
+              <td className="nowrap px-1 py-1.5 text-[10pt] font-bold text-right">S/ {totalGeneral.toFixed(2)}</td>
               <td colSpan={2}></td>
             </tr>
           </tfoot>

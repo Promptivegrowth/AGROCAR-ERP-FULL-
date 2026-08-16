@@ -108,6 +108,11 @@ export default function VentaDirectaDialog({ open, onOpenChange, onCreated }: Pr
   const [siguientesCorr, setSiguientesCorr] = useState<Record<string, string>>({})
 
   // Métodos de pago
+  // Condición de venta. Daniel: "hay clientes que vienen al almacén, recogen
+  // el producto y se llevan la mercadería con su boleta o factura" — al
+  // crédito solo se pide la fecha de pago y se emite sin cobrar.
+  const [condicionVenta, setCondicionVenta] = useState<'contado' | 'credito'>('contado')
+  const [fechaPagoCredito, setFechaPagoCredito] = useState('')
   const [pagoEfectivo, setPagoEfectivo] = useState('')
   const [pagoYape, setPagoYape] = useState('')
   const [pagoPlin, setPagoPlin] = useState('')
@@ -128,6 +133,8 @@ export default function VentaDirectaDialog({ open, onOpenChange, onCreated }: Pr
     setIncluirIgv(true)
     setNotas('')
     setVendedorId('')
+    setCondicionVenta('contado')
+    setFechaPagoCredito('')
     setPagoEfectivo('')
     setPagoYape('')
     setPagoPlin('')
@@ -339,8 +346,10 @@ export default function VentaDirectaDialog({ open, onOpenChange, onCreated }: Pr
     ? !!clienteSeleccionado
     : externoNombre.trim().length >= 2
 
+  const esCredito = condicionVenta === 'credito'
   const puedeGuardar = datosClienteValidos && carrito.length > 0
-    && totalFinal > 0 && totalPagado >= totalFinal && !guardando
+    && totalFinal > 0 && !guardando
+    && (esCredito ? !!fechaPagoCredito : totalPagado >= totalFinal)
     && (tipoComprobante !== 'factura' || tieneRuc)
 
   const updateTipoComprobante = (t: string) => {
@@ -377,6 +386,7 @@ export default function VentaDirectaDialog({ open, onOpenChange, onCreated }: Pr
           total: totalFinal,
           descuento_porcentaje: 0,
           descuento_monto: 0,
+          tipo_pago: condicionVenta,
           notas: notas.trim() || 'Venta directa desde oficina',
         })
         .select()
@@ -471,7 +481,10 @@ export default function VentaDirectaDialog({ open, onOpenChange, onCreated }: Pr
       }
 
       // 5. Registrar el cobro
-      const { error: cobroError } = await (supabase.from('cobros') as any).insert({
+      // Al crédito no hay cobro que registrar: el cliente se lleva la
+      // mercadería y paga después. Queda como cuenta por cobrar.
+      const { error: cobroError } = esCredito ? { error: null } as any
+        : await (supabase.from('cobros') as any).insert({
         cliente_id: clienteId,
         cliente_externo_nombre: externoNom,
         cliente_externo_doc: externoDc,
@@ -865,11 +878,38 @@ export default function VentaDirectaDialog({ open, onOpenChange, onCreated }: Pr
               </div>
             )}
 
-            {/* 4. Métodos de pago */}
+            {/* 4. Condición de venta y cobro */}
             {carrito.length > 0 && (
               <div className="border-t border-gray-100 pt-4">
-                <Label className="text-sm font-semibold">4. Cobro inmediato</Label>
-                <p className="text-[11px] text-gray-500 mt-0.5">Distribuye el pago en los métodos usados.</p>
+                <Label className="text-sm font-semibold">4. Condición de venta</Label>
+
+                <div className="inline-flex rounded-md border border-gray-200 bg-white p-0.5 mt-2 text-xs">
+                  <button type="button" onClick={() => setCondicionVenta('contado')}
+                    className={`px-4 py-1.5 rounded ${condicionVenta === 'contado'
+                      ? 'bg-green-600 text-white font-semibold' : 'text-gray-600 hover:bg-gray-50'}`}>
+                    💵 Contado
+                  </button>
+                  <button type="button" onClick={() => setCondicionVenta('credito')}
+                    className={`px-4 py-1.5 rounded ${condicionVenta === 'credito'
+                      ? 'bg-amber-500 text-white font-semibold' : 'text-gray-600 hover:bg-gray-50'}`}>
+                    🕒 Crédito
+                  </button>
+                </div>
+
+                {esCredito ? (
+                  <div className="mt-3 bg-amber-50 border border-amber-200 rounded-lg p-3">
+                    <p className="text-[11px] text-amber-900 mb-2">
+                      El cliente se lleva la mercadería y paga después. Se emite el
+                      comprobante sin cobrar y queda como cuenta por cobrar.
+                    </p>
+                    <Label className="text-xs font-semibold">Fecha de pago *</Label>
+                    <Input type="date" value={fechaPagoCredito}
+                      onChange={(e) => setFechaPagoCredito(e.target.value)}
+                      min={hoyLima()} className="mt-1 h-9 w-[180px]" />
+                  </div>
+                ) : (
+                <>
+                <p className="text-[11px] text-gray-500 mt-2">Distribuye el pago en los métodos usados.</p>
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-3">
                   <div>
                     <Label className="text-xs flex items-center gap-1"><Banknote className="w-3 h-3" /> Efectivo</Label>
@@ -912,6 +952,8 @@ export default function VentaDirectaDialog({ open, onOpenChange, onCreated }: Pr
                     )}
                   </span>
                 </div>
+                </>
+                )}
 
                 <div className="mt-3">
                   <Label className="text-xs">Notas (opcional)</Label>

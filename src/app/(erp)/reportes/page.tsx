@@ -480,6 +480,9 @@ export default function ReportesPage() {
               <a href="/reportes/alcance-objetivos" className="text-xs px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-md">
                 📊 Alcance de objetivos →
               </a>
+              <a href="/reportes/cuentas-por-cobrar" className="text-xs px-3 py-2 bg-red-600 hover:bg-red-700 text-white font-semibold rounded-md">
+                💰 Cuentas por cobrar →
+              </a>
             </div>
           </div>
           <Card className="border-gray-200 shadow-sm">

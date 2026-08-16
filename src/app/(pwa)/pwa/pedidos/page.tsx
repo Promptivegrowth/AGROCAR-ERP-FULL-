@@ -36,6 +36,8 @@ export default function PedidosPage() {
   const [tab, setTab] = useState<Tab>('nuevo')
   const [userId, setUserId] = useState<string | null>(null)
   const [userRole, setUserRole] = useState<string | null>(null)
+  // El repartidor y el chofer venden únicamente al contado
+  const soloContado = userRole === 'repartidor' || userRole === 'chofer'
 
   // Nuevo pedido
   const [clientes, setClientes] = useState<Cliente[]>([])
@@ -116,7 +118,12 @@ export default function PedidosPage() {
       ])
 
       const role = (profile as any)?.role ?? null
-      if (profile) setUserRole(role)
+      if (profile) {
+        setUserRole(role)
+        // Deja el pedido en contado desde el arranque para que no dependa
+        // de que la persona toque el selector
+        if (role === 'repartidor' || role === 'chofer') setTipoPago('contado')
+      }
 
       // Cargar ID de la lista MAYORISTA (lista A en AGROCAR — mayorista / distribuidores)
       const { data: listaMay } = await (supabase as any)
@@ -872,10 +879,27 @@ export default function PedidosPage() {
               </CardContent>
             </Card>
 
-            {/* Tipo de pago */}
+            {/* Tipo de pago. El repartidor vende SOLO al contado: lo que sale
+                del camión se cobra en el momento. Daniel: "solo al contado,
+                nada de crédito, eso solamente para repartidor". */}
             <Card className="border-0 shadow-sm">
               <CardContent className="p-4">
-                <h3 className="font-semibold text-gray-800 mb-3">💳 Tipo de Pago</h3>
+                <h3 className="font-semibold text-gray-800 mb-3">
+                  💳 Tipo de Pago
+                  {soloContado && (
+                    <span className="ml-2 text-[11px] font-normal text-green-700 bg-green-50 border border-green-200 rounded px-1.5 py-0.5">
+                      Solo contado
+                    </span>
+                  )}
+                </h3>
+                {soloContado ? (
+                  <div className="p-3 rounded-xl border-2 border-green-500 bg-green-50 text-green-800 font-semibold text-center">
+                    💵 Contado
+                    <p className="text-[11px] font-normal mt-0.5">
+                      La venta del camión se cobra al momento
+                    </p>
+                  </div>
+                ) : (
                 <div className="grid grid-cols-2 gap-2">
                   <button
                     type="button"
@@ -903,6 +927,7 @@ export default function PedidosPage() {
                     )}
                   </button>
                 </div>
+                )}
               </CardContent>
             </Card>
 
