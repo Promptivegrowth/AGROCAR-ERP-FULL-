@@ -25,6 +25,14 @@ type Pedido = {
 }
 type Cobro = { vendedor_id: string | null; fecha: string; total: number }
 type Checkin = { vendedor_id: string; cliente_id: string | null; created_at: string }
+/**
+ * Meta mensual del vendedor. Sale de las CUOTAS que carga Daniel en
+ * Vendedores → Cuotas por producto, no de la tabla `metas_vendedor`, que
+ * nunca se usó y está vacía —por eso el tablero mostraba meta 0 y
+ * cumplimiento 0%—. Christopher: "el cumplimiento del mes debe estar
+ * relacionado con el monto de las cuotas de cada vendedor, y sumados todos
+ * den el cumplimiento del 100%".
+ */
 type Meta = { vendedor_id: string; anio: number; mes: number; monto_meta: number }
 
 const COLORS_PIE = ['#2563eb', '#16a34a', '#f59e0b', '#dc2626', '#7c3aed', '#0891b2', '#db2777', '#65a30d']
@@ -47,6 +55,11 @@ export default function VendedoresTab() {
   const [cobros, setCobros] = useState<Cobro[]>([])
   const [checkins, setCheckins] = useState<Checkin[]>([])
   const [metas, setMetas] = useState<Meta[]>([])
+  // Ventas de los últimos 3 meses, INDEPENDIENTES del rango de fechas: el
+  // cumplimiento del mes y el gráfico de meta vs realizado hablan de meses
+  // calendario, no del tramo que el usuario esté mirando. Si dependieran del
+  // filtro, al elegir "últimos 30 días" los meses anteriores saldrían en cero.
+  const [ventasMes, setVentasMes] = useState<Array<{ vendedor_id: string; fecha: string; total: number }>>([])
 
   // Cargar vendedores una sola vez
   useEffect(() => {
@@ -92,10 +105,12 @@ export default function VendedoresTab() {
           .select('usuario_id, cliente_id, created_at')
           .gte('created_at', desde + 'T00:00:00')
           .lte('created_at', hasta + 'T23:59:59'),
+        // Cuota mensual por vendedor: es la suma de sus cuotas por familia,
+        // que a su vez es el rollup de las cuotas por producto.
         (supabase as any)
-          .from('metas_vendedor')
-          .select('vendedor_id, anio, mes, monto_meta')
-          .eq('periodo', 'mensual'),
+          .from('cuotas_vendedor_familia')
+          .select('vendedor_id, anio, mes, cuota_monto')
+          .gt('cuota_monto', 0),
       ])
       setPedidos((p ?? []).map((x: any) => ({
         id: x.id,
@@ -124,10 +139,43 @@ export default function VendedoresTab() {
       })))
       setCobros((c ?? []).map((x: any) => ({ vendedor_id: x.cobrador_id, fecha: x.fecha, total: Number(x.total ?? 0) })))
       setCheckins((g ?? []).map((x: any) => ({ vendedor_id: x.usuario_id, cliente_id: x.cliente_id, created_at: x.created_at })))
-      setMetas((m ?? []).map((x: any) => ({ vendedor_id: x.vendedor_id, anio: x.anio, mes: x.mes, monto_meta: Number(x.monto_meta) })))
+      // Se suman las cuotas de todas las familias de cada vendedor en el mes
+      const porVendedorMes = new Map<string, Meta>()
+      ;(m ?? []).forEach((x: any) => {
+        const k = `${x.vendedor_id}|${x.anio}|${x.mes}`
+        const prev = porVendedorMes.get(k)
+        if (prev) prev.monto_meta += Number(x.cuota_monto ?? 0)
+        else porVendedorMes.set(k, {
+          vendedor_id: x.vendedor_id, anio: x.anio, mes: x.mes,
+          monto_meta: Number(x.cuota_monto ?? 0),
+        })
+      })
+      setMetas(Array.from(porVendedorMes.values()))
       setLoading(false)
     })()
   }, [desdeFecha, hastaFecha])
+
+  // Ventas por mes calendario (últimos 3 meses), al margen del filtro de fechas
+  useEffect(() => {
+    ;(async () => {
+      const hoy = new Date()
+      const iniTresMeses = toISODate(new Date(hoy.getFullYear(), hoy.getMonth() - 2, 1))
+      const { data } = await (supabase as any)
+        .from('pedidos')
+        .select('vendedor_id, fecha_pedido, total')
+        .gte('fecha_pedido', iniTresMeses)
+        .in('estado', ['facturado', 'despachado', 'entregado'])
+      setVentasMes((data ?? []).map((x: any) => ({
+        vendedor_id: x.vendedor_id, fecha: x.fecha_pedido, total: Number(x.total ?? 0),
+      })))
+    })()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  const ventasMesFiltradas = useMemo(
+    () => vendedorSel === 'todos' ? ventasMes : ventasMes.filter((v) => v.vendedor_id === vendedorSel),
+    [ventasMes, vendedorSel],
+  )
 
   // Filtrar por vendedor seleccionado
   const pedidosFiltrados = useMemo(
@@ -166,10 +214,14 @@ export default function VendedoresTab() {
   }, [metas, vendedorSel])
   const ventasMesActual = useMemo(() => {
     const mesActual = now.getMonth()
-    return pedidosFiltrados
-      .filter((p) => new Date(p.fecha_pedido + 'T12:00:00').getMonth() === mesActual)
-      .reduce((a, p) => a + p.total, 0)
-  }, [pedidosFiltrados])
+    const anioActual = now.getFullYear()
+    return ventasMesFiltradas
+      .filter((v) => {
+        const f = new Date(v.fecha + 'T12:00:00')
+        return f.getMonth() === mesActual && f.getFullYear() === anioActual
+      })
+      .reduce((a, v) => a + v.total, 0)
+  }, [ventasMesFiltradas])
   const pctMeta = metaMesActual > 0 ? (ventasMesActual / metaMesActual) * 100 : 0
 
   // ─ Series para gráficos ──────────────────────────────────────────────
@@ -201,16 +253,16 @@ export default function VendedoresTab() {
       const meta = vendedorSel === 'todos'
         ? metas.filter((m) => m.mes === mes && m.anio === anio).reduce((a, m) => a + m.monto_meta, 0)
         : metas.find((m) => m.vendedor_id === vendedorSel && m.mes === mes && m.anio === anio)?.monto_meta ?? 0
-      const real = pedidosFiltrados
-        .filter((p) => {
-          const fp = new Date(p.fecha_pedido + 'T12:00:00')
+      const real = ventasMesFiltradas
+        .filter((v) => {
+          const fp = new Date(v.fecha + 'T12:00:00')
           return fp.getMonth() === d.getMonth() && fp.getFullYear() === d.getFullYear()
         })
         .reduce((a, p) => a + p.total, 0)
       result.push({ mes: label, meta: Math.round(meta), real: Math.round(real) })
     }
     return result
-  }, [pedidosFiltrados, metas, vendedorSel])
+  }, [ventasMesFiltradas, metas, vendedorSel])
 
   // 3. Top familias
   const topFamilias = useMemo(() => {
@@ -446,7 +498,7 @@ export default function VendedoresTab() {
           </div>
 
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-            <MiniKpi icon={Target} label="Meta del mes" value={formatCurrency(metaMesActual)} />
+            <MiniKpi icon={Target} label="Meta del mes (cuotas)" value={formatCurrency(metaMesActual)} />
             <MiniKpi icon={Activity} label="Visitas GPS" value={String(visitasGps)} />
             <MiniKpi icon={Award} label="Tasa conversión" value={`${tasaConversion.toFixed(1)}%`} desc="pedidos / visitas" />
             <MiniKpi icon={CreditCard} label="Cobrado" value={formatCurrency(totalCobrado)} />
