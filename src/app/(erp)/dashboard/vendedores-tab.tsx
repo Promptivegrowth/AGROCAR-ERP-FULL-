@@ -19,6 +19,8 @@ type Periodo = '7' | '30' | '90'
 type Pedido = {
   id: string; vendedor_id: string; fecha_pedido: string; total: number; estado: string
   cliente: { razon_social: string; zona_nombre: string | null; distrito: string | null; tipo_comprobante_preferido: string | null }
+  /** Tipo del comprobante realmente emitido: factura, boleta o interno */
+  tipo_comprobante: string | null
   items: Array<{ cantidad: number; precio_unitario: number; subtotal: number; producto_nombre: string; familia_nombre: string | null }>
 }
 type Cobro = { vendedor_id: string | null; fecha: string; total: number }
@@ -73,6 +75,7 @@ export default function VendedoresTab() {
           .select(`
             id, vendedor_id, fecha_pedido, total, estado,
             clientes(razon_social, distrito, tipo_comprobante_preferido, zonas(nombre)),
+            comprobantes(tipo, estado),
             pedidos_items(cantidad, precio_unitario, subtotal, productos(nombre, descripcion, familias(nombre)))
           `)
           .gte('fecha_pedido', desde)
@@ -100,6 +103,11 @@ export default function VendedoresTab() {
         fecha_pedido: x.fecha_pedido,
         total: Number(x.total ?? 0),
         estado: x.estado,
+        // El comprobante que vale es el emitido y no anulado. Se ignoran las
+        // notas de crédito: no son una venta nueva, corrigen a la original.
+        tipo_comprobante: (x.comprobantes ?? [])
+          .filter((c: any) => c.estado !== 'anulado' && c.tipo !== 'nota_credito')
+          .map((c: any) => c.tipo)[0] ?? null,
         cliente: {
           razon_social: x.clientes?.razon_social ?? '—',
           zona_nombre: x.clientes?.zonas?.nombre ?? null,
@@ -232,17 +240,29 @@ export default function VendedoresTab() {
       .slice(0, 10)
   }, [pedidosFiltrados])
 
-  // 5. Mix factura/boleta
+  // 5. Mix factura / boleta / venta directa
+  // Se agrupa por el comprobante REALMENTE emitido, no por la preferencia
+  // registrada del cliente: si un cliente marcado como "factura" recibió una
+  // boleta, antes el gráfico lo contaba mal. Y el documento interno (venta
+  // directa) aparece como tercera categoría —lo pidió Christopher—, antes
+  // caía dentro de boleta porque todo lo que no era factura sumaba ahí.
   const mixComprobantes = useMemo(() => {
-    let f = 0, b = 0
+    let factura = 0, boleta = 0, interno = 0, sinEmitir = 0
     pedidosFiltrados.forEach((p) => {
-      if (p.cliente.tipo_comprobante_preferido === 'factura') f += p.total
-      else b += p.total
+      switch (p.tipo_comprobante) {
+        case 'factura': factura += p.total; break
+        case 'boleta': boleta += p.total; break
+        case 'nota_pedido_interna': interno += p.total; break
+        default: sinEmitir += p.total
+      }
     })
+    const r = (n: number) => Math.round(n * 100) / 100
     return [
-      { name: 'Factura', value: Math.round(f * 100) / 100 },
-      { name: 'Boleta', value: Math.round(b * 100) / 100 },
-    ]
+      { name: 'Factura', value: r(factura) },
+      { name: 'Boleta', value: r(boleta) },
+      { name: 'Venta directa', value: r(interno) },
+      { name: 'Sin comprobante', value: r(sinEmitir) },
+    ].filter((x) => x.value > 0)
   }, [pedidosFiltrados])
 
   // 6. Ranking de vendedores (solo si "todos")
@@ -536,7 +556,7 @@ export default function VendedoresTab() {
 
             <Card className="border-gray-200 shadow-sm">
               <CardHeader className="pb-2">
-                <CardTitle className="text-base font-semibold">Mix Factura vs Boleta</CardTitle>
+                <CardTitle className="text-base font-semibold">Mix Factura x Boleta x Venta Directa</CardTitle>
               </CardHeader>
               <CardContent>
                 <ResponsiveContainer width="100%" height={240}>
