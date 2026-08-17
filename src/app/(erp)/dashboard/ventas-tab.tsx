@@ -203,50 +203,75 @@ export default function VentasTab() {
   const maxVentaFamilia = Math.max(1, ...tablaFamilia.map((f) => f.ventas))
   const maxUtilidadFamilia = Math.max(1, ...tablaFamilia.map((f) => f.utilidad ?? 0))
 
+  /**
+   * Totales de un grupo de pedidos con el MISMO proceso que la tabla de
+   * familia y productos.
+   *
+   * Christopher: "solo debe seguir el mismo proceso para sacar los valores de
+   * total ventas y total utilidad, solo que en esta tabla solo se tendrán las
+   * columnas de año, mes, total ventas, total utilidad y margen".
+   *
+   * O sea: la venta se suma de las líneas (cantidad × precio), no del total de
+   * la cabecera del pedido, y la utilidad sale de restarle el costo de compra
+   * por cantidad. La cantidad y el precio promedio no se muestran acá, pero el
+   * cálculo es el mismo por debajo.
+   */
+  const totalesDe = (lista: any[]) => {
+    let ventas = 0, costeada = 0, utilidad = 0
+    lista.forEach((p: any) => {
+      ventas += ventaDePedido(p)
+      costeada += ventaCosteadaDePedido(p)
+      utilidad += utilidadDePedido(p)
+    })
+    return {
+      ventas: Math.round(ventas),
+      utilidad: costeada > 0 ? Math.round(utilidad) : null,
+      margen: costeada > 0 ? Math.round((utilidad / costeada) * 100) : null,
+      sinCosto: ventas - costeada > 0.009,
+    }
+  }
+
   // ─── Comparativa anual + ventas por año (línea) ────────────────────────────
   const comparativaAnual = useMemo(() => {
-    const map = new Map<number, { ventas: number; utilidad: number }>()
+    const map = new Map<number, any[]>()
     pedidosAll.forEach((p: any) => {
       const y = new Date(p.fecha_pedido + 'T12:00:00').getFullYear()
-      const prev = map.get(y) ?? { ventas: 0, utilidad: 0 }
-      prev.ventas += Number(p.total ?? 0)
-      prev.utilidad += (p.pedidos_items ?? []).reduce((a: number, it: any) => a + utilidadDeLinea(it), 0)
-      map.set(y, prev)
+      map.set(y, [...(map.get(y) ?? []), p])
     })
     return Array.from(map.entries())
-      .map(([anio, v]) => ({
-        anio,
-        ventas: Math.round(v.ventas),
-        utilidad: Math.round(v.utilidad),
-        margen: v.ventas > 0 ? Math.round((v.utilidad / v.ventas) * 100) : 0,
-      }))
+      .map(([anio, lista]) => {
+        const t = totalesDe(lista)
+        // Los gráficos necesitan número, no null: sin costo se dibuja en cero
+        return { anio, ventas: t.ventas, utilidad: t.utilidad ?? 0, margen: t.margen ?? 0 }
+      })
       .sort((a, b) => a.anio - b.anio)
   }, [pedidosAll])
 
   // ─── Histórico mes/año con barras de progreso ──────────────────────────────
   const historico = useMemo(() => {
-    const map = new Map<string, { anio: number; mes: number; ventas: number; utilidad: number }>()
+    const map = new Map<string, { anio: number; mes: number; lista: any[] }>()
     pedidosAll.forEach((p: any) => {
       const d = new Date(p.fecha_pedido + 'T12:00:00')
       const key = `${d.getFullYear()}-${d.getMonth()}`
-      const prev = map.get(key) ?? { anio: d.getFullYear(), mes: d.getMonth(), ventas: 0, utilidad: 0 }
-      prev.ventas += Number(p.total ?? 0)
-      prev.utilidad += (p.pedidos_items ?? []).reduce((a: number, it: any) => a + utilidadDeLinea(it), 0)
+      const prev = map.get(key) ?? { anio: d.getFullYear(), mes: d.getMonth(), lista: [] }
+      prev.lista.push(p)
       map.set(key, prev)
     })
     return Array.from(map.values())
-      .map((r) => ({
-        ...r,
-        ventas: Math.round(r.ventas),
-        utilidad: Math.round(r.utilidad),
-        margenPct: r.ventas > 0 ? Math.round((r.utilidad / r.ventas) * 100) : 0,
-      }))
+      .map((r) => {
+        const t = totalesDe(r.lista)
+        return {
+          anio: r.anio, mes: r.mes,
+          ventas: t.ventas, utilidad: t.utilidad,
+          margenPct: t.margen, sinCosto: t.sinCosto,
+        }
+      })
       .sort((a, b) => b.anio - a.anio || b.mes - a.mes)
       .slice(0, 18)
   }, [pedidosAll])
 
   const maxVentaMes = Math.max(1, ...historico.map((h) => h.ventas))
-  const maxUtilidadMes = Math.max(1, ...historico.map((h) => h.utilidad))
+  const maxUtilidadMes = Math.max(1, ...historico.map((h) => h.utilidad ?? 0))
 
   /**
    * Exporta las cifras del tablero de ventas. Christopher: "sé que no saldrán
@@ -299,7 +324,8 @@ export default function VentasTab() {
     f.push('')
     f.push('HISTORICO MENSUAL')
     f.push('Periodo;Ventas;Utilidad;Margen %')
-    historico.forEach((r: any) => f.push(`${r.label};${r.ventas};${r.utilidad};${r.margenPct}`))
+    historico.forEach((r: any) => f.push(
+      `${r.anio}-${String(r.mes + 1).padStart(2, '0')};${r.ventas};${r.utilidad ?? ''};${r.margenPct ?? ''}`))
 
     const blob = new Blob([String.fromCharCode(65279) + f.join(String.fromCharCode(13, 10))],
       { type: 'text/csv;charset=utf-8;' })
@@ -465,7 +491,12 @@ export default function VentasTab() {
             <Card className="border-gray-200 shadow-sm">
               <CardHeader className="pb-1 bg-black rounded-t-xl text-white">
                 <CardTitle className="text-sm font-bold">Histórico por mes y año</CardTitle>
-                <p className="text-[11px] text-gray-300">La barra junto a cada monto indica su tamaño relativo al mes pico</p>
+                <p className="text-[11px] text-gray-300">
+                  La barra junto a cada monto indica su tamaño relativo al mes
+                  pico. Ventas y utilidad se calculan igual que en «Totales por
+                  familia y productos»: la venta sale de las líneas del pedido y
+                  la utilidad de restarle el costo de compra por cantidad.
+                </p>
               </CardHeader>
               <CardContent className="p-0">
                 <div className="overflow-x-auto max-h-[420px] overflow-y-auto">
@@ -490,18 +521,31 @@ export default function VentasTab() {
                             <BarraMonto valor={h.ventas} max={maxVentaMes} color="#FBE600" textColor="text-gray-900" />
                           </td>
                           <td className="py-1.5 px-3">
-                            <BarraMonto valor={h.utilidad} max={maxUtilidadMes} color="#bfdbfe" textColor="text-blue-700" />
+                            {h.utilidad === null
+                              ? <span className="text-xs text-gray-400">Sin costo</span>
+                              : <BarraMonto valor={h.utilidad} max={maxUtilidadMes} color="#bfdbfe" textColor="text-blue-700" />}
                           </td>
                           <td className="py-1.5 px-3 text-xs text-right">
-                            <span className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-bold ${h.margenPct >= 20 ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
-                              {h.margenPct}%
-                            </span>
+                            {h.margenPct === null ? (
+                              <span className="text-xs text-gray-400">—</span>
+                            ) : (
+                              <span className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-bold ${h.margenPct >= 20 ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                                {h.margenPct}%{h.sinCosto ? '*' : ''}
+                              </span>
+                            )}
                           </td>
                         </tr>
                       ))}
                     </tbody>
                   </table>
                 </div>
+                {historico.some((h) => h.sinCosto) && (
+                  <p className="text-[10px] text-gray-500 px-3 py-2 border-t">
+                    * Ese mes tiene ventas de productos sin costo de compra
+                    cargado en almacén; su venta se cuenta pero queda fuera del
+                    margen.
+                  </p>
+                )}
               </CardContent>
             </Card>
           </TabsContent>
