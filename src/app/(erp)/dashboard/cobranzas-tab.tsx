@@ -36,6 +36,10 @@ export default function CobranzasTab() {
   const supabase = createClient()
   const now = new Date()
   const [anio, setAnio] = useState<number>(now.getFullYear())
+  // Rango de fechas: solo alcanza al top de clientes y al detalle de facturas
+  const hace30 = new Date(now.getTime() - 29 * 86400000)
+  const [desdeFecha, setDesdeFecha] = useState(hace30.toISOString().split('T')[0])
+  const [hastaFecha, setHastaFecha] = useState(now.toISOString().split('T')[0])
   const [statusSel, setStatusSel] = useState<string>('todos')
   const [zonaSel, setZonaSel] = useState<string>('todas')
   const [loading, setLoading] = useState(true)
@@ -60,6 +64,13 @@ export default function CobranzasTab() {
         .from('v_cobranzas_status')
         .select('*')
         .order('fecha_emision', { ascending: false })
+      // Si hay comprobantes emitidos con fecha posterior a hoy, el rango por
+      // defecto se estira hasta ahí: si no, saldrían del detalle sin que nadie
+      // entienda por qué faltan.
+      const maxFecha = (data ?? []).reduce(
+        (a: string, c: any) => (c.fecha_emision > a ? c.fecha_emision : a), '')
+      if (maxFecha && maxFecha > hastaFecha) setHastaFecha(maxFecha)
+
       setCobranzas((data ?? []).map((c: any) => ({
         ...c,
         total: Number(c.total ?? 0),
@@ -86,6 +97,20 @@ export default function CobranzasTab() {
       return true
     })
   }, [cobranzas, statusSel, zonaSel])
+
+  /**
+   * Recorte por rango de fechas.
+   *
+   * Christopher: el desde–hasta "solo afectará a los gráficos de monto
+   * facturado por cliente y detalle de facturas". Los indicadores de arriba
+   * siguen mirando toda la cartera y los dos gráficos por mes, el año.
+   */
+  const delRango = useMemo(() => {
+    return filtradas.filter((c) =>
+      c.fecha_emision >= desdeFecha && c.fecha_emision <= hastaFecha)
+  }, [filtradas, desdeFecha, hastaFecha])
+
+  const totalDelRango = delRango.reduce((a, c) => a + c.total, 0)
 
   // KPIs
   const totalFacturado = filtradas.reduce((a, c) => a + c.total, 0)
@@ -131,7 +156,7 @@ export default function CobranzasTab() {
   // Por cliente top 10 con stacked
   const porCliente = useMemo(() => {
     const map = new Map<string, { cliente: string; pago: number; porVencer: number; vencido: number; total: number }>()
-    filtradas.forEach((c) => {
+    delRango.forEach((c) => {
       const prev = map.get(c.cliente_id) ?? { cliente: c.cliente, pago: 0, porVencer: 0, vencido: 0, total: 0 }
       if (c.status === 'pago') prev.pago += c.total
       else if (c.status === 'por_vencer') prev.porVencer += c.total
@@ -148,7 +173,7 @@ export default function CobranzasTab() {
         'por vencer': Math.round(r.porVencer),
         vencido: Math.round(r.vencido),
       }))
-  }, [filtradas])
+  }, [delRango])
 
   const pico = useMemo(() => {
     if (porMes.length === 0) return null
@@ -172,6 +197,7 @@ export default function CobranzasTab() {
       ? 'Todas las zonas'
       : (zonas.find((z: any) => z.id === zonaSel)?.nombre ?? '')
     f.push(`DASHBOARD DE COBRANZAS;${zonaNombre};Estado: ${statusSel}`)
+    f.push(`Graficos por mes: año ${anio};Top clientes y detalle: ${desdeFecha} a ${hastaFecha}`)
     f.push('')
     f.push('RESUMEN DE LA CARTERA (todos los años)')
     f.push('Concepto;Valor')
@@ -189,14 +215,14 @@ export default function CobranzasTab() {
     f.push('Mes;Monto facturado;# Facturas')
     porMes.forEach((r) => f.push(`${r.mes};${r.monto};${r.facturas}`))
     f.push('')
-    f.push('TOP 10 CLIENTES POR MONTO FACTURADO')
+    f.push(`TOP 10 CLIENTES POR MONTO FACTURADO (${desdeFecha} a ${hastaFecha})`)
     f.push('Cliente;Pagado;Por vencer;Vencido')
     porCliente.forEach((r: any) => f.push(
       `"${String(r.cliente).replace(/"/g, "'")}";${r.pago};${r['por vencer']};${r.vencido}`))
     f.push('')
-    f.push('DETALLE DE FACTURAS')
+    f.push(`DETALLE DE FACTURAS (${desdeFecha} a ${hastaFecha}) - total S/ ${totalDelRango.toFixed(2)}`)
     f.push('Comprobante;Fecha emision;Vencimiento;Dias credito;Dias transcurridos;Cliente;Zona;Total;Cobrado;Saldo;Estado')
-    filtradas.forEach((c) => f.push([
+    delRango.forEach((c) => f.push([
       `${c.serie}-${c.numero}`, c.fecha_emision, c.fecha_vencimiento ?? '',
       c.dias_credito, c.dias_transcurridos,
       `"${String(c.cliente).replace(/"/g, "'")}"`, `"${c.zona_nombre ?? ''}"`,
@@ -217,38 +243,60 @@ export default function CobranzasTab() {
       {/* Filtros */}
       <div className="bg-slate-800 text-white rounded-xl p-3">
         <p className="text-[10px] uppercase tracking-widest text-center text-slate-400 mb-2">Filtros</p>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-          <Select value={String(anio)} onValueChange={(v) => setAnio(Number(v))}>
-            <SelectTrigger className="h-9 bg-white text-gray-900 text-xs"><SelectValue /></SelectTrigger>
-            <SelectContent>
-              {anios.map((y) => <SelectItem key={y} value={String(y)}>{y}</SelectItem>)}
-            </SelectContent>
-          </Select>
-          <Select value={statusSel} onValueChange={setStatusSel}>
-            <SelectTrigger className="h-9 bg-white text-gray-900 text-xs"><SelectValue /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="todos">Todos los estados</SelectItem>
-              <SelectItem value="pago">Pagado</SelectItem>
-              <SelectItem value="por_vencer">Por vencer</SelectItem>
-              <SelectItem value="vencido">Vencido</SelectItem>
-            </SelectContent>
-          </Select>
-          <Select value={zonaSel} onValueChange={setZonaSel}>
-            <SelectTrigger className="h-9 bg-white text-gray-900 text-xs"><SelectValue /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="todas">Todas las zonas</SelectItem>
-              {zonas.map((z) => <SelectItem key={z.id} value={z.id}>{z.nombre}</SelectItem>)}
-            </SelectContent>
-          </Select>
+        <div className="grid grid-cols-2 sm:grid-cols-6 gap-2">
+          <div>
+            <p className="text-[9px] uppercase text-slate-400 mb-0.5">Año</p>
+            <Select value={String(anio)} onValueChange={(v) => setAnio(Number(v))}>
+              <SelectTrigger className="h-9 bg-white text-gray-900 text-xs"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {anios.map((y) => <SelectItem key={y} value={String(y)}>{y}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
+          <div>
+            <p className="text-[9px] uppercase text-slate-400 mb-0.5">Desde</p>
+            <input type="date" value={desdeFecha} max={hastaFecha}
+              onChange={(e) => setDesdeFecha(e.target.value)}
+              className="h-9 w-full px-2 rounded-md bg-white text-gray-900 text-xs border-0" />
+          </div>
+          <div>
+            <p className="text-[9px] uppercase text-slate-400 mb-0.5">Hasta</p>
+            <input type="date" value={hastaFecha} min={desdeFecha}
+              onChange={(e) => setHastaFecha(e.target.value)}
+              className="h-9 w-full px-2 rounded-md bg-white text-gray-900 text-xs border-0" />
+          </div>
+          <div>
+            <p className="text-[9px] uppercase text-slate-400 mb-0.5">Estado</p>
+            <Select value={statusSel} onValueChange={setStatusSel}>
+              <SelectTrigger className="h-9 bg-white text-gray-900 text-xs"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="todos">Todos los estados</SelectItem>
+                <SelectItem value="pago">Pagado</SelectItem>
+                <SelectItem value="por_vencer">Por vencer</SelectItem>
+                <SelectItem value="vencido">Vencido</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div>
+            <p className="text-[9px] uppercase text-slate-400 mb-0.5">Zona</p>
+            <Select value={zonaSel} onValueChange={setZonaSel}>
+              <SelectTrigger className="h-9 bg-white text-gray-900 text-xs"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="todas">Todas las zonas</SelectItem>
+                {zonas.map((z) => <SelectItem key={z.id} value={z.id}>{z.nombre}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
           <button type="button" onClick={exportarExcel}
-            className="h-9 inline-flex items-center justify-center gap-1.5 px-3 rounded-md bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-semibold">
+            className="h-9 self-end inline-flex items-center justify-center gap-1.5 px-3 rounded-md bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-semibold">
             <FileSpreadsheet className="w-3.5 h-3.5" /> Excel
           </button>
         </div>
         <p className="text-[10px] text-slate-400 text-center mt-2">
-          El año solo afecta a los dos gráficos por mes. Los indicadores, el top
-          de clientes y el detalle muestran toda la cartera, porque una deuda
-          pendiente no se cierra al cambiar de año.
+          El <b>año</b> afecta solo a los dos gráficos por mes. El rango
+          <b> desde–hasta</b>, solo al top de clientes y al detalle de facturas.
+          Estado y zona alcanzan a todo. Los indicadores de arriba miran la
+          cartera completa: una deuda no se cierra al cambiar de periodo.
         </p>
       </div>
 
@@ -340,6 +388,9 @@ export default function CobranzasTab() {
                 <CardTitle className="bg-black text-white inline-block px-4 py-1 rounded font-bold text-sm">
                   Monto Facturado por Cliente (Top 10)
                 </CardTitle>
+                <p className="text-[11px] text-gray-500 mt-1">
+                  Del {formatDate(desdeFecha)} al {formatDate(hastaFecha)}
+                </p>
                 <div className="flex items-center gap-3 mt-2 text-[11px]">
                   <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-full bg-[#FBE600]" /> Pagado</span>
                   <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-full bg-slate-400" /> Por vencer</span>
@@ -365,7 +416,7 @@ export default function CobranzasTab() {
               <CardHeader className="pb-1">
                 <CardTitle className="text-sm font-bold flex items-center justify-between">
                   <span>Detalle de facturas</span>
-                  <span className="text-xs font-normal text-gray-500">Total: {formatCurrency(totalFacturado)}</span>
+                  <span className="text-xs font-normal text-gray-500">Total del rango: {formatCurrency(totalDelRango)}</span>
                 </CardTitle>
               </CardHeader>
               <CardContent className="p-0">
@@ -379,7 +430,7 @@ export default function CobranzasTab() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100">
-                      {filtradas.slice(0, 50).map((c) => {
+                      {delRango.slice(0, 50).map((c) => {
                         const s = statusCfg[c.status]
                         const Icon = s.icon
                         return (
@@ -402,7 +453,7 @@ export default function CobranzasTab() {
                   </table>
                 </div>
                 {filtradas.length > 50 && (
-                  <p className="text-xs text-gray-400 text-center py-2">Mostrando 50 de {filtradas.length}</p>
+                  <p className="text-xs text-gray-400 text-center py-2">Mostrando 50 de {delRango.length}</p>
                 )}
               </CardContent>
             </Card>
