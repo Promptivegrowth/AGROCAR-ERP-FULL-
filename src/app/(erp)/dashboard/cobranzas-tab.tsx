@@ -438,7 +438,7 @@ export default function CobranzasTab() {
               <CardContent className="p-0">
                 <div className="overflow-x-auto max-h-[380px] overflow-y-auto">
                   <table className="w-full text-sm">
-                    <thead className="bg-gray-50 border-b sticky top-0">
+                    <thead className="border-b sticky top-0 z-20 [&_th]:bg-gray-50">
                       <tr>
                         <th className="text-left py-2 px-2 text-[10px] font-bold text-gray-700 uppercase">Comprobante</th>
                         <th className="text-left py-2 px-2 text-[10px] font-bold text-gray-700 uppercase">Fecha</th>
