@@ -164,15 +164,10 @@ export default function CobranzasTab() {
       prev.total += c.total
       map.set(c.cliente_id, prev)
     })
-    return Array.from(map.values())
-      .sort((a, b) => b.total - a.total)
-      .slice(0, 10)
-      .map((r) => ({
-        cliente: r.cliente.length > 25 ? r.cliente.slice(0, 25) + '…' : r.cliente,
-        pago: Math.round(r.pago),
-        'por vencer': Math.round(r.porVencer),
-        vencido: Math.round(r.vencido),
-      }))
+    // TODOS los clientes, no un top 10: Christopher los quiere en listado para
+    // poder verlos completos. El nombre va entero y se recorta con CSS, así el
+    // tooltip del navegador puede mostrarlo sin cortar.
+    return Array.from(map.values()).sort((a, b) => b.total - a.total)
   }, [delRango])
 
   const pico = useMemo(() => {
@@ -181,9 +176,13 @@ export default function CobranzasTab() {
     return max
   }, [porMes])
 
+  // Un solo código de color para el estado en toda la pantalla: el mismo de la
+  // barra de cuenta por cliente. Antes los badges iban azul/ámbar/rojo y la
+  // barra amarillo/gris/rojo, dos idiomas para lo mismo. El icono acompaña al
+  // color para que el estado no dependa solo de ver bien los tonos.
   const statusCfg: Record<string, { label: string; icon: any; cls: string; bg: string }> = {
-    pago: { label: 'PAGO', icon: CheckCircle, cls: 'text-blue-700', bg: 'bg-blue-100' },
-    por_vencer: { label: 'POR VENCER', icon: HelpCircle, cls: 'text-amber-700', bg: 'bg-amber-100' },
+    pago: { label: 'PAGO', icon: CheckCircle, cls: 'text-yellow-900', bg: 'bg-[#FBE600]' },
+    por_vencer: { label: 'POR VENCER', icon: HelpCircle, cls: 'text-slate-700', bg: 'bg-slate-200' },
     vencido: { label: 'VENCIDO', icon: XCircle, cls: 'text-red-700', bg: 'bg-red-100' },
   }
 
@@ -215,10 +214,12 @@ export default function CobranzasTab() {
     f.push('Mes;Monto facturado;# Facturas')
     porMes.forEach((r) => f.push(`${r.mes};${r.monto};${r.facturas}`))
     f.push('')
-    f.push(`TOP 10 CLIENTES POR MONTO FACTURADO (${desdeFecha} a ${hastaFecha})`)
-    f.push('Cliente;Pagado;Por vencer;Vencido')
-    porCliente.forEach((r: any) => f.push(
-      `"${String(r.cliente).replace(/"/g, "'")}";${r.pago};${r['por vencer']};${r.vencido}`))
+    f.push(`MONTO FACTURADO X CLIENTE (${desdeFecha} a ${hastaFecha})`)
+    f.push('Cliente;Pago;Por vencer;Vencido;Total')
+    porCliente.forEach((r) => f.push([
+      `"${String(r.cliente).replace(/"/g, "'")}"`,
+      r.pago.toFixed(2), r.porVencer.toFixed(2), r.vencido.toFixed(2), r.total.toFixed(2),
+    ].join(';')))
     f.push('')
     f.push(`DETALLE DE FACTURAS (${desdeFecha} a ${hastaFecha}) - total S/ ${totalDelRango.toFixed(2)}`)
     f.push('Comprobante;Fecha emision;Vencimiento;Dias credito;Dias transcurridos;Cliente;Zona;Total;Cobrado;Saldo;Estado')
@@ -326,7 +327,7 @@ export default function CobranzasTab() {
                 </div>
               </CardContent>
             </Card>
-            <Mini label="Pagadas" value={countPagadas} color="bg-blue-100 text-blue-800" />
+            <Mini label="Pagadas" value={countPagadas} color="bg-[#FBE600] text-yellow-900" />
             <Mini label="Vencidas" value={`${countVencidas} · ${formatCurrency(montoVencido)}`} color="bg-red-100 text-red-800" />
           </div>
 
@@ -386,29 +387,28 @@ export default function CobranzasTab() {
             <Card className="lg:col-span-2 border-gray-200 shadow-sm">
               <CardHeader className="pb-1">
                 <CardTitle className="bg-black text-white inline-block px-4 py-1 rounded font-bold text-sm">
-                  Monto Facturado por Cliente (Top 10)
+                  Monto Facturado x Cliente
                 </CardTitle>
                 <p className="text-[11px] text-gray-500 mt-1">
-                  Del {formatDate(desdeFecha)} al {formatDate(hastaFecha)}
+                  Del {formatDate(desdeFecha)} al {formatDate(hastaFecha)} ·{' '}
+                  {porCliente.length} clientes · facturas y boletas
                 </p>
                 <div className="flex items-center gap-3 mt-2 text-[11px]">
-                  <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-full bg-[#FBE600]" /> Pagado</span>
+                  <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-full bg-[#FBE600] border border-amber-300" /> Pago</span>
                   <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-full bg-slate-400" /> Por vencer</span>
-                  <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-full bg-red-500" /> Vencido</span>
+                  <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-full bg-red-600" /> Vencido</span>
                 </div>
               </CardHeader>
-              <CardContent>
-                <ResponsiveContainer width="100%" height={380}>
-                  <BarChart data={porCliente} layout="vertical" stackOffset="sign">
-                    <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
-                    <XAxis type="number" tickFormatter={(v) => `S/ ${(v/1000).toFixed(0)}k`} fontSize={9} />
-                    <YAxis type="category" dataKey="cliente" fontSize={10} width={130} />
-                    <Tooltip formatter={(v: any) => formatCurrency(Number(v))} />
-                    <Bar dataKey="pago" stackId="a" fill="#FBE600" />
-                    <Bar dataKey="por vencer" stackId="a" fill="#94a3b8" />
-                    <Bar dataKey="vencido" stackId="a" fill="#dc2626" />
-                  </BarChart>
-                </ResponsiveContainer>
+              <CardContent className="p-0">
+                {porCliente.length === 0 ? (
+                  <p className="text-xs text-gray-400 text-center py-12">Sin facturas en el rango</p>
+                ) : (
+                  <div className="max-h-[380px] overflow-y-auto divide-y divide-gray-100">
+                    {porCliente.map((c) => (
+                      <BarraCuenta key={c.cliente} {...c} />
+                    ))}
+                  </div>
+                )}
               </CardContent>
             </Card>
 
@@ -460,6 +460,51 @@ export default function CobranzasTab() {
           </div>
         </>
       )}
+    </div>
+  )
+}
+
+/**
+ * Estado de la cuenta de un cliente como barra de progreso.
+ *
+ * Christopher: "es una barra completa si se da cuenta, no con un escalado
+ * decreciente, sino uno completo donde indica como va el proceso de la cuenta
+ * del cliente". Por eso todas las barras miden lo mismo y lo que cambia es el
+ * reparto interno: cuánto de su cuenta está pagado, cuánto por vencer y cuánto
+ * vencido. Comparar deudas entre clientes es trabajo del detalle, no de acá.
+ *
+ * El monto va sobre un fondo claro y no pintado del color de la barra: el
+ * amarillo de la marca no da contraste suficiente para texto encima.
+ */
+function BarraCuenta({ cliente, pago, porVencer, vencido, total }: {
+  cliente: string; pago: number; porVencer: number; vencido: number; total: number
+}) {
+  const pct = (v: number) => (total > 0 ? (v / total) * 100 : 0)
+  const tramos = [
+    { v: pago, color: '#FBE600', nombre: 'Pago' },
+    { v: porVencer, color: '#94a3b8', nombre: 'Por vencer' },
+    { v: vencido, color: '#dc2626', nombre: 'Vencido' },
+  ].filter((t) => t.v > 0.009)
+
+  return (
+    <div className="flex items-center gap-2 py-1.5 px-3 hover:bg-gray-50">
+      <p className="w-[42%] shrink-0 text-[11px] text-gray-700 truncate" title={cliente}>
+        {cliente}
+      </p>
+      <div className="flex-1 relative h-6 rounded overflow-hidden bg-gray-100 flex gap-[2px]">
+        {tramos.map((t) => (
+          <div
+            key={t.nombre}
+            style={{ width: `${pct(t.v)}%`, backgroundColor: t.color }}
+            title={`${t.nombre}: ${formatCurrency(t.v)} (${pct(t.v).toFixed(0)}%)`}
+          />
+        ))}
+        <span className="absolute inset-0 flex items-center justify-center pointer-events-none">
+          <span className="bg-white/85 px-1.5 rounded text-[11px] font-semibold text-gray-900 tabular-nums">
+            {formatCurrency(total)}
+          </span>
+        </span>
+      </div>
     </div>
   )
 }
