@@ -9,7 +9,7 @@ import { createClient } from '@/lib/supabase/client'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { CheckCircle, AlertCircle, XCircle, Loader2, CreditCard, TrendingUp, Zap, HelpCircle } from 'lucide-react'
+import { CheckCircle, AlertCircle, XCircle, Loader2, CreditCard, TrendingUp, Zap, HelpCircle, FileSpreadsheet } from 'lucide-react'
 
 const MESES = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic']
 
@@ -52,11 +52,13 @@ export default function CobranzasTab() {
   useEffect(() => {
     ;(async () => {
       setLoading(true)
+      // Se trae TODA la cartera, no solo el año elegido. Christopher: "el
+      // filtro de año se mantiene solo que afectará a los gráficos de líneas".
+      // Y tiene sentido: una deuda pendiente no se acaba porque cambie el año,
+      // así que los KPIs, el top de clientes y el detalle miran todo.
       const { data } = await (supabase as any)
         .from('v_cobranzas_status')
         .select('*')
-        .gte('fecha_emision', `${anio}-01-01`)
-        .lte('fecha_emision', `${anio}-12-31`)
         .order('fecha_emision', { ascending: false })
       setCobranzas((data ?? []).map((c: any) => ({
         ...c,
@@ -68,7 +70,14 @@ export default function CobranzasTab() {
       })))
       setLoading(false)
     })()
-  }, [anio])
+  }, [])
+
+  // Años que existen en la cartera, para no ofrecer periodos vacíos
+  const anios = useMemo(() => {
+    const set = new Set<number>(cobranzas.map((c) => Number(c.fecha_emision.slice(0, 4))))
+    set.add(now.getFullYear())
+    return Array.from(set).sort((a, b) => b - a)
+  }, [cobranzas])
 
   const filtradas = useMemo(() => {
     return cobranzas.filter((c) => {
@@ -81,7 +90,9 @@ export default function CobranzasTab() {
   // KPIs
   const totalFacturado = filtradas.reduce((a, c) => a + c.total, 0)
   const totalCobrado = filtradas.reduce((a, c) => a + c.cobrado, 0)
-  const totalPendiente = totalFacturado - totalCobrado
+  // Suma de saldos, no facturado − cobrado: hay dos comprobantes con sobrepago
+  // y ese exceso no cancela la deuda de otras facturas.
+  const totalPendiente = filtradas.reduce((a, c) => a + c.saldo, 0)
   const pctCobrado = totalFacturado > 0 ? (totalCobrado / totalFacturado) * 100 : 0
   const countVencidas = filtradas.filter((c) => c.status === 'vencido').length
   const countPagadas = filtradas.filter((c) => c.status === 'pago').length
@@ -99,13 +110,14 @@ export default function CobranzasTab() {
     })
     .reduce((a, c) => a + c.saldo, 0)
 
-  // Monto facturado mensual
+  // Monto facturado mensual — ÚNICO bloque que respeta el filtro de año
   const porMes = useMemo(() => {
     const map = new Map<number, { ventas: number; facturas: number }>()
     for (let m = 0; m < 12; m++) map.set(m, { ventas: 0, facturas: 0 })
     filtradas.forEach((c) => {
-      const m = new Date(c.fecha_emision + 'T12:00:00').getMonth()
-      const prev = map.get(m)!
+      const d = new Date(c.fecha_emision + 'T12:00:00')
+      if (d.getFullYear() !== anio) return
+      const prev = map.get(d.getMonth())!
       prev.ventas += c.total
       prev.facturas += 1
     })
@@ -114,7 +126,7 @@ export default function CobranzasTab() {
       monto: Math.round(v.ventas),
       facturas: v.facturas,
     }))
-  }, [filtradas])
+  }, [filtradas, anio])
 
   // Por cliente top 10 con stacked
   const porCliente = useMemo(() => {
@@ -150,16 +162,66 @@ export default function CobranzasTab() {
     vencido: { label: 'VENCIDO', icon: XCircle, cls: 'text-red-700', bg: 'bg-red-100' },
   }
 
+  /**
+   * Exporta las cifras del tablero de cobranzas. Christopher pidió los montos
+   * y valores, no una copia de los gráficos.
+   */
+  const exportarExcel = () => {
+    const f: string[] = []
+    const zonaNombre = zonaSel === 'todas'
+      ? 'Todas las zonas'
+      : (zonas.find((z: any) => z.id === zonaSel)?.nombre ?? '')
+    f.push(`DASHBOARD DE COBRANZAS;${zonaNombre};Estado: ${statusSel}`)
+    f.push('')
+    f.push('RESUMEN DE LA CARTERA (todos los años)')
+    f.push('Concepto;Valor')
+    f.push(`Monto facturado;${totalFacturado.toFixed(2)}`)
+    f.push(`Monto cobrado;${totalCobrado.toFixed(2)}`)
+    f.push(`Pendiente;${totalPendiente.toFixed(2)}`)
+    f.push(`% cobrado;${pctCobrado.toFixed(1)}`)
+    f.push(`Facturas pagadas;${countPagadas}`)
+    f.push(`Facturas por vencer;${countPorVencer}`)
+    f.push(`Facturas vencidas;${countVencidas}`)
+    f.push(`Monto vencido;${montoVencido.toFixed(2)}`)
+    f.push(`Cobranza esperada prox. 7 dias;${cobranzaEsperada.toFixed(2)}`)
+    f.push('')
+    f.push(`FACTURACION POR MES (año ${anio})`)
+    f.push('Mes;Monto facturado;# Facturas')
+    porMes.forEach((r) => f.push(`${r.mes};${r.monto};${r.facturas}`))
+    f.push('')
+    f.push('TOP 10 CLIENTES POR MONTO FACTURADO')
+    f.push('Cliente;Pagado;Por vencer;Vencido')
+    porCliente.forEach((r: any) => f.push(
+      `"${String(r.cliente).replace(/"/g, "'")}";${r.pago};${r['por vencer']};${r.vencido}`))
+    f.push('')
+    f.push('DETALLE DE FACTURAS')
+    f.push('Comprobante;Fecha emision;Vencimiento;Dias credito;Dias transcurridos;Cliente;Zona;Total;Cobrado;Saldo;Estado')
+    filtradas.forEach((c) => f.push([
+      `${c.serie}-${c.numero}`, c.fecha_emision, c.fecha_vencimiento ?? '',
+      c.dias_credito, c.dias_transcurridos,
+      `"${String(c.cliente).replace(/"/g, "'")}"`, `"${c.zona_nombre ?? ''}"`,
+      c.total.toFixed(2), c.cobrado.toFixed(2), c.saldo.toFixed(2), c.status,
+    ].join(';')))
+
+    const blob = new Blob([String.fromCharCode(65279) + f.join(String.fromCharCode(13, 10))],
+      { type: 'text/csv;charset=utf-8;' })
+    const a = document.createElement('a')
+    a.href = URL.createObjectURL(blob)
+    a.download = `dashboard_cobranzas_${anio}.csv`
+    a.click()
+    URL.revokeObjectURL(a.href)
+  }
+
   return (
     <div className="space-y-5">
       {/* Filtros */}
       <div className="bg-slate-800 text-white rounded-xl p-3">
         <p className="text-[10px] uppercase tracking-widest text-center text-slate-400 mb-2">Filtros</p>
-        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
           <Select value={String(anio)} onValueChange={(v) => setAnio(Number(v))}>
             <SelectTrigger className="h-9 bg-white text-gray-900 text-xs"><SelectValue /></SelectTrigger>
             <SelectContent>
-              {[2024, 2025, 2026].map((y) => <SelectItem key={y} value={String(y)}>{y}</SelectItem>)}
+              {anios.map((y) => <SelectItem key={y} value={String(y)}>{y}</SelectItem>)}
             </SelectContent>
           </Select>
           <Select value={statusSel} onValueChange={setStatusSel}>
@@ -178,7 +240,16 @@ export default function CobranzasTab() {
               {zonas.map((z) => <SelectItem key={z.id} value={z.id}>{z.nombre}</SelectItem>)}
             </SelectContent>
           </Select>
+          <button type="button" onClick={exportarExcel}
+            className="h-9 inline-flex items-center justify-center gap-1.5 px-3 rounded-md bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-semibold">
+            <FileSpreadsheet className="w-3.5 h-3.5" /> Excel
+          </button>
         </div>
+        <p className="text-[10px] text-slate-400 text-center mt-2">
+          El año solo afecta a los dos gráficos por mes. Los indicadores, el top
+          de clientes y el detalle muestran toda la cartera, porque una deuda
+          pendiente no se cierra al cambiar de año.
+        </p>
       </div>
 
       {loading ? (
@@ -215,7 +286,7 @@ export default function CobranzasTab() {
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             <Card className="border-gray-200 shadow-sm">
               <CardHeader className="pb-1 bg-black text-white rounded-t-xl">
-                <CardTitle className="text-sm font-bold">Monto Facturado por mes</CardTitle>
+                <CardTitle className="text-sm font-bold">Monto Facturado por mes · {anio}</CardTitle>
               </CardHeader>
               <CardContent>
                 <ResponsiveContainer width="100%" height={250}>
@@ -246,7 +317,7 @@ export default function CobranzasTab() {
             </Card>
             <Card className="border-gray-200 shadow-sm">
               <CardHeader className="pb-1 bg-black text-white rounded-t-xl">
-                <CardTitle className="text-sm font-bold"># Facturas por mes</CardTitle>
+                <CardTitle className="text-sm font-bold"># Facturas por mes · {anio}</CardTitle>
               </CardHeader>
               <CardContent>
                 <ResponsiveContainer width="100%" height={250}>
