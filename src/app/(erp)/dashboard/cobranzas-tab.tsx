@@ -29,6 +29,7 @@ type Cobranza = {
   saldo: number
   dias_credito: number
   dias_transcurridos: number
+  dias_vencido: number
   status: 'pago' | 'por_vencer' | 'vencido'
 }
 
@@ -78,6 +79,7 @@ export default function CobranzasTab() {
         saldo: Number(c.saldo ?? 0),
         dias_credito: Number(c.dias_credito ?? 0),
         dias_transcurridos: Number(c.dias_transcurridos ?? 0),
+        dias_vencido: Number(c.dias_vencido ?? 0),
       })))
       setLoading(false)
     })()
@@ -222,10 +224,10 @@ export default function CobranzasTab() {
     ].join(';')))
     f.push('')
     f.push(`DETALLE DE FACTURAS (${desdeFecha} a ${hastaFecha}) - total S/ ${totalDelRango.toFixed(2)}`)
-    f.push('Comprobante;Fecha emision;Vencimiento;Dias credito;Dias transcurridos;Cliente;Zona;Total;Cobrado;Saldo;Estado')
+    f.push('Comprobante;Tipo;Fecha emision;Vencimiento;Dias credito;Dias vencida;Cliente;Zona;Total;Cobrado;Saldo;Estado')
     delRango.forEach((c) => f.push([
-      `${c.serie}-${c.numero}`, c.fecha_emision, c.fecha_vencimiento ?? '',
-      c.dias_credito, c.dias_transcurridos,
+      `${c.serie}-${c.numero}`, c.tipo, c.fecha_emision, c.fecha_vencimiento ?? '',
+      c.dias_credito, c.status === 'pago' ? 0 : c.dias_vencido,
       `"${String(c.cliente).replace(/"/g, "'")}"`, `"${c.zona_nombre ?? ''}"`,
       c.total.toFixed(2), c.cobrado.toFixed(2), c.saldo.toFixed(2), c.status,
     ].join(';')))
@@ -237,6 +239,20 @@ export default function CobranzasTab() {
     a.download = `dashboard_cobranzas_${anio}.csv`
     a.click()
     URL.revokeObjectURL(a.href)
+  }
+
+  /**
+   * Color por tipo de comprobante en la columna del código.
+   *
+   * Christopher: "cada código deberá ir con un color diferente para boleta y
+   * para factura distintivamente". El código ya lo dice —B001 contra F001—
+   * pero de un vistazo en una lista de cientos de filas no se distingue.
+   */
+  const tipoCfg: Record<string, { label: string; cls: string }> = {
+    boleta: { label: 'Boleta', cls: 'bg-sky-100 text-sky-800' },
+    factura: { label: 'Factura', cls: 'bg-orange-100 text-orange-800' },
+    nota_pedido_interna: { label: 'Nota de venta interna', cls: 'bg-violet-100 text-violet-800' },
+    otro: { label: 'Comprobante', cls: 'bg-gray-100 text-gray-700' },
   }
 
   return (
@@ -424,23 +440,43 @@ export default function CobranzasTab() {
                   <table className="w-full text-sm">
                     <thead className="bg-gray-50 border-b sticky top-0">
                       <tr>
-                        {['Factura', 'Fecha', 'Días Cred.', 'Días Trans.', 'Cliente', 'Monto', 'Status'].map((h) => (
-                          <th key={h} className="text-left py-2 px-2 text-[10px] font-bold text-gray-700 uppercase">{h}</th>
-                        ))}
+                        <th className="text-left py-2 px-2 text-[10px] font-bold text-gray-700 uppercase">Comprobante</th>
+                        <th className="text-left py-2 px-2 text-[10px] font-bold text-gray-700 uppercase">Fecha</th>
+                        <th className="text-center py-2 px-2 text-[10px] font-bold text-gray-700 uppercase whitespace-nowrap">Días créd.</th>
+                        <th className="text-center py-2 px-2 text-[10px] font-bold text-gray-700 uppercase whitespace-nowrap">Días vencida</th>
+                        <th className="text-left py-2 px-2 text-[10px] font-bold text-gray-700 uppercase">Cliente</th>
+                        <th className="text-left py-2 px-2 text-[10px] font-bold text-gray-700 uppercase">Monto y pago</th>
+                        <th className="text-left py-2 px-2 text-[10px] font-bold text-gray-700 uppercase">Status</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100">
-                      {delRango.slice(0, 50).map((c) => {
+                      {delRango.map((c) => {
                         const s = statusCfg[c.status]
                         const Icon = s.icon
+                        const t = tipoCfg[c.tipo] ?? tipoCfg.otro
                         return (
                           <tr key={c.comprobante_id} className="hover:bg-gray-50">
-                            <td className="py-1.5 px-2 text-[11px] font-mono font-semibold">{c.serie}-{c.numero}</td>
-                            <td className="py-1.5 px-2 text-[11px] text-gray-600">{formatDate(c.fecha_emision)}</td>
-                            <td className="py-1.5 px-2 text-[11px] text-center text-gray-600">{c.dias_credito}</td>
-                            <td className="py-1.5 px-2 text-[11px] text-center text-gray-800">{c.dias_transcurridos}</td>
-                            <td className="py-1.5 px-2 text-[11px] text-gray-800 max-w-[180px] truncate">{c.cliente}</td>
-                            <td className="py-1.5 px-2 text-[11px] text-right font-semibold text-gray-900">{formatCurrency(c.total)}</td>
+                            <td className="py-1.5 px-2">
+                              <span className={`inline-block px-1.5 py-0.5 rounded text-[11px] font-mono font-semibold ${t.cls}`}
+                                title={t.label}>
+                                {c.serie}-{c.numero}
+                              </span>
+                            </td>
+                            <td className="py-1.5 px-2 text-[11px] text-gray-600 whitespace-nowrap">{formatDate(c.fecha_emision)}</td>
+                            <td className="py-1.5 px-2 text-[11px] text-center text-gray-600 whitespace-nowrap">
+                              {c.dias_credito > 0 ? `${c.dias_credito} d` : 'Contado'}
+                            </td>
+                            <td className="py-1.5 px-2 text-[11px] text-center whitespace-nowrap">
+                              {c.status === 'pago' ? (
+                                <span className="text-gray-400">—</span>
+                              ) : c.dias_vencido > 0 ? (
+                                <span className="font-semibold text-red-700">{c.dias_vencido} d</span>
+                              ) : (
+                                <span className="text-gray-500">En plazo</span>
+                              )}
+                            </td>
+                            <td className="py-1.5 px-2 text-[11px] text-gray-800 max-w-[180px] truncate" title={c.cliente}>{c.cliente}</td>
+                            <td className="py-1.5 px-2"><BarraPago total={c.total} cobrado={c.cobrado} /></td>
                             <td className="py-1.5 px-2">
                               <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold ${s.bg} ${s.cls}`}>
                                 <Icon className="w-3 h-3" /> {s.label}
@@ -453,7 +489,9 @@ export default function CobranzasTab() {
                   </table>
                 </div>
                 {filtradas.length > 50 && (
-                  <p className="text-xs text-gray-400 text-center py-2">Mostrando 50 de {delRango.length}</p>
+                  <p className="text-xs text-gray-400 text-center py-2">
+                    {delRango.length} comprobantes · facturas y boletas
+                  </p>
                 )}
               </CardContent>
             </Card>
@@ -505,6 +543,32 @@ function BarraCuenta({ cliente, pago, porVencer, vencido, total }: {
           </span>
         </span>
       </div>
+    </div>
+  )
+}
+
+/**
+ * Cuánto de esa factura está pagado, sin perder de vista el total.
+ *
+ * Christopher: "una barra de progreso que indique cuanto es lo que pago,
+ * manteniendo el monto total de su consumo… si hubiera pagado todo, la barra se
+ * llena por completo". El relleno usa el amarillo con que la pantalla marca lo
+ * pagado, para que sea el mismo idioma de la barra por cliente y los badges.
+ */
+function BarraPago({ total, cobrado }: { total: number; cobrado: number }) {
+  const pct = total > 0 ? Math.min(100, (cobrado / total) * 100) : 0
+  const falta = Math.max(total - cobrado, 0)
+  return (
+    <div
+      className="relative h-5 w-full min-w-[110px] rounded bg-gray-100 overflow-hidden"
+      title={`Consumo ${formatCurrency(total)} · Pagado ${formatCurrency(cobrado)} (${pct.toFixed(0)}%) · Falta ${formatCurrency(falta)}`}
+    >
+      <div className="absolute inset-y-0 left-0" style={{ width: `${pct}%`, backgroundColor: '#FBE600' }} />
+      <span className="absolute inset-0 flex items-center justify-end pr-1.5">
+        <span className="text-[11px] font-semibold text-gray-900 tabular-nums bg-white/80 px-1 rounded">
+          {formatCurrency(total)}
+        </span>
+      </span>
     </div>
   )
 }
