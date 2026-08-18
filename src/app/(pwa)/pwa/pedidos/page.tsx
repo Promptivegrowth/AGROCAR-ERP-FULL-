@@ -546,13 +546,28 @@ export default function PedidosPage() {
               )
             })
           const [lat, lng] = await obtenerCoords()
+          /**
+           * Si el teléfono no da posición, se guarda SIN coordenadas.
+           *
+           * Antes caía en la del cliente, y eso rompe el sentido del control:
+           * el check-in dejaba constancia de que el vendedor estuvo donde el
+           * cliente aunque el GPS no hubiera respondido nunca. Encima varios
+           * clientes tienen coordenadas de una geocodificación fallida —ocho
+           * comparten un punto en plena selva—, así que una marca de Tacna
+           * terminaba dibujada a mil kilómetros.
+           *
+           * Sin señal es preferible una marca sin ubicación, que se ve como
+           * tal, a una ubicación inventada que parece buena.
+           */
           await (supabase as any).from('gps_checkins').insert({
             usuario_id: userId,
             cliente_id: clienteSeleccionado.id,
             tipo: 'entrada',
-            latitud: lat ?? clienteSeleccionado.latitud ?? null,
-            longitud: lng ?? clienteSeleccionado.longitud ?? null,
-            notas: 'Check-in auto al tomar pedido',
+            latitud: lat,
+            longitud: lng,
+            notas: lat === null
+              ? 'Check-in auto al tomar pedido (sin señal GPS)'
+              : 'Check-in auto al tomar pedido',
           })
         }
       } catch {

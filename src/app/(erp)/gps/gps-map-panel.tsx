@@ -36,9 +36,28 @@ const COLOR_POR_TIPO: Record<string, string> = {
   visita_sin_compra: '#a855f7',
 }
 
+/**
+ * Recuadro de la región de operación (Tacna y alrededores, con holgura).
+ *
+ * El mapa encuadra todos los puntos que recibe. Basta una coordenada mala para
+ * que se abra mostrando medio Perú y los puntos reales queden en un pixel: pasó
+ * con marcas que heredaron la ubicación de clientes geocodificados a un punto
+ * de la selva. Lo que cae fuera no se dibuja y se avisa al pie.
+ */
+const REGION = { latMin: -18.6, latMax: -16.9, lonMin: -71.2, lonMax: -69.4 }
+
+const enRegion = (lat: number | null, lon: number | null) =>
+  lat != null && lon != null &&
+  lat >= REGION.latMin && lat <= REGION.latMax &&
+  lon >= REGION.lonMin && lon <= REGION.lonMax
+
 export default function GpsMapPanel({ checkins, clientes }: GpsMapPanelProps) {
+  const fueraDeRegion = checkins.filter(
+    (c) => c.latitud != null && c.longitud != null && !enRegion(c.latitud, c.longitud)).length
+  const sinUbicacion = checkins.filter((c) => c.latitud == null || c.longitud == null).length
+
   const checkinMarkers: MapMarker[] = checkins
-    .filter((c) => c.latitud != null && c.longitud != null)
+    .filter((c) => enRegion(c.latitud, c.longitud))
     .map((c) => {
       const name = c.profiles?.full_name ?? 'Vendedor'
       const initials = name.split(' ').slice(0, 2).map((n) => n[0]).join('').toUpperCase()
@@ -54,8 +73,10 @@ export default function GpsMapPanel({ checkins, clientes }: GpsMapPanelProps) {
       }
     })
 
+  // Mismo filtro para los clientes: nueve tienen coordenadas de una
+  // geocodificación fallida y arrastraban el encuadre fuera de Tacna.
   const clienteMarkers: MapMarker[] = clientes
-    .filter((c) => c.latitud != null && c.longitud != null)
+    .filter((c) => enRegion(c.latitud, c.longitud))
     .map((c) => ({
       id: `cli-${c.id}`,
       lat: Number(c.latitud),
@@ -83,6 +104,16 @@ export default function GpsMapPanel({ checkins, clientes }: GpsMapPanelProps) {
       </CardHeader>
       <CardContent className="p-3">
         <LeafletMap height="480px" markers={allMarkers} />
+        {(fueraDeRegion > 0 || sinUbicacion > 0) && (
+          <p className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-3 py-2 mt-2">
+            {fueraDeRegion > 0 && (
+              <>Hay {fueraDeRegion} marca{fueraDeRegion === 1 ? '' : 's'} con coordenadas fuera de la zona de trabajo; no se dibuja{fueraDeRegion === 1 ? '' : 'n'} para no descuadrar el mapa. </>
+            )}
+            {sinUbicacion > 0 && (
+              <>{sinUbicacion} marca{sinUbicacion === 1 ? '' : 's'} sin señal GPS al registrarse.</>
+            )}
+          </p>
+        )}
         <p className="text-xs text-gray-400 mt-2 text-center">
           {checkinMarkers.length} check-ins · {clienteMarkers.length} clientes geolocalizados
         </p>
