@@ -1,8 +1,8 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import Image from 'next/image'
-import { MapPin, Loader2, CheckCircle, AlertCircle, Navigation, Clock } from 'lucide-react'
+import { MapPin, Loader2, CheckCircle, AlertCircle, Navigation, Clock, Search, X } from 'lucide-react'
 import { toast } from 'sonner'
 import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
@@ -26,6 +26,7 @@ export default function CheckinPage() {
   const [userId, setUserId] = useState<string | null>(null)
   const [clientes, setClientes] = useState<Cliente[]>([])
   const [clienteSeleccionado, setClienteSeleccionado] = useState<string>('')
+  const [busquedaCliente, setBusquedaCliente] = useState('')
   const [tipoVisita, setTipoVisita] = useState<TipoVisita>('entrada')
   const [coordenadas, setCoordenadas] = useState<{ lat: number; lng: number; precision: number } | null>(null)
   const [obteniendoGPS, setObteniendoGPS] = useState(false)
@@ -136,7 +137,7 @@ export default function CheckinPage() {
   }
 
   async function registrarCheckin() {
-    const esCliente = TIPOS_CLIENTE.includes(tipoVisita)
+  const esCliente = TIPOS_CLIENTE.includes(tipoVisita)
     if (esCliente && !clienteSeleccionado) {
       toast.error('Selecciona un cliente', { description: 'Este tipo de check-in requiere cliente.' })
       return
@@ -218,6 +219,29 @@ export default function CheckinPage() {
   const TIPOS_CLIENTE: TipoVisita[] = ['entrada', 'salida', 'visita_sin_compra']
   const requiereCliente = TIPOS_CLIENTE.includes(tipoVisita)
 
+  /**
+   * Búsqueda de cliente por nombre, RUC o DNI.
+   *
+   * Daniel: "no le permite buscar a los clientes por su nombre, solo le da la
+   * lista completa para buscar, lo cual es muy tedioso". Con 379 clientes, un
+   * desplegable en el celular no sirve estando en la calle.
+   *
+   * Se muestran los primeros 50 para no colgar el teléfono; al escribir, la
+   * lista se acorta sola.
+   */
+  const clientesFiltrados = useMemo(() => {
+    const q = busquedaCliente.trim().toLowerCase()
+    const base = q
+      ? clientes.filter((c) =>
+          c.razon_social?.toLowerCase().includes(q) ||
+          c.ruc?.includes(q) ||
+          c.dni?.includes(q))
+      : clientes
+    return base.slice(0, 50)
+  }, [clientes, busquedaCliente])
+
+  const clienteElegido = clientes.find((c) => c.id === clienteSeleccionado) ?? null
+
   return (
     <div className="min-h-full">
       {/* Header */}
@@ -298,18 +322,70 @@ export default function CheckinPage() {
           <Card className="border-0 shadow-sm">
             <CardContent className="p-4">
               <h3 className="font-semibold text-gray-800 mb-3">2. Cliente</h3>
-              <select
-                value={clienteSeleccionado}
-                onChange={(e) => setClienteSeleccionado(e.target.value)}
-                className="w-full h-12 px-3 border border-gray-200 rounded-xl text-sm bg-white focus:outline-none focus:border-[#FBE600]"
-              >
-                <option value="">Selecciona un cliente...</option>
-                {clientes.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.razon_social} {c.ruc ? `(RUC ${c.ruc})` : c.dni ? `(DNI ${c.dni})` : ''}
-                  </option>
-                ))}
-              </select>
+
+              {/* Buscador: con 379 clientes, desplegar la lista entera y bajar
+                  a dedo hasta encontrar uno era inservible en la calle. */}
+              <div className="relative mb-2">
+                <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  inputMode="search"
+                  value={busquedaCliente}
+                  onChange={(e) => setBusquedaCliente(e.target.value)}
+                  placeholder="Buscar por nombre, RUC o DNI..."
+                  className="w-full h-12 pl-9 pr-9 border border-gray-200 rounded-xl text-sm bg-white focus:outline-none focus:border-[#FBE600]"
+                />
+                {busquedaCliente && (
+                  <button
+                    type="button"
+                    onClick={() => setBusquedaCliente('')}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400"
+                    aria-label="Limpiar búsqueda"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                )}
+              </div>
+
+              {clienteElegido ? (
+                <div className="flex items-center justify-between gap-2 p-3 rounded-xl border-2 border-[#FBE600] bg-yellow-50">
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold text-gray-900 truncate">{clienteElegido.razon_social}</p>
+                    <p className="text-[11px] text-gray-500">
+                      {clienteElegido.ruc ? `RUC ${clienteElegido.ruc}` : clienteElegido.dni ? `DNI ${clienteElegido.dni}` : 'Sin documento'}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => { setClienteSeleccionado(''); setBusquedaCliente('') }}
+                    className="text-xs font-semibold text-gray-600 px-3 py-1.5 rounded-lg border border-gray-200 shrink-0"
+                  >
+                    Cambiar
+                  </button>
+                </div>
+              ) : (
+                <div className="max-h-64 overflow-y-auto rounded-xl border border-gray-200 divide-y divide-gray-100">
+                  {clientesFiltrados.length === 0 ? (
+                    <p className="text-xs text-gray-400 text-center py-6">
+                      {busquedaCliente ? 'Ningún cliente coincide' : 'Escribe para buscar'}
+                    </p>
+                  ) : (
+                    clientesFiltrados.map((c) => (
+                      <button
+                        key={c.id}
+                        type="button"
+                        onClick={() => setClienteSeleccionado(c.id)}
+                        className="w-full text-left px-3 py-2.5 hover:bg-gray-50 active:bg-yellow-50"
+                      >
+                        <p className="text-sm text-gray-900 truncate">{c.razon_social}</p>
+                        <p className="text-[11px] text-gray-500">
+                          {c.ruc ? `RUC ${c.ruc}` : c.dni ? `DNI ${c.dni}` : 'Sin documento'}
+                        </p>
+                      </button>
+                    ))
+                  )}
+                </div>
+              )}
             </CardContent>
           </Card>
         )}
