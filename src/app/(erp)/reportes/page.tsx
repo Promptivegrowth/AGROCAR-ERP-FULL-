@@ -462,6 +462,18 @@ export default function ReportesPage() {
         {/* COMISIONES */}
         <TabsContent value="comisiones" className="mt-4 space-y-3">
           {/* Banner cumplimiento de cuotas */}
+          <div className="bg-gradient-to-r from-red-50 to-amber-50 border border-red-200 rounded-lg p-3 flex items-center justify-between gap-3 flex-wrap">
+            <div>
+              <p className="text-sm font-semibold text-red-900">💰 Cuentas por cobrar de todos los vendedores</p>
+              <p className="text-xs text-red-700">
+                Cuánto hay por cobrar en total, agrupado por vendedor y cliente, con lo vencido y los días de atraso.
+              </p>
+            </div>
+            <a href="/reportes/cuentas-por-cobrar" className="text-xs px-3 py-2 bg-red-600 hover:bg-red-700 text-white font-semibold rounded-md">
+              💰 Ver cuentas por cobrar →
+            </a>
+          </div>
+
           <div className="bg-gradient-to-r from-blue-50 to-emerald-50 border border-blue-200 rounded-lg p-3 flex items-center justify-between gap-3 flex-wrap">
             <div>
               <p className="text-sm font-semibold text-blue-900">🎯 Cumplimiento de cuotas mensuales por vendedor × familia</p>
@@ -479,9 +491,6 @@ export default function ReportesPage() {
               </a>
               <a href="/reportes/alcance-objetivos" className="text-xs px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-md">
                 📊 Alcance de objetivos →
-              </a>
-              <a href="/reportes/cuentas-por-cobrar" className="text-xs px-3 py-2 bg-red-600 hover:bg-red-700 text-white font-semibold rounded-md">
-                💰 Cuentas por cobrar →
               </a>
             </div>
           </div>

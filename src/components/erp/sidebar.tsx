@@ -124,6 +124,14 @@ const NAV_ITEMS: NavItem[] = [
     roles: ['gerente', 'administrador', 'contador', 'caja'],
   },
   {
+    // Daniel lo pidió y no lo encontraba: existía, pero solo se llegaba desde
+    // un botón dentro de la tarjeta de cuotas en Reportes.
+    label: 'Cuentas por cobrar',
+    href: '/reportes/cuentas-por-cobrar',
+    icon: ClipboardList,
+    roles: ['gerente', 'administrador', 'contador', 'caja'],
+  },
+  {
     label: 'GPS',
     href: '/gps',
     icon: MapPin,

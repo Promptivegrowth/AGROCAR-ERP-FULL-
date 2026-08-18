@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import {
   Search, Loader2, CreditCard, DollarSign, AlertTriangle, Users, CheckCircle2,
   Landmark, Eye, Phone, FileText, Banknote, Smartphone, Building2, StickyNote,
-  Send, MessageCircle,
+  Send, MessageCircle, ClipboardList,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { createClient } from '@/lib/supabase/client'
@@ -240,6 +240,13 @@ export default function CobranzasClient({
           <h1 className="text-2xl font-bold text-gray-900">Cobranzas</h1>
           <p className="text-sm text-gray-500 mt-0.5">Gestión de créditos y cuentas por cobrar</p>
         </div>
+        <a
+          href="/reportes/cuentas-por-cobrar"
+          className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg bg-gray-900 hover:bg-black text-white text-sm font-semibold shadow-sm"
+        >
+          <ClipboardList className="w-4 h-4" />
+          Cuentas por cobrar de todos los vendedores
+        </a>
       </div>
 
       {/* Alertas */}
