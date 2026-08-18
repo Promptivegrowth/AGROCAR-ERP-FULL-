@@ -3,6 +3,7 @@
 import { useRouter } from 'next/navigation'
 import { Printer, FileSpreadsheet, MessageCircle } from 'lucide-react'
 import { construirLinkWhatsapp, esTelefonoPeruanoValido } from '@/lib/whatsapp'
+import { hoyLima } from '@/lib/fechas-pe'
 
 export default function ClienteReporteActions({
   clienteId, clienteNombre, clienteTelefono, desde, hasta,
@@ -18,7 +19,7 @@ export default function ClienteReporteActions({
     const otros = k === 'desde' ? { hasta } : { desde }
     router.push(`/reportes/cliente/${clienteId}?desde=${k === 'desde' ? v : otros.desde}&hasta=${k === 'hasta' ? v : otros.hasta}`)
   }
-  const hoyStr = new Date().toISOString().split('T')[0]
+  const hoyStr = hoyLima()
   const elAnio = `${new Date().getFullYear()}-01-01`
   const historiaCompleta = '2020-01-01'
 

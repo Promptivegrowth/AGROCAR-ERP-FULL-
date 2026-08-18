@@ -2,6 +2,7 @@
 
 import { useRouter } from 'next/navigation'
 import { Printer, FileSpreadsheet } from 'lucide-react'
+import { hoyLima } from '@/lib/fechas-pe'
 
 export default function VentasProductosActions({ desde, hasta }: { desde: string; hasta: string }) {
   const router = useRouter()
@@ -9,7 +10,7 @@ export default function VentasProductosActions({ desde, hasta }: { desde: string
     const otros = k === 'desde' ? { hasta } : { desde }
     router.push(`/reportes/ventas-productos?desde=${k === 'desde' ? v : otros.desde}&hasta=${k === 'hasta' ? v : otros.hasta}`)
   }
-  const hoyStr = new Date().toISOString().split('T')[0]
+  const hoyStr = hoyLima()
   const setQuick = (dias: number) => {
     const d = new Date(); d.setDate(d.getDate() - dias)
     router.push(`/reportes/ventas-productos?desde=${d.toISOString().slice(0, 10)}&hasta=${hoyStr}`)

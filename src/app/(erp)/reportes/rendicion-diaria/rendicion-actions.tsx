@@ -2,6 +2,7 @@
 
 import { useRouter } from 'next/navigation'
 import { Printer, FileSpreadsheet } from 'lucide-react'
+import { hoyLima } from '@/lib/fechas-pe'
 
 export default function RendicionActions({ fechaActual }: { fechaActual: string }) {
   const router = useRouter()
@@ -11,7 +12,11 @@ export default function RendicionActions({ fechaActual }: { fechaActual: string 
       <input
         type="date"
         value={fechaActual}
-        max={new Date().toISOString().split('T')[0]}
+        // El tope es HOY en Lima, no en UTC: con toISOString, a partir de las
+        // 19:00 hora peruana el navegador ya está en el día siguiente y el
+        // calendario dejaba elegir mañana. Daniel lo vio al revés —el día de
+        // hoy bloqueado— por el mismo desfase.
+        max={hoyLima()}
         onChange={(e) => router.push(`/reportes/rendicion-diaria?fecha=${e.target.value}`)}
         className="h-8 text-xs px-2 border border-gray-300 rounded-md bg-white"
       />

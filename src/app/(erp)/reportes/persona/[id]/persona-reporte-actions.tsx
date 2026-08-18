@@ -2,6 +2,7 @@
 
 import { useRouter } from 'next/navigation'
 import { Printer, FileSpreadsheet, Calendar } from 'lucide-react'
+import { hoyLima } from '@/lib/fechas-pe'
 
 export default function PersonaReporteActions({
   personaId, desde, hasta,
@@ -14,7 +15,7 @@ export default function PersonaReporteActions({
   const setRangoBoth = (d: string, h: string) => {
     router.push(`/reportes/persona/${personaId}?desde=${d}&hasta=${h}`)
   }
-  const hoyStr = new Date().toISOString().split('T')[0]
+  const hoyStr = hoyLima()
   const ayer = new Date()
   ayer.setDate(ayer.getDate() - 1)
   const ayerStr = ayer.toISOString().split('T')[0]
