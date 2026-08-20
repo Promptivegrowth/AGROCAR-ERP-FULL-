@@ -12,6 +12,7 @@ import { toast } from 'sonner'
 import { createClient } from '@/lib/supabase/client'
 import { useDebounce } from '@/lib/hooks/use-debounce'
 import { formatCurrency, formatDate } from '@/lib/utils'
+import { hoyLima } from '@/lib/fechas-pe'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
@@ -35,11 +36,22 @@ const ESTADO_CFG: Record<EstadoPedido, { label: string; className: string; icon:
 
 const PAGE_SIZE = 20
 
-export default function PedidosClient({ pedidosIniciales }: { pedidosIniciales: any[] }) {
+export default function PedidosClient({ pedidosIniciales, desde, hasta }: {
+  pedidosIniciales: any[]; desde: string; hasta: string
+}) {
   const router = useRouter()
   const supabase = createClient()
 
   const [pedidos, setPedidos] = useState(pedidosIniciales)
+
+  // El filtro vive en la URL para que el servidor traiga solo ese rango
+  const irA = (d: string, h: string) => {
+    router.push(`/pedidos?desde=${d}&hasta=${h}`)
+    router.refresh()
+  }
+  const diasAtras = (n: number) =>
+    new Date(new Date(hoyLima() + 'T12:00:00').getTime() - n * 86400000)
+      .toISOString().split('T')[0]
   const [search, setSearch] = useState('')
   const debouncedSearch = useDebounce(search, 300)
   const [filterEstado, setFilterEstado] = useState<EstadoPedido | 'todos' | 'pendientes'>('todos')
@@ -368,15 +380,47 @@ export default function PedidosClient({ pedidosIniciales }: { pedidosIniciales: 
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Pedidos</h1>
           <p className="text-sm text-gray-500 mt-0.5">
-            Estado y trazabilidad de todos los pedidos del sistema
+            {desde === hasta
+              ? `Pedidos del ${formatDate(desde)}`
+              : `Pedidos del ${formatDate(desde)} al ${formatDate(hasta)}`}
           </p>
         </div>
-        <Button
-          onClick={() => setNuevoOpen(true)}
-          className="bg-[#FBE600] hover:bg-[#E5D100] text-black font-semibold gap-2 w-full sm:w-auto"
-        >
-          <Plus className="w-4 h-4" /> Nuevo Pedido
-        </Button>
+        <div className="flex items-end gap-2 flex-wrap">
+          {/* El rango abre en el día de hoy: antes se acumulaban los de todos
+              los días y había que separar a ojo los ya despachados. */}
+          <div>
+            <p className="text-[10px] uppercase text-gray-500 mb-0.5">Desde</p>
+            <input type="date" value={desde} max={hasta}
+              onChange={(e) => irA(e.target.value, hasta)}
+              className="h-9 px-2 border border-gray-300 rounded-md text-xs bg-white" />
+          </div>
+          <div>
+            <p className="text-[10px] uppercase text-gray-500 mb-0.5">Hasta</p>
+            <input type="date" value={hasta} min={desde}
+              onChange={(e) => irA(desde, e.target.value)}
+              className="h-9 px-2 border border-gray-300 rounded-md text-xs bg-white" />
+          </div>
+          <div className="flex gap-1">
+            <button type="button" onClick={() => { const h = hoyLima(); irA(h, h) }}
+              className="h-9 px-3 text-xs font-semibold border border-gray-300 rounded-md bg-white hover:bg-gray-50">
+              Hoy
+            </button>
+            <button type="button" onClick={() => irA(diasAtras(6), hoyLima())}
+              className="h-9 px-3 text-xs font-semibold border border-gray-300 rounded-md bg-white hover:bg-gray-50">
+              7 días
+            </button>
+            <button type="button" onClick={() => irA(diasAtras(29), hoyLima())}
+              className="h-9 px-3 text-xs font-semibold border border-gray-300 rounded-md bg-white hover:bg-gray-50">
+              30 días
+            </button>
+          </div>
+          <Button
+            onClick={() => setNuevoOpen(true)}
+            className="bg-[#FBE600] hover:bg-[#E5D100] text-black font-semibold gap-2"
+          >
+            <Plus className="w-4 h-4" /> Nuevo Pedido
+          </Button>
+        </div>
       </div>
 
       <NuevoPedidoDialog
