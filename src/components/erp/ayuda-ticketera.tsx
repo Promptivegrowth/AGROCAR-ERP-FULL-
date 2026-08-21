@@ -35,26 +35,24 @@ export default function AyudaTicketera() {
             80 × 210, 80 × 297 y 80 × 3276 mm. Con 210 se botan unos 96 mm por venta.
           </p>
 
-          <p className="font-semibold mt-2">Probar el modo rollo</p>
+          <p className="font-semibold mt-2">Qué tamaño usar</p>
           <p className="mb-1">
-            En estas impresoras el tamaño larguísimo —<b>80 × 3276</b>— suele ser el modo de rollo
-            continuo: el driver corta al terminar el contenido en vez de avanzar los tres metros.
-            Vale la pena probarlo con <b>un</b> ticket:
+            Dejar <b>Thermal Paper (80 x 210)</b>, que es el más corto de los tres. El ticket sale
+            completo y correcto; lo que sobra es papel en blanco.
           </p>
-          <ol className="list-decimal ml-4 space-y-0.5">
-            <li>En el diálogo de impresión, <b>Tamaño de papel</b> → <b>Thermal Paper (80 x 3276)</b>.</li>
-            <li>Imprimir un solo ticket y mirar cuánto papel sale.</li>
-            <li>Si corta al final del ticket, dejarlo así: es el tamaño correcto.</li>
-            <li>Si avanza de más, volver a <b>80 × 210</b>, que es el que menos desperdicia de los tres.</li>
-          </ol>
+          <p className="mb-2">
+            <b>No usar 80 × 3276.</b> Ese tamaño existe para documentos de largo variable, pero si el
+            driver no corta al terminar el contenido avanza más de tres metros, y el diálogo coloca
+            la página centrada en el papel: saldría papel en blanco <i>antes</i> del ticket, que ya no
+            se recupera. No compensa el riesgo.
+          </p>
 
-          <p className="font-semibold mt-2">Si el modo rollo no funciona</p>
+          <p className="font-semibold mt-2">Para que no sobre papel</p>
           <p>
             Ese driver no acepta tamaños personalizados: aunque se cree un formulario en Windows
-            —Propiedades del servidor de impresión → Formularios— el driver no lo muestra. La salida
-            es instalar el driver del fabricante real de la ticketera (XPrinter, Gprinter, EPSON TM,
-            según la marca), que sí permite definir el largo. Mientras tanto, con 80 × 210 el ticket
-            sale completo y correcto; solo sobra papel.
+            —Propiedades del servidor de impresión → Formularios— el driver no lo muestra. La única
+            salida real es instalar el driver del fabricante de la ticketera (XPrinter, Gprinter,
+            EPSON TM, según la marca), que sí permite definir el largo del papel.
           </p>
 
           <p className="mt-2 text-[11px]">
