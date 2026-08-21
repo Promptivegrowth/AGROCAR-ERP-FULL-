@@ -63,6 +63,9 @@ export default function FacturacionPage() {
   // Guía de remisión
   const [guiaOpen, setGuiaOpen] = useState(false)
   const [guiaComp, setGuiaComp] = useState<any>(null)
+  // El diálogo se abre antes de que lleguen los datos del cliente: mientras
+  // tanto no se puede afirmar que no tenga dirección ni dejar los del anterior.
+  const [guiaCargando, setGuiaCargando] = useState(false)
   const [ncOpen, setNcOpen] = useState(false)
   const [ncCompId, setNcCompId] = useState<string | null>(null)
   const [guiaSaving, setGuiaSaving] = useState(false)
@@ -302,13 +305,22 @@ export default function FacturacionPage() {
   // ── Guía de Remisión Electrónica
   async function abrirGuia(comp: any) {
     setGuiaComp(comp)
+    setGuiaCargando(true)
+    // Se limpia el destino del comprobante anterior: si no, al abrir la segunda
+    // guía seguía mostrando la dirección del cliente de la primera hasta que
+    // respondía la consulta, y se podía emitir con el destino equivocado.
+    setGuiaForm((p) => ({ ...p, punto_llegada: '' }))
     const manana = new Date(); manana.setDate(manana.getDate() + 1)
 
     // Cargar en paralelo: dirección real del cliente, ítems con peso,
     // flota de vehículos y conductores registrados en el sistema.
     const [cliRes, itemsRes, vehRes, condRes] = await Promise.all([
       comp.cliente_id
-        ? (supabase as any).from('clientes').select('razon_social, direccion, ruc, dni').eq('id', comp.cliente_id).maybeSingle()
+        ? (supabase as any)
+            .from('clientes')
+            .select('razon_social, direccion, ruc, dni, cliente_direcciones(direccion, es_principal, activo)')
+            .eq('id', comp.cliente_id)
+            .maybeSingle()
         : Promise.resolve({ data: null }),
       (supabase as any).from('comprobantes_items')
         .select('descripcion, cantidad, productos(peso_kg, nombre)')
@@ -329,9 +341,19 @@ export default function FacturacionPage() {
     setGuiaVehiculos((vehRes.data ?? []) as any[])
     setGuiaConductores((condRes.data ?? []) as any[])
 
-    // Punto de llegada: la DIRECCIÓN del cliente (SUNAT pide dirección;
-    // la razón social ya figura en "Datos del Destinatario")
-    const llegada = cli?.direccion ?? ''
+    /**
+     * Punto de llegada: la DIRECCIÓN del cliente. SUNAT pide dirección; la
+     * razón social ya figura en "Datos del Destinatario".
+     *
+     * Se mira primero la ficha del cliente y, si estuviera vacía, la dirección
+     * principal de su lista de direcciones. Las dos deberían decir lo mismo,
+     * pero si alguna vez se desincronizan el aviso de "no tiene dirección"
+     * saldría con el dato a la vista en Maestros, que es justo lo que reportó
+     * Daniel.
+     */
+    const principal = (cli?.cliente_direcciones ?? [])
+      .find((d: any) => d.es_principal && d.activo !== false)
+    const llegada = (cli?.direccion?.trim() || principal?.direccion?.trim() || '')
 
     setGuiaForm({
       fecha_inicio_traslado: manana.toISOString().slice(0, 10),
@@ -348,6 +370,7 @@ export default function FacturacionPage() {
       transportista_razon_social: '',
       transportista_ruc: '',
     })
+    setGuiaCargando(false)
     setGuiaOpen(true)
   }
 
@@ -1725,9 +1748,11 @@ export default function FacturacionPage() {
                   placeholder="Dirección de entrega" />
                 <p className="text-[10px] text-gray-500 mt-0.5">
                   Se llena con la dirección registrada del cliente.
-                  {!guiaForm.punto_llegada && (
+                  {guiaCargando ? (
+                    <span className="text-gray-400"> Cargando la dirección…</span>
+                  ) : !guiaForm.punto_llegada ? (
                     <span className="text-amber-700 font-semibold"> ⚠ Este cliente no tiene dirección registrada — escríbela aquí o complétala en Maestros → Clientes.</span>
-                  )}
+                  ) : null}
                 </p>
               </div>
 
