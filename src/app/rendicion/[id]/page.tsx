@@ -100,11 +100,19 @@ export default function RendicionPage({ params }: { params: { id: string } }) {
   return (
     <div className="min-h-dvh bg-gray-200 print:bg-white py-6 print:py-0">
       <style>{`@media print {
-        @page { size: A4 portrait; margin: 10mm; }
+        /* Daniel pidió que entren unos 40 ítems: se aprieta el margen y la
+           altura de fila, que es lo que come la hoja. El cuerpo baja a 9pt,
+           que sigue leyéndose en papel. */
+        @page { size: A4 portrait; margin: 8mm; }
         body { background: white !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
         .no-print { display: none !important; }
-        .hoja { box-shadow: none !important; margin: 0 !important; padding: 0 !important; max-width: 100% !important; }
+        .hoja { box-shadow: none !important; margin: 0 !important; padding: 0 !important; max-width: 100% !important; font-size: 9pt !important; }
+        .hoja table td, .hoja table th { padding-top: 0 !important; padding-bottom: 0 !important; line-height: 1.2 !important; font-size: 8.5pt !important; }
+        .hoja p { margin-bottom: 1px !important; }
+        .hoja .mb-4 { margin-bottom: 6px !important; }
+        .hoja .mb-3 { margin-bottom: 5px !important; }
         tr { break-inside: avoid; }
+        thead { display: table-header-group; }
       }`}</style>
 
       {/* Barra solo en pantalla */}
@@ -121,11 +129,11 @@ export default function RendicionPage({ params }: { params: { id: string } }) {
 
       <div className="hoja max-w-[800px] mx-auto bg-white shadow-lg p-8 print:p-0 text-[11px] text-black">
         {/* Encabezado */}
-        <div className="flex items-start justify-between border-b-2 border-black pb-2">
+        <div className="flex items-start justify-between border-b-2 border-black pb-1">
           <div>
-            <p className="font-bold text-sm">{EMPRESA.razon_social}</p>
-            <p style={{ fontFamily: SLOGAN_FONT_STACK, fontSize: 14 }}>{EMPRESA.slogan}</p>
-            <p className="text-[10px] text-gray-600">RUC {EMPRESA.ruc} · Tel. {EMPRESA.telefono}</p>
+            <p className="font-bold text-[12px] leading-tight">{EMPRESA.razon_social}</p>
+            <p style={{ fontFamily: SLOGAN_FONT_STACK, fontSize: 11 }} className="leading-tight">{EMPRESA.slogan}</p>
+            <p className="text-[9px] text-gray-600 leading-tight">RUC {EMPRESA.ruc} · Tel. {EMPRESA.telefono}</p>
           </div>
           <div className="text-right">
             <p className="font-bold text-sm">RENDICIÓN DIARIA</p>
@@ -133,8 +141,8 @@ export default function RendicionPage({ params }: { params: { id: string } }) {
           </div>
         </div>
 
-        <div className="flex justify-between items-baseline mt-2 mb-3">
-          <p className="font-bold uppercase text-[13px]">{data.persona.nombre}</p>
+        <div className="flex justify-between items-baseline mt-1 mb-2">
+          <p className="font-bold uppercase text-[12px]">{data.persona.nombre}</p>
           <p className="text-[10px] font-semibold text-gray-600">
             {ROL_LABEL[data.persona.rol] ?? data.persona.rol.toUpperCase()}
           </p>
@@ -146,98 +154,88 @@ export default function RendicionPage({ params }: { params: { id: string } }) {
           </p>
         ) : (
           <>
-            {/* RESUMEN DE LO QUE ENTREGA */}
-            <div className="border-2 border-black mb-4">
-              <p className="bg-black text-white font-bold text-center py-1 text-[12px]">
+            {/* RESUMEN DE LO QUE ENTREGA
+                Compactado a dos columnas: lo que entrega físicamente a la
+                izquierda y lo que ya está en la cuenta a la derecha. Antes eran
+                seis filas altas con una explicación al costado de cada una, y
+                se comían un tercio de la hoja que hace falta para la cobranza. */}
+            <div className="border-2 border-black mb-3">
+              <p className="bg-black text-white font-bold text-center py-0.5 text-[11px]">
                 RESUMEN DE COBRANZA — LO QUE ENTREGA
               </p>
-              <table className="w-full">
-                <tbody>
-                  <tr className="border-b border-gray-200">
-                    <td className="p-2 font-bold w-[30%]">EFECTIVO COBRADO</td>
-                    <td className="p-2 text-right font-mono font-bold">S/ {num(data.cobros.efectivo)}</td>
-                    <td className="p-2 text-[10px] text-gray-600 w-[40%]">Total recibido en efectivo</td>
-                  </tr>
-                  {(data.depositos?.count ?? 0) > 0 && (
+              <div className="flex">
+                <table className="w-1/2 border-r border-gray-400">
+                  <tbody>
                     <tr className="border-b border-gray-200">
-                      <td className="p-2">(−) Depositado al banco</td>
-                      <td className="p-2 text-right font-mono">S/ {num(data.depositos.monto)}</td>
-                      <td className="p-2 text-[10px] text-gray-500">
-                        {data.depositos.count} depósito(s) — ver detalle abajo
+                      <td className="px-2 py-0.5 font-bold">EFECTIVO COBRADO</td>
+                      <td className="px-2 py-0.5 text-right font-mono font-bold">S/ {num(data.cobros.efectivo)}</td>
+                    </tr>
+                    {(data.depositos?.count ?? 0) > 0 && (
+                      <tr className="border-b border-gray-200">
+                        <td className="px-2 py-0.5">(−) Depositado al banco</td>
+                        <td className="px-2 py-0.5 text-right font-mono">S/ {num(data.depositos.monto)}</td>
+                      </tr>
+                    )}
+                    <tr className="bg-yellow-50">
+                      <td className="px-2 py-1 font-bold">EFECTIVO A ENTREGAR</td>
+                      <td className="px-2 py-1 text-right font-mono font-bold text-[13px]">
+                        S/ {num(data.efectivo_a_entregar ?? data.cobros.efectivo)}
                       </td>
                     </tr>
-                  )}
-                  <tr className="border-b border-gray-300 bg-yellow-50">
-                    <td className="p-2 font-bold">EFECTIVO A ENTREGAR</td>
-                    <td className="p-2 text-right font-mono font-bold text-[15px]">
-                      S/ {num(data.efectivo_a_entregar ?? data.cobros.efectivo)}
-                    </td>
-                    <td className="p-2 text-[10px] text-gray-600">Es lo único que entrega físicamente</td>
-                  </tr>
-                  <tr className="border-b border-gray-200">
-                    <td className="p-2">Yape</td>
-                    <td className="p-2 text-right font-mono">S/ {num(data.cobros.yape)}</td>
-                    <td className="p-2 text-[10px] text-gray-500">Ya está en la cuenta</td>
-                  </tr>
-                  <tr className="border-b border-gray-200">
-                    <td className="p-2">Plin</td>
-                    <td className="p-2 text-right font-mono">S/ {num(data.cobros.plin)}</td>
-                    <td className="p-2 text-[10px] text-gray-500">Ya está en la cuenta</td>
-                  </tr>
-                  <tr className="border-b border-gray-300">
-                    <td className="p-2">Transferencia</td>
-                    <td className="p-2 text-right font-mono">S/ {num(data.cobros.transferencia)}</td>
-                    <td className="p-2 text-[10px] text-gray-500">Ya está en la cuenta</td>
-                  </tr>
-                  <tr className="bg-gray-100">
-                    <td className="p-2 font-bold">TOTAL COBRADO</td>
-                    <td className="p-2 text-right font-mono font-bold text-[15px]">S/ {num(data.cobros.total)}</td>
-                    <td className="p-2 text-[10px] text-gray-600">{data.cobros.count} cobro(s)</td>
-                  </tr>
-                </tbody>
-              </table>
+                  </tbody>
+                </table>
+                <table className="w-1/2">
+                  <tbody>
+                    <tr className="border-b border-gray-200">
+                      <td className="px-2 py-0.5 text-gray-600">Yape</td>
+                      <td className="px-2 py-0.5 text-right font-mono">S/ {num(data.cobros.yape)}</td>
+                    </tr>
+                    <tr className="border-b border-gray-200">
+                      <td className="px-2 py-0.5 text-gray-600">Plin</td>
+                      <td className="px-2 py-0.5 text-right font-mono">S/ {num(data.cobros.plin)}</td>
+                    </tr>
+                    <tr className="border-b border-gray-200">
+                      <td className="px-2 py-0.5 text-gray-600">Transferencia</td>
+                      <td className="px-2 py-0.5 text-right font-mono">S/ {num(data.cobros.transferencia)}</td>
+                    </tr>
+                    <tr className="bg-gray-100">
+                      <td className="px-2 py-1 font-bold">TOTAL COBRADO</td>
+                      <td className="px-2 py-1 text-right font-mono font-bold text-[13px]">S/ {num(data.cobros.total)}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+              <p className="text-[9px] text-gray-600 px-2 py-0.5 border-t border-gray-300">
+                Yape, Plin y transferencia ya están en la cuenta: lo único que entrega en mano es el efectivo.
+                · {data.cobros.count} cobro(s)
+              </p>
             </div>
 
-            {/* VENTAS DEL DÍA */}
+            {/* VENTAS DEL DÍA — solo montos.
+                Daniel: "no es necesario que se imprima las ventas por detalle,
+                solo el monto, tanto en el contado y crédito". El detalle de los
+                documentos ocupaba una línea por venta y desplazaba la cobranza,
+                que es lo que se revisa al recibir el dinero. */}
             {data.ventas.count > 0 && (
-              <div className="mb-4">
+              <div className="mb-3">
                 <p className="font-bold border-b border-black pb-0.5 mb-1 text-[12px]">
                   VENTAS DEL DÍA ({data.ventas.count} documento{data.ventas.count === 1 ? '' : 's'})
                 </p>
-                <div className="flex gap-3 mb-2 text-[11px]">
-                  <div className="flex-1 border border-gray-400 p-2">
-                    <span className="font-semibold">AL CONTADO:</span>{' '}
-                    <span className="font-mono">{data.ventas.contado_count} doc · S/ {num(data.ventas.contado_monto)}</span>
-                  </div>
-                  <div className="flex-1 border border-gray-400 p-2">
-                    <span className="font-semibold">AL CRÉDITO:</span>{' '}
-                    <span className="font-mono">{data.ventas.credito_count} doc · S/ {num(data.ventas.credito_monto)}</span>
-                  </div>
-                </div>
-                <table className="w-full border-collapse">
-                  <thead>
-                    <tr className="border-y border-black text-[10px]">
-                      <th className="text-left px-1 py-0.5 w-[95px]">DOCUMENTO</th>
-                      <th className="text-left px-1 py-0.5">CLIENTE</th>
-                      <th className="text-center px-1 py-0.5 w-[60px]">PAGO</th>
-                      <th className="text-right px-1 py-0.5 w-[80px]">IMPORTE</th>
-                    </tr>
-                  </thead>
+                <table className="w-full border-collapse text-[11px]">
                   <tbody>
-                    {data.ventas.documentos.map((d, i) => (
-                      <tr key={i} className="border-b border-gray-200">
-                        <td className="px-1 py-0.5 font-mono text-[10px]">
-                          {TIPO_CORTO[d.tipo] ?? d.tipo} {d.serie}-{d.numero}
-                        </td>
-                        <td className="px-1 py-0.5">{d.cliente}</td>
-                        <td className="px-1 py-0.5 text-center text-[10px] font-semibold">
-                          {d.tipo_pago === 'contado' ? 'CONTADO' : 'CRÉDITO'}
-                        </td>
-                        <td className="px-1 py-0.5 text-right font-mono">{num(d.total)}</td>
-                      </tr>
-                    ))}
+                    <tr className="border-b border-gray-300">
+                      <td className="px-1 py-0.5 font-semibold">AL CONTADO</td>
+                      <td className="px-1 py-0.5 text-right w-[60px]">{data.ventas.contado_count} doc</td>
+                      <td className="px-1 py-0.5 text-right font-mono w-[90px]">S/ {num(data.ventas.contado_monto)}</td>
+                    </tr>
+                    <tr className="border-b border-gray-300">
+                      <td className="px-1 py-0.5 font-semibold">AL CRÉDITO</td>
+                      <td className="px-1 py-0.5 text-right">{data.ventas.credito_count} doc</td>
+                      <td className="px-1 py-0.5 text-right font-mono">S/ {num(data.ventas.credito_monto)}</td>
+                    </tr>
                     <tr className="border-t border-black font-bold">
-                      <td colSpan={3} className="px-1 py-1 text-right">TOTAL VENDIDO</td>
+                      <td className="px-1 py-1">TOTAL VENDIDO</td>
+                      <td className="px-1 py-1 text-right">{data.ventas.count} doc</td>
                       <td className="px-1 py-1 text-right font-mono">S/ {num(data.ventas.monto)}</td>
                     </tr>
                   </tbody>
