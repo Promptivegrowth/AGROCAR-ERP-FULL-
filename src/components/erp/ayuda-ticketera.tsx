@@ -47,6 +47,27 @@ export default function AyudaTicketera() {
             se recupera. No compensa el riesgo.
           </p>
 
+          <p className="font-semibold mt-2">Que corte entre un ticket y otro</p>
+          <p className="mb-1">
+            Al imprimir varios, el sistema manda cada ticket en su propia página —el diálogo lo
+            confirma: «2 hojas de papel» para dos tickets—. Que la impresora corte entre una y otra
+            depende del <b>autocorte</b>, y eso no está en el diálogo de impresión sino en el driver:
+          </p>
+          <ol className="list-decimal ml-4 space-y-0.5">
+            <li><b>Impresoras y escáneres</b> → <b>POS-80-Series</b> → <b>Preferencias de impresión</b>.</li>
+            <li>Buscar en las pestañas —<b>Diseño</b>, <b>Papel y calidad</b>— una opción tipo
+              <b> Cortar papel</b>, <b>Auto cut</b>, <b>Cutter</b> o <b>Corte automático</b>, y
+              ponerla en <b>Después de cada página</b> o <b>Después de cada documento</b>.</li>
+            <li>Si no aparece ahí, probar en <b>Propiedades de impresora</b> →
+              <b> Configuración del dispositivo</b> o <b>Herramientas</b>.</li>
+            <li>Muchas ticketeras traen además su propia utilidad de configuración —viene en el CD o
+              en la web del fabricante— donde el corte se activa por comando.</li>
+          </ol>
+          <p className="mb-2 mt-1">
+            Si el driver solo corta al terminar <b>todo</b> el trabajo, imprimir los tickets de a uno
+            en vez de en lote hace que corte cada vez.
+          </p>
+
           <p className="font-semibold mt-2">Para que no sobre papel</p>
           <p>
             Ese driver no acepta tamaños personalizados: aunque se cree un formulario en Windows
