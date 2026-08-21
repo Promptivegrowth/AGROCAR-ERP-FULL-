@@ -5,15 +5,13 @@ import { useState } from 'react'
 /**
  * Ayuda para cuando la ticketera bota papel de más.
  *
- * El sistema pide una página de 80 mm de ancho por el alto exacto del ticket
- * —medido, no estimado: un ticket normal sale en 80 × 114 mm—, pero al
- * imprimir manda el tamaño de papel elegido en el diálogo, y el driver de la
- * POS-80 solo ofrece 80 × 210, 80 × 297 y 80 × 3276. Con el más corto de esos
- * tres, la impresora avanza 210 mm para un ticket de 114: casi un palmo en
- * blanco por venta.
- *
- * La salida es crear un formulario de papel a la medida en Windows, que
- * después aparece en esa misma lista. Los pasos van acá, donde se imprime.
+ * El sistema arma la página del alto exacto del ticket —medido: unos
+ * 80 × 114 mm—, pero al imprimir manda el tamaño de papel que tenga el driver.
+ * El de la POS-80 solo expone 80 × 210, 80 × 297 y 80 × 3276 mm, y NO toma los
+ * formularios personalizados de Windows: se probó creando "ticket 80x120" en
+ * Propiedades del servidor de impresión y el driver siguió mostrando solo los
+ * suyos. Por eso acá no se promete un tamaño a medida, sino lo que sí depende
+ * de la impresora.
  */
 export default function AyudaTicketera() {
   const [abierto, setAbierto] = useState(false)
@@ -32,40 +30,36 @@ export default function AyudaTicketera() {
         <div className="mt-2 bg-amber-50 border border-amber-200 rounded-lg p-3 text-xs text-amber-900 max-w-2xl text-left">
           <p className="font-semibold mb-1">El ticket mide bien; el papel de más lo agrega la impresora.</p>
           <p className="mb-2">
-            El sistema arma la página del alto justo del ticket (unos 114 mm). Al imprimir manda el
-            tamaño elegido en <b>Tamaño de papel</b>, y el driver de la POS-80 solo trae
-            80 × 210, 80 × 297 y 80 × 3276 mm. Con 80 × 210 —el más corto— la impresora igual avanza
-            210 mm. Para que corte al terminar el ticket hay que crear un tamaño propio, una sola vez
-            por computadora:
+            El sistema arma la página del alto justo del ticket, unos 114 mm. La impresora avanza lo
+            que diga su <b>tamaño de papel</b>, y el driver de la POS-80 solo trae tres:
+            80 × 210, 80 × 297 y 80 × 3276 mm. Con 210 se botan unos 96 mm por venta.
           </p>
 
-          <p className="font-semibold mt-2">1. Crear el formulario en Windows</p>
+          <p className="font-semibold mt-2">Probar el modo rollo</p>
+          <p className="mb-1">
+            En estas impresoras el tamaño larguísimo —<b>80 × 3276</b>— suele ser el modo de rollo
+            continuo: el driver corta al terminar el contenido en vez de avanzar los tres metros.
+            Vale la pena probarlo con <b>un</b> ticket:
+          </p>
           <ol className="list-decimal ml-4 space-y-0.5">
-            <li><b>Configuración</b> → <b>Bluetooth y dispositivos</b> → <b>Impresoras y escáneres</b>.</li>
-            <li>Bajar hasta <b>Configuración relacionada</b> y abrir <b>Propiedades del servidor de impresión</b>.</li>
-            <li>Pestaña <b>Formularios</b> → marcar <b>Crear un nuevo formulario</b>.</li>
-            <li>Nombre: <b>Ticket 80x120</b>. Unidades: <b>Métrico</b>. Ancho <b>8,00 cm</b>, alto <b>12,00 cm</b>.
-              Los cuatro márgenes en <b>0</b>.</li>
-            <li><b>Guardar formulario</b> y cerrar.</li>
+            <li>En el diálogo de impresión, <b>Tamaño de papel</b> → <b>Thermal Paper (80 x 3276)</b>.</li>
+            <li>Imprimir un solo ticket y mirar cuánto papel sale.</li>
+            <li>Si corta al final del ticket, dejarlo así: es el tamaño correcto.</li>
+            <li>Si avanza de más, volver a <b>80 × 210</b>, que es el que menos desperdicia de los tres.</li>
           </ol>
 
-          <p className="font-semibold mt-2">2. Asignarlo a la ticketera</p>
-          <ol className="list-decimal ml-4 space-y-0.5">
-            <li>En <b>Impresoras y escáneres</b> abrir la <b>POS-80-Series</b> → <b>Preferencias de impresión</b>.</li>
-            <li>En <b>Tamaño del papel</b> elegir <b>Ticket 80x120</b> y aceptar.</li>
-            <li>Si el driver tiene <b>Corte de papel</b> o <b>Auto cut</b>, dejarlo en <b>Después de cada documento</b>.</li>
-          </ol>
-
-          <p className="font-semibold mt-2">3. Al imprimir</p>
-          <ol className="list-decimal ml-4 space-y-0.5">
-            <li>En <b>Tamaño de papel</b> del diálogo elegir <b>Ticket 80x120</b>.</li>
-            <li><b>Escala</b> en <b>100</b> —no «Ajustar al área imprimible»— y <b>Márgenes</b> en <b>Predeterminado</b>.</li>
-          </ol>
+          <p className="font-semibold mt-2">Si el modo rollo no funciona</p>
+          <p>
+            Ese driver no acepta tamaños personalizados: aunque se cree un formulario en Windows
+            —Propiedades del servidor de impresión → Formularios— el driver no lo muestra. La salida
+            es instalar el driver del fabricante real de la ticketera (XPrinter, Gprinter, EPSON TM,
+            según la marca), que sí permite definir el largo. Mientras tanto, con 80 × 210 el ticket
+            sale completo y correcto; solo sobra papel.
+          </p>
 
           <p className="mt-2 text-[11px]">
-            Si el formulario nuevo no aparece en la lista, cerrar sesión de Windows y volver a entrar.
-            Mientras tanto, de las tres opciones del driver la que menos papel bota es
-            <b> 80 × 210</b>: nunca usar 80 × 3276, que avanza más de tres metros.
+            Al imprimir, revisar siempre que <b>Escala</b> esté en <b>100</b> —no en «Ajustar al área
+            imprimible»— y <b>Márgenes</b> en <b>Predeterminado</b>.
           </p>
         </div>
       )}
