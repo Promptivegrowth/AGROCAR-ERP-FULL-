@@ -3,6 +3,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { numeroALetras } from '@/lib/utils'
 import { EMPRESA, SLOGAN_FONT_STACK } from '@/lib/empresa'
 import AutoPrint from './auto-print'
+import AyudaTicketera from '@/components/erp/ayuda-ticketera'
 
 export const dynamic = 'force-dynamic'
 
@@ -154,6 +155,7 @@ export default async function ImprimirLotePage({
             </h1>
             <p className="text-xs text-gray-500">
               Formato: {esA4 ? 'A4 SUNAT' : 'Ticket 80mm'} · El diálogo de impresión se abre automáticamente.
+              {!esA4 && <><br /><AyudaTicketera /></>}
             </p>
           </div>
           <button

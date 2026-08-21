@@ -4,6 +4,7 @@ import { notFound } from 'next/navigation'
 import { numeroALetras } from '@/lib/utils'
 import { EMPRESA, SLOGAN_FONT_STACK } from '@/lib/empresa'
 import PrintButton from './print-button'
+import AyudaTicketera from '@/components/erp/ayuda-ticketera'
 
 export const dynamic = 'force-dynamic'
 
@@ -173,7 +174,10 @@ export default async function ComprobantePage({
         >
           📄 A4 SUNAT
         </a>
-        <div className="ml-auto"><PrintButton /></div>
+        <div className="ml-auto flex items-center gap-3">
+          {!esA4 && <AyudaTicketera />}
+          <PrintButton />
+        </div>
       </div>
       {!esA4 && (
         <div className="mt-2 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-xs text-amber-900 flex items-start gap-2">
