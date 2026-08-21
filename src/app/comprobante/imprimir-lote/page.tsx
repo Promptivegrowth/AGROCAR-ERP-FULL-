@@ -4,6 +4,7 @@ import { numeroALetras } from '@/lib/utils'
 import { EMPRESA, SLOGAN_FONT_STACK } from '@/lib/empresa'
 import AutoPrint from './auto-print'
 import AyudaTicketera from '@/components/erp/ayuda-ticketera'
+import { qrDataUri } from '@/lib/qr'
 
 export const dynamic = 'force-dynamic'
 
@@ -95,6 +96,20 @@ export default async function ImprimirLotePage({
     if (s !== 0) return s
     return Number(a.numero) - Number(b.numero)
   })
+
+  /**
+   * Los QR se generan acá, antes de dibujar: dentro del map del JSX no se puede
+   * esperar una promesa. Se hacen todos a la vez y viajan incrustados, sin
+   * pedirle nada a ninguna web externa.
+   */
+  const qrPorComprobante = new Map<string, string>()
+  await Promise.all(lista.map(async (comp: any) => {
+    const cli: any = comp.clientes
+    const doc = cli?.ruc ?? cli?.dni ?? comp.cliente_externo_doc ?? '—'
+    const contenido = `AGROCAR|20519883296|${comp.tipo}|${comp.serie}-${pad(comp.numero, 6)}|` +
+      `${Number(comp.total ?? 0).toFixed(2)}|${comp.fecha_emision}|${doc}`
+    qrPorComprobante.set(comp.id, await qrDataUri(contenido, 120))
+  }))
 
   return (
     <div className="envoltura bg-gray-200 print:bg-white">
@@ -212,8 +227,7 @@ export default async function ImprimirLotePage({
           const fechaEmision = new Date(comp.fecha_emision + 'T12:00:00-05:00').toLocaleDateString('es-PE', {
             day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'America/Lima',
           })
-          const qrData = `AGROCAR|20519883296|${comp.tipo}|${correlativo}|${totalNum.toFixed(2)}|${comp.fecha_emision}|${docCliente.valor}`
-          const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=${encodeURIComponent(qrData)}`
+          const qrUrl = qrPorComprobante.get(comp.id) ?? ''
 
           return (
             <div

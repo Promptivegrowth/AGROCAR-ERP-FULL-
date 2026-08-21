@@ -2,6 +2,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { notFound } from 'next/navigation'
 import { EMPRESA } from '@/lib/empresa'
 import GuiaActions from './guia-actions'
+import { qrDataUri } from '@/lib/qr'
 
 export const dynamic = 'force-dynamic'
 
@@ -79,7 +80,8 @@ export default async function GuiaPage({ params }: { params: Promise<{ id: strin
 
   // QR data básico (similar a SUNAT)
   const qrData = `${EMPRESA.ruc}|09|${guia.serie}|${guia.numero}|${pesoBruto.toFixed(2)}|${(guia.fecha_inicio_traslado ?? '').replace(/-/g, '')}`
-  const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=${encodeURIComponent(qrData)}`
+  // QR generado en el servidor, sin depender de una web externa
+  const qrUrl = await qrDataUri(qrData, 120)
 
   const motivoLabel = MOTIVOS_LABEL[guia.motivo_traslado] ?? guia.motivo_traslado
   const modalidadLabel = guia.modalidad_traslado === 'publico' ? 'Público' : 'Privado'

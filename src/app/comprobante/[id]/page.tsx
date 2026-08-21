@@ -5,6 +5,7 @@ import { numeroALetras } from '@/lib/utils'
 import { EMPRESA, SLOGAN_FONT_STACK } from '@/lib/empresa'
 import PrintButton from './print-button'
 import AyudaTicketera from '@/components/erp/ayuda-ticketera'
+import { qrDataUri } from '@/lib/qr'
 
 export const dynamic = 'force-dynamic'
 
@@ -153,7 +154,8 @@ export default async function ComprobantePage({
   const monedaLabel = comp.moneda === 'USD' ? 'DOLARES AMERICANOS' : 'SOLES'
 
   const qrData = `AGROCAR|20519883296|${comp.tipo}|${correlativo}|${totalNum.toFixed(2)}|${comp.fecha_emision}|${docCliente.valor}`
-  const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(qrData)}`
+  // QR generado en el servidor, sin depender de una web externa
+  const qrUrl = await qrDataUri(qrData, 150)
 
   // Toggle de formato (oculto al imprimir)
   const ToggleFormato = () => (

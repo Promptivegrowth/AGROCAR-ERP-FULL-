@@ -1,6 +1,7 @@
 import { createAdminClient } from '@/lib/supabase/admin'
 import { notFound } from 'next/navigation'
 import PrintButton from './print-button'
+import { qrDataUri } from '@/lib/qr'
 
 export const dynamic = 'force-dynamic'
 
@@ -82,7 +83,8 @@ export default async function GuiaRemisionPage({ params }: { params: Promise<{ i
   const conductorLic = 'K40389487'
 
   const qrData = `AGROCAR|20519883296|09|${correlativo}|${despacho.fecha_despacho}`
-  const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=${encodeURIComponent(qrData)}`
+  // QR generado en el servidor, sin depender de una web externa
+  const qrUrl = await qrDataUri(qrData, 120)
 
   return (
     <div className="min-h-dvh bg-gray-100 py-6 px-3 print:bg-white print:py-0">
