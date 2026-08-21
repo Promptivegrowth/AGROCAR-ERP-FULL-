@@ -154,22 +154,28 @@ export default async function HojaRutaSimplePage({ params }: { params: { id: str
               contenido. Total: 100% — distribuido para que "Cliente" tenga
               espacio suficiente para nombres peruanos largos (3-4 palabras). */}
           <colgroup>
-            <col style={{ width: '11%' }} />{/* Pedido */}
+            <col style={{ width: '9%' }} />{/* Pedido */}
             <col style={{ width: '5%' }} />{/* Cod.Vend */}
             <col style={{ width: '4%' }} />{/* T.D. */}
             {/* Comprob subió de 11% a 14%: con 11% "B001 00000358" se partía
                 en dos líneas y duplicaba el alto de todas las filas */}
             <col style={{ width: '14%' }} />{/* Comprob */}
-            <col style={{ width: '30%' }} />{/* Cliente */}
+            {/* Cliente pasa de 30% a 41%. Daniel pidió "más espacio para los
+                clientes": nombres como WALDIR JORDY SANTOS PALACIOS ESPINOZA o
+                VICENTA HUARACHI LIMACHI DE CHURA se partían en dos líneas y
+                cada corte duplica el alto de esa fila. El espacio sale de
+                Observación, que estaba en 18% para anotar a mano y con 10%
+                sigue alcanzando. */}
+            <col style={{ width: '41%' }} />{/* Cliente */}
             {/* Total subió de 9% a 11%: el TOTAL GENERAL se partía en dos */}
             <col style={{ width: '11%' }} />{/* Total */}
-            <col style={{ width: '7%' }} />{/* Condic */}
-            <col style={{ width: '18%' }} />{/* Observación */}
+            <col style={{ width: '6%' }} />{/* Condic */}
+            <col style={{ width: '10%' }} />{/* Observación */}
           </colgroup>
           <thead>
             <tr className="border-b border-gray-400">
               <th className="text-left px-1 py-0.5 text-[7.5pt] font-bold text-gray-700">Pedido</th>
-              <th className="text-left px-1 py-0.5 text-[7.5pt] font-bold text-gray-700">Cod.Vend.</th>
+              <th className="text-left px-1 py-0.5 text-[7.5pt] font-bold text-gray-700">Vend.</th>
               <th className="text-left px-1 py-0.5 text-[7.5pt] font-bold text-gray-700">T.D.</th>
               <th className="text-left px-1 py-0.5 text-[7.5pt] font-bold text-gray-700">Comprob.</th>
               <th className="text-left px-1 py-0.5 text-[7.5pt] font-bold text-gray-700">Cliente</th>

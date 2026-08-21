@@ -196,13 +196,18 @@ export default async function HojaRutaAlmacenPage({ params }: { params: Promise<
         {/* Tabla consolidada */}
         <table className="w-full almacen-table border-collapse" style={{ lineHeight: 1.15 }}>
           <thead>
-            <tr className="border-b-2 border-gray-700 text-[9pt]">
-              <th className="text-left py-0.5 px-1.5 font-bold w-16">Código</th>
+            {/* Daniel: "más espacio para la descripción y con letras más
+                pequeñas para que pueda entrar más ítem". La Observación se
+                llevaba el 38% del ancho estando siempre vacía; con 20% sigue
+                habiendo dónde anotar a mano y la descripción deja de partirse
+                en dos líneas, que era lo que hacía altas las filas. */}
+            <tr className="border-b-2 border-gray-700 text-[8pt]">
+              <th className="text-left py-0.5 px-1.5 font-bold w-14">Código</th>
               <th className="text-left py-0.5 px-1.5 font-bold">Descripción</th>
-              <th className="text-left py-0.5 px-1.5 font-bold w-12">UDM</th>
-              <th className="text-right py-0.5 px-1.5 font-bold w-16">Cant.</th>
-              <th className="text-right py-0.5 px-1.5 font-bold w-16">Peso</th>
-              <th className="text-left py-0.5 px-1.5 font-bold border-l border-gray-400" style={{ width: '38%' }}>
+              <th className="text-left py-0.5 px-1.5 font-bold w-10">UDM</th>
+              <th className="text-right py-0.5 px-1.5 font-bold w-14">Cant.</th>
+              <th className="text-right py-0.5 px-1.5 font-bold w-14">Peso</th>
+              <th className="text-left py-0.5 px-1.5 font-bold border-l border-gray-400" style={{ width: '20%' }}>
                 Observación
               </th>
             </tr>
@@ -215,7 +220,7 @@ export default async function HojaRutaAlmacenPage({ params }: { params: Promise<
                 </td>
               </tr>
             ) : filas.map((r) => (
-              <tr key={r.producto_id} className="border-b border-gray-300 text-[9pt]" style={{ lineHeight: 1.1, height: 22 }}>
+              <tr key={r.producto_id} className="border-b border-gray-300 text-[8pt]" style={{ lineHeight: 1.1, height: 16 }}>
                 <td className="py-0 px-1.5 font-mono text-gray-700">{r.codigo}</td>
                 <td className="py-0 px-1.5 text-gray-900">{r.descripcion}</td>
                 <td className="py-0 px-1.5 text-gray-700 uppercase">{r.udm}</td>
@@ -226,7 +231,7 @@ export default async function HojaRutaAlmacenPage({ params }: { params: Promise<
             ))}
           </tbody>
           <tfoot>
-            <tr className="border-t-2 border-gray-700 text-[9pt] font-bold">
+            <tr className="border-t-2 border-gray-700 text-[8.5pt] font-bold">
               <td colSpan={3} className="py-1 px-1.5 text-right">TOTALES:</td>
               <td className="py-1 px-1.5 text-right font-mono">
                 {totalCantidad.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
