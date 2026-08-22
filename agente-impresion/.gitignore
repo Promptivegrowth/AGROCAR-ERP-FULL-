@@ -1,0 +1,2 @@
+# El ejecutable se compila en cada máquina con instalar.ps1
+*.exe
