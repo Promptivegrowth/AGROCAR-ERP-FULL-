@@ -25,6 +25,7 @@ export default function BotonTicketeraLote({ tickets }: { tickets: DatosTicket[]
   const [elegida, setElegida] = useState<string | null>(null)
   const [progreso, setProgreso] = useState<number | null>(null)
   const [listo, setListo] = useState(false)
+  const [yaImprimio, setYaImprimio] = useState(false)
 
   useEffect(() => {
     let vivo = true
@@ -38,8 +39,6 @@ export default function BotonTicketeraLote({ tickets }: { tickets: DatosTicket[]
     })
     return () => { vivo = false }
   }, [])
-
-  if (!disponible || tickets.length === 0) return null
 
   const imprimirTodos = async () => {
     setProgreso(0)
@@ -77,6 +76,24 @@ export default function BotonTicketeraLote({ tickets }: { tickets: DatosTicket[]
       toast.error(`Salieron ${salieron} de ${tickets.length}`, { description: ultimoError })
     }
   }
+
+  /**
+   * Al abrirse la pantalla imprime solo.
+   *
+   * Se llega acá desde el botón "Imprimir tickets" de Facturación, que ya es
+   * la orden de imprimir: pedir un segundo clic sería un paso de más. El
+   * botón queda igual para repetir la impresión si hizo falta.
+   *
+   * La bandera evita que una recarga de la página vuelva a imprimir todo.
+   */
+  useEffect(() => {
+    if (!disponible || tickets.length === 0 || yaImprimio) return
+    setYaImprimio(true)
+    void imprimirTodos()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [disponible, tickets.length])
+
+  if (!disponible || tickets.length === 0) return null
 
   const enCurso = progreso !== null
 

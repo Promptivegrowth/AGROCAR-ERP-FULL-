@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect } from 'react'
+import { estadoAgente } from '@/lib/agente-impresion'
 
 /**
  * Dispara window.print() cuando el logo y los QR ya cargaron.
@@ -92,8 +93,27 @@ export default function AutoPrint({ count, esTicket }: { count: number; esTicket
         }),
     )
 
-    Promise.all(waits).then(() => {
+    Promise.all(waits).then(async () => {
       if (cancelled) return
+
+      /**
+       * Si hay agente de impresión, NO se abre el diálogo del navegador.
+       *
+       * Antes se abría igual y se adelantaba: el usuario apretaba "Imprimir
+       * tickets" en Facturación, esta pantalla se abría y el diálogo saltaba
+       * solo, con lo cual terminaba imprimiendo por el camino viejo aunque el
+       * agente estuviera instalado. El botón de ticketera quedaba ahí sin que
+       * nadie llegara a usarlo.
+       *
+       * Con agente presente imprime BotonTicketeraLote, sin diálogo y sin que
+       * haya que apretar nada.
+       */
+      if (esTicket) {
+        const agente = await estadoAgente()
+        if (cancelled) return
+        if (agente.disponible) return
+      }
+
       setTimeout(() => {
         if (cancelled) return
         ajustarPagina()
