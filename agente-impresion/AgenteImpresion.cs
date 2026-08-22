@@ -24,6 +24,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Reflection;
 using System.IO;
 using System.Net;
 using System.Net.Sockets;
@@ -31,10 +32,25 @@ using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
 
+[assembly: AssemblyTitle("Agente de impresion AGROCAR")]
+[assembly: AssemblyDescription("Puente entre el ERP y la ticketera termica")]
+[assembly: AssemblyCompany("Promptive")]
+[assembly: AssemblyProduct("AGROCAR ERP")]
+[assembly: AssemblyCopyright("Promptive - Luciernaga & Asociados S.A.C.")]
+[assembly: AssemblyVersion("1.0.0.0")]
+[assembly: AssemblyFileVersion("1.0.0.0")]
+
 class Agente
 {
     const int PUERTO = 9123;
     const string VERSION = "1.0";
+    const string MARCA = "Promptive";
+
+    // Icono junto al reloj: sirve para ver de un vistazo que el agente esta
+    // andando, y para cerrarlo sin tener que buscarlo en el administrador de
+    // tareas. Sin esto el programa es invisible y nadie sabe si esta vivo.
+    static System.Windows.Forms.NotifyIcon bandeja;
+    static int impresos = 0;
 
     // ── Impresión RAW por el spooler de Windows ──────────────────────────────
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
@@ -124,6 +140,7 @@ class Agente
         return s.Replace("\\", "\\\\").Replace("\"", "\\\"");
     }
 
+    [STAThread]
     static void Main(string[] args)
     {
         TcpListener servidor;
@@ -139,15 +156,81 @@ class Agente
             return;
         }
 
-        while (true)
+        // El servidor atiende en su propio hilo para que la bandeja quede libre
+        Thread hilo = new Thread(delegate()
         {
+            while (true)
+            {
+                try
+                {
+                    TcpClient cliente = servidor.AcceptTcpClient();
+                    ThreadPool.QueueUserWorkItem(delegate(object o) { Atender(cliente); });
+                }
+                catch { }
+            }
+        });
+        hilo.IsBackground = true;
+        hilo.Start();
+
+        IniciarBandeja();
+        System.Windows.Forms.Application.Run();
+    }
+
+    static void IniciarBandeja()
+    {
+        try
+        {
+            bandeja = new System.Windows.Forms.NotifyIcon();
             try
             {
-                TcpClient cliente = servidor.AcceptTcpClient();
-                ThreadPool.QueueUserWorkItem(delegate(object o) { Atender(cliente); });
+                bandeja.Icon = System.Drawing.Icon.ExtractAssociatedIcon(
+                    Assembly.GetExecutingAssembly().Location);
             }
-            catch { }
+            catch { bandeja.Icon = System.Drawing.SystemIcons.Application; }
+
+            bandeja.Text = "Impresion AGROCAR - " + MARCA;
+            bandeja.Visible = true;
+
+            var menu = new System.Windows.Forms.ContextMenuStrip();
+
+            var titulo = new System.Windows.Forms.ToolStripMenuItem("Agente de impresion AGROCAR");
+            titulo.Enabled = false;
+            menu.Items.Add(titulo);
+
+            var porQuien = new System.Windows.Forms.ToolStripMenuItem("por " + MARCA + " - v" + VERSION);
+            porQuien.Enabled = false;
+            menu.Items.Add(porQuien);
+
+            menu.Items.Add(new System.Windows.Forms.ToolStripSeparator());
+
+            var estado = new System.Windows.Forms.ToolStripMenuItem("Ver estado");
+            estado.Click += delegate(object s2, EventArgs e2)
+            {
+                var sb = new StringBuilder();
+                sb.AppendLine("Agente de impresion AGROCAR");
+                sb.AppendLine("por " + MARCA + "  -  version " + VERSION);
+                sb.AppendLine();
+                sb.AppendLine("Escuchando en 127.0.0.1:" + PUERTO);
+                sb.AppendLine("Tickets impresos desde que se abrio: " + impresos);
+                sb.AppendLine();
+                sb.AppendLine("Impresoras detectadas:");
+                foreach (string n in Impresoras()) sb.AppendLine("  - " + n);
+                System.Windows.Forms.MessageBox.Show(sb.ToString(), "Agente de impresion - " + MARCA);
+            };
+            menu.Items.Add(estado);
+
+            var salir = new System.Windows.Forms.ToolStripMenuItem("Cerrar el agente");
+            salir.Click += delegate(object s2, EventArgs e2)
+            {
+                bandeja.Visible = false;
+                System.Windows.Forms.Application.Exit();
+            };
+            menu.Items.Add(salir);
+
+            bandeja.ContextMenuStrip = menu;
+            bandeja.DoubleClick += delegate(object s2, EventArgs e2) { estado.PerformClick(); };
         }
+        catch { /* sin bandeja el agente igual imprime */ }
     }
 
     static void MostrarError(string msg)
@@ -210,7 +293,10 @@ class Agente
                 if (ruta.StartsWith("/ping"))
                 {
                     StringBuilder sb = new StringBuilder();
-                    sb.Append("{\"ok\":true,\"version\":\"").Append(VERSION).Append("\",\"impresoras\":[");
+                    sb.Append("{\"ok\":true,\"version\":\"").Append(VERSION)
+                      .Append("\",\"marca\":\"").Append(MARCA)
+                      .Append("\",\"impresos\":").Append(impresos)
+                      .Append(",\"impresoras\":[");
                     List<string> lista = Impresoras();
                     for (int i = 0; i < lista.Count; i++)
                     {
@@ -253,9 +339,14 @@ class Agente
 
                     string error = ImprimirRaw(impresora, datos);
                     if (error == null)
+                    {
+                        impresos++;
                         Responder(flujo, 200, "{\"ok\":true,\"bytes\":" + datos.Length + "}");
+                    }
                     else
+                    {
                         Responder(flujo, 500, "{\"ok\":false,\"error\":\"" + Escapar(error) + "\"}");
+                    }
                     return;
                 }
 

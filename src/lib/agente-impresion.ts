@@ -20,6 +20,7 @@ const CLAVE_IMPRESORA = 'agrocar.ticketera'
 export type EstadoAgente = {
   disponible: boolean
   version?: string
+  marca?: string
   impresoras: string[]
 }
 
@@ -40,6 +41,7 @@ export async function estadoAgente(): Promise<EstadoAgente> {
     return {
       disponible: d?.ok === true,
       version: d?.version,
+      marca: d?.marca,
       impresoras: Array.isArray(d?.impresoras) ? d.impresoras : [],
     }
   } catch {

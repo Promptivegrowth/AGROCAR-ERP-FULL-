@@ -1,4 +1,4 @@
-<#
+﻿<#
     INSTALADOR DEL AGENTE DE IMPRESIÓN — AGROCAR ERP
 
     Qué hace, en una sola pasada:
@@ -32,7 +32,15 @@ $destino  = Join-Path $env:LOCALAPPDATA 'AgrocarERP'
 $exe      = Join-Path $destino 'AgenteImpresionAgrocar.exe'
 $impresora = 'POS-80-Series'
 
-Write-Host "== Agente de impresion AGROCAR ==" -ForegroundColor White
+Write-Host ""
+Write-Host "   ____                      _   _           " -ForegroundColor Yellow
+Write-Host "  |  _ \ _ __ ___  _ __ ___ | |_(_)_   _____ " -ForegroundColor Yellow
+Write-Host "  | |_) | '__/ _ \| '_ \` _ \| __| \ \ / / _ \" -ForegroundColor Yellow
+Write-Host "  |  __/| | | (_) | | | | | | |_| |\ V /  __/" -ForegroundColor Yellow
+Write-Host "  |_|   |_|  \___/|_| |_| |_|\__|_| \_/ \___|" -ForegroundColor Yellow
+Write-Host ""
+Write-Host "  Agente de impresion  -  AGROCAR ERP" -ForegroundColor White
+Write-Host "  Promptive - Luciernaga y Asociados S.A.C." -ForegroundColor DarkGray
 
 # ── 1. Compilar ─────────────────────────────────────────────────────────────
 Titulo '1. Compilando el agente'
@@ -52,7 +60,12 @@ New-Item -ItemType Directory -Force -Path $destino | Out-Null
 Get-Process -Name 'AgenteImpresionAgrocar' -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
 Start-Sleep -Milliseconds 500
 
-& $csc /nologo /target:winexe /out:"$exe" /reference:System.Drawing.dll /reference:System.Windows.Forms.dll "$fuente" | Out-Null
+$icono = Join-Path $aqui 'promptive.ico'
+$argsCsc = @('/nologo', '/target:winexe', "/out:$exe",
+             '/reference:System.Drawing.dll', '/reference:System.Windows.Forms.dll')
+if (Test-Path $icono) { $argsCsc += "/win32icon:$icono" }
+$argsCsc += $fuente
+& $csc @argsCsc | Out-Null
 if (-not (Test-Path $exe)) { Malo "La compilacion fallo."; Read-Host "`nEnter para salir"; exit 1 }
 Bien "compilado en $exe"
 
@@ -118,6 +131,11 @@ if ($ok) {
     Write-Host "== Listo ==" -ForegroundColor Green
     Write-Host "En el ERP, al abrir un comprobante en formato Ticket, aparece el boton"
     Write-Host "'Imprimir en ticketera'. Si no aparece, recargar con Ctrl+F5."
+    Write-Host ""
+    Write-Host "El agente queda con su icono al lado del reloj. Doble clic ahi para" -ForegroundColor Gray
+    Write-Host "ver su estado o cerrarlo." -ForegroundColor Gray
+    Write-Host ""
+    Write-Host "Soporte: Promptive" -ForegroundColor DarkGray
 } else {
     Write-Host "== Termino con problemas ==" -ForegroundColor Yellow
     Write-Host "El agente no respondio. Probar ejecutando a mano:"
