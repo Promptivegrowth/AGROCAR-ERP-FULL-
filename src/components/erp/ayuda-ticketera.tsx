@@ -35,45 +35,44 @@ export default function AyudaTicketera() {
             80 × 210, 80 × 297 y 80 × 3276 mm. Con 210 se botan unos 96 mm por venta.
           </p>
 
-          <p className="font-semibold mt-2">Qué tamaño usar</p>
+          <p className="font-semibold mt-2">La causa real: el margen final del driver</p>
           <p className="mb-1">
-            Dejar <b>Thermal Paper (80 x 210)</b>, que es el más corto de los tres. El ticket sale
-            completo y correcto; lo que sobra es papel en blanco.
+            Estas ticketeras traen un <b>margen final</b> configurado en el driver —en la POS-80 de
+            oficina venía en <b>30 mm</b>— que se agrega después de cada ticket. Eso es el papel en
+            blanco, y no se ve desde el diálogo de impresión de Windows. Se baja a <b>3 mm</b>,
+            que es el mínimo que acepta.
+          </p>
+          <p className="mb-1">
+            La forma rápida es por PowerShell <b>como administrador</b>, cambiando
+            <code> POS-80-Series</code> por el nombre de la impresora si fuera otro:
+          </p>
+          <pre className="bg-white border border-amber-300 rounded p-2 my-1 overflow-x-auto text-[10px] leading-relaxed">{`$P = "POS-80-Series"
+Set-PrinterProperty -PrinterName $P -PropertyName "Config:zjTrailingMargin" -Value "zj3mm"
+Set-PrinterProperty -PrinterName $P -PropertyName "Config:zjPaperCutting" -Value "Option2"`}</pre>
+          <p className="mb-2">
+            El margen solo acepta ciertos valores: <b>zj3mm</b>, zj12mm, zj15mm, zj18mm y zj30mm.
+            Para el corte, si <b>Option2</b> no corta entre tickets, probar <b>Option4</b> y si no
+            volver a <b>Option1</b>. Para ver cómo quedó:
+            <code className="block mt-1">Get-PrinterProperty -PrinterName $P</code>
           </p>
           <p className="mb-2">
-            <b>No usar 80 × 3276.</b> Ese tamaño existe para documentos de largo variable, pero si el
-            driver no corta al terminar el contenido avanza más de tres metros, y el diálogo coloca
-            la página centrada en el papel: saldría papel en blanco <i>antes</i> del ticket, que ya no
-            se recupera. No compensa el riesgo.
+            En <b>Tamaño de papel</b> dejar <b>Thermal Paper (80 x 210)</b>. No usar el de 3276.
           </p>
 
-          <p className="font-semibold mt-2">Que corte entre un ticket y otro</p>
-          <p className="mb-1">
-            Al imprimir varios, el sistema manda cada ticket en su propia página —el diálogo lo
-            confirma: «2 hojas de papel» para dos tickets—. Que la impresora corte entre una y otra
-            depende del <b>autocorte</b>, y eso no está en el diálogo de impresión sino en el driver:
+          <p className="font-semibold mt-2">Si la impresora da Error y no imprime nada</p>
+          <p className="mb-2">
+            Suele ser que el driver quedó apuntando a un puerto que ya no existe. Pasó en la
+            computadora de oficina: la impresora respondía en <b>USB001</b> y el driver seguía en
+            <b> POS-80 PORT:</b>, así que todo trabajo entraba en error y trababa la cola. Se ve y se
+            corrige así, como administrador:
           </p>
-          <ol className="list-decimal ml-4 space-y-0.5">
-            <li><b>Impresoras y escáneres</b> → <b>POS-80-Series</b> → <b>Preferencias de impresión</b>.</li>
-            <li>Buscar en las pestañas —<b>Diseño</b>, <b>Papel y calidad</b>— una opción tipo
-              <b> Cortar papel</b>, <b>Auto cut</b>, <b>Cutter</b> o <b>Corte automático</b>, y
-              ponerla en <b>Después de cada página</b> o <b>Después de cada documento</b>.</li>
-            <li>Si no aparece ahí, probar en <b>Propiedades de impresora</b> →
-              <b> Configuración del dispositivo</b> o <b>Herramientas</b>.</li>
-            <li>Muchas ticketeras traen además su propia utilidad de configuración —viene en el CD o
-              en la web del fabricante— donde el corte se activa por comando.</li>
-          </ol>
-          <p className="mb-2 mt-1">
-            Si el driver solo corta al terminar <b>todo</b> el trabajo, imprimir los tickets de a uno
-            en vez de en lote hace que corte cada vez.
-          </p>
-
-          <p className="font-semibold mt-2">Para que no sobre papel</p>
-          <p>
-            Ese driver no acepta tamaños personalizados: aunque se cree un formulario en Windows
-            —Propiedades del servidor de impresión → Formularios— el driver no lo muestra. La única
-            salida real es instalar el driver del fabricante de la ticketera (XPrinter, Gprinter,
-            EPSON TM, según la marca), que sí permite definir el largo del papel.
+          <pre className="bg-white border border-amber-300 rounded p-2 my-1 overflow-x-auto text-[10px] leading-relaxed">{`Get-Printer -Name "POS-80-Series" | Select Name, PortName, PrinterStatus
+Get-PrinterPort | Select Name, Description
+Set-Printer -Name "POS-80-Series" -PortName "USB001"`}</pre>
+          <p className="mb-2">
+            Si quedan trabajos trabados que no se dejan cancelar: detener el servicio
+            <b> Cola de impresión</b>, borrar todo lo que haya en
+            <code> C:\Windows\System32\spool\PRINTERS</code> y volver a iniciarlo.
           </p>
 
           <p className="mt-2 text-[11px]">
