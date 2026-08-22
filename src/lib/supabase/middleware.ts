@@ -30,7 +30,9 @@ export async function updateSession(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   // Public paths that don't require auth
-  const publicPaths = ["/login", "/auth/callback", "/boleta", "/comprobante", "/guia-remision", "/api/consulta", "/api/geocode", "/api/ubigeo", "/api/tipo-cambio"];
+  // `/api/impresion` va acá porque el agente de impresión no tiene sesión: se
+// identifica con el token de su equipo, que solo da acceso a su propia cola.
+const publicPaths = ["/login", "/auth/callback", "/boleta", "/comprobante", "/guia-remision", "/api/consulta", "/api/geocode", "/api/ubigeo", "/api/tipo-cambio", "/api/impresion"];
   if (publicPaths.some((p) => pathname.startsWith(p))) {
     return supabaseResponse;
   }
