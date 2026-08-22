@@ -20,12 +20,36 @@ const GS = 0x1d
 /** Ancho del papel de 80 mm en caracteres, con la fuente normal. */
 export const COLUMNAS = 48
 
+/**
+ * Alto de cada renglon, en puntos.
+ *
+ * La impresora arranca en 30 y la letra mide 24: sobran 6 puntos de aire en
+ * cada renglon, que en un ticket de 40 renglones son casi 2 cm de papel
+ * regalados. Con 26 quedan 2 puntos de separacion —se lee igual de bien— y el
+ * ticket sale tan compacto como se ve en pantalla.
+ */
+const INTERLINEADO = 26
+
+/**
+ * Papel que se adelanta antes de cortar, en puntos.
+ *
+ * La cuchilla está unos 15 mm por encima del cabezal; a 203 dpi eso son 120
+ * puntos. Es una medida de la impresora, no del diseño del ticket.
+ */
+const CORTE_PUNTOS = 120
+
 export class TicketEscPos {
   private partes: number[] = []
 
   /** Inicializa la impresora y limpia cualquier estado anterior. */
   constructor() {
     this.bytes(ESC, 0x40)
+    this.interlineado(INTERLINEADO)
+  }
+
+  /** Alto del renglon, en puntos (ESC 3 n). */
+  interlineado(puntos: number) {
+    return this.bytes(ESC, 0x33, Math.max(0, Math.min(255, Math.round(puntos))))
   }
 
   bytes(...b: number[]) {
@@ -65,6 +89,14 @@ export class TicketEscPos {
     const escala = ((Math.min(ancho, 4) - 1) << 4) | (Math.min(alto, 4) - 1)
     this.bytes(GS, 0x21, escala)
     this.bytes(ESC, 0x45, negrita ? 1 : 0)
+    /**
+     * El renglon acompana al tamano de la letra.
+     *
+     * La impresora avanza lo que diga el interlineado y nada mas: si se deja
+     * el renglon corto, una linea de letra doble se monta sobre la siguiente.
+     * Por eso se ajusta acá y no a mano en cada bloque grande.
+     */
+    this.interlineado(INTERLINEADO * Math.min(Math.max(alto, 1), 4))
     return this
   }
 
@@ -94,15 +126,25 @@ export class TicketEscPos {
     return this.bytes(ESC, 0x64, Math.max(0, Math.min(255, lineas)))
   }
 
+  /** Avanza una distancia exacta de papel, en puntos (ESC J n). */
+  avanzarPuntos(puntos: number) {
+    return this.bytes(ESC, 0x4a, Math.max(0, Math.min(255, Math.round(puntos))))
+  }
+
   /**
    * Corta el papel.
    *
    * Se avanza primero para sacar el contenido de la zona de la cuchilla, que
    * está unos 15 mm por encima del cabezal. Sin ese avance el corte cae sobre
    * el texto: se probó y se perdía el pie del ticket.
+   *
+   * El avance va en puntos y no en renglones a propósito: la distancia a la
+   * cuchilla es física y no cambia, mientras que un renglón mide lo que diga
+   * el interlineado. Cuando se compactó el ticket, contar renglones dejó el
+   * corte 2 mm más arriba y se comía la última línea.
    */
   cortar() {
-    this.avanzar(4)
+    this.avanzarPuntos(CORTE_PUNTOS)
     return this.bytes(GS, 0x56, 0x42, 0x00)
   }
 

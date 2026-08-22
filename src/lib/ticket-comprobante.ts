@@ -139,11 +139,17 @@ export async function construirTicket(d: DatosTicket, incluirLogo = true): Promi
     envolver(`SON: ${d.totalEnLetras}`, COLUMNAS).forEach((l) => t.linea(l))
   }
 
-  // ── QR exigido por SUNAT
+  /**
+   * QR exigido por SUNAT.
+   *
+   * El modulo va en 5 puntos y no en 6: SUNAT pide que el QR mida al menos
+   * 2 cm de lado en la representacion impresa, y con 5 el codigo mas chico que
+   * puede salir con estos datos queda en 2,1 cm. Bajar a 4 lo dejaria por
+   * debajo del minimo en algunos comprobantes.
+   */
   t.linea()
   t.alinear('centro')
-  t.qr(d.qr, 6)
-  t.linea()
+  t.qr(d.qr, 5)
 
   // ── Pie
   t.alinear('izq')
@@ -152,7 +158,6 @@ export async function construirTicket(d: DatosTicket, incluirLogo = true): Promi
   t.linea(`Impreso: ${new Date().toLocaleString('es-PE', { timeZone: 'America/Lima' })}`)
 
   t.alinear('centro')
-  t.linea()
   t.estilo({ negrita: true })
   t.linea('** GRACIAS POR SU COMPRA **')
   t.normal()
