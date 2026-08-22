@@ -13,12 +13,60 @@
  * Referencia de comandos: ESC/POS de Epson, que las POS-80 replican.
  */
 
+/**
+ * Los caracteres del español que CP437 sí tiene, con su código.
+ *
+ * Sin esto habría que escribir los comprobantes sin acentos, y el nombre de un
+ * cliente o de un producto saldría distinto de como está en el sistema.
+ */
+const CP437: Record<string, number> = {
+  'á': 160, 'é': 130, 'í': 161, 'ó': 162, 'ú': 163, 'É': 144,
+  'ñ': 164, 'Ñ': 165, 'ü': 129, 'Ü': 154,
+  '¿': 168, '¡': 173, 'º': 167, 'ª': 166, '°': 248, '·': 250,
+}
+
+/**
+ * El texto tal como va a salir impreso.
+ *
+ * Las vocales acentuadas en mayúscula no están en la tabla y salen sin acento.
+ * Esta función deja el texto igual a como quedará en el papel, y la vista en
+ * pantalla la usa también: así lo que se lee en la pantalla es carácter por
+ * carácter lo que se lee en el ticket, sin sorpresas al imprimir.
+ */
+export function normalizarCp437(t: string): string {
+  let salida = ''
+  for (const c of (t ?? '')) {
+    if (CP437[c] !== undefined) { salida += c; continue }
+    const codigo = c.charCodeAt(0)
+    if (codigo >= 0x20 && codigo <= 0x7e) { salida += c; continue }
+    const base = c.normalize('NFD').replace(/[̀-ͯ]/g, '')
+    const b = base.charCodeAt(0)
+    if (base.length === 1 && b >= 0x20 && b <= 0x7e) salida += base
+  }
+  return salida
+}
+
 // ── Comandos ────────────────────────────────────────────────────────────────
 const ESC = 0x1b
 const GS = 0x1d
 
+/**
+ * Ancho útil del cabezal, en puntos.
+ *
+ * Una térmica de 80 mm imprime sobre 72 mm a 203 puntos por pulgada: 576
+ * puntos. De acá salen las medidas de todo lo que no es texto —el logo, el
+ * QR— y la equivalencia con milímetros de la vista en pantalla.
+ */
+export const ANCHO_PUNTOS = 576
+
+/** Un punto de la impresora, en milímetros. */
+export const PUNTO_MM = 25.4 / 203
+
 /** Ancho del papel de 80 mm en caracteres, con la fuente normal. */
 export const COLUMNAS = 48
+
+/** Lo mismo con la fuente chica, que entra más veces en el mismo ancho. */
+export const COLUMNAS_CHICA = 64
 
 /**
  * Alto de cada renglon, en puntos.
@@ -29,6 +77,9 @@ export const COLUMNAS = 48
  * ticket sale tan compacto como se ve en pantalla.
  */
 const INTERLINEADO = 26
+
+/** Lo mismo para la fuente chica, cuya letra mide 17 puntos. */
+const INTERLINEADO_CHICO = 19
 
 /**
  * Papel que se adelanta antes de cortar, en puntos.
@@ -58,16 +109,18 @@ export class TicketEscPos {
   }
 
   /**
-   * Texto. Se manda en CP437 —la tabla que estas impresoras traen de fábrica—
-   * y las tildes y la ñ se reemplazan por su letra sin acento: mandarlas en
-   * UTF-8 saldría como caracteres sueltos.
+   * Texto, en CP437: la tabla que estas impresoras traen de fábrica.
+   *
+   * CP437 tiene la ñ y las vocales acentuadas, así que se traducen a su código
+   * en vez de quitarles el acento —"CERDEÑA" salía "CERDENA", y en pantalla se
+   * veía bien, con lo cual la vista previa mentía—. Lo que no está en la tabla
+   * se reemplaza por su letra sin acento, y si tampoco eso existe se descarta:
+   * un carácter perdido es mejor que un comprobante lleno de basura.
    */
   texto(t: string) {
-    const limpio = (t ?? '')
-      .normalize('NFD')
-      .replace(/[̀-ͯ]/g, '')
-      .replace(/[^\x20-\x7E\n]/g, '')
-    for (let i = 0; i < limpio.length; i++) this.partes.push(limpio.charCodeAt(i) & 0xff)
+    for (const c of normalizarCp437(t)) {
+      this.partes.push(CP437[c] ?? (c.charCodeAt(0) & 0xff))
+    }
     return this
   }
 
@@ -85,7 +138,9 @@ export class TicketEscPos {
    * Tamaño y grosor. `alto` y `ancho` multiplican el cuerpo (1 = normal, 2 =
    * doble). Se usan juntos porque el comando es uno solo.
    */
-  estilo({ negrita = false, alto = 1, ancho = 1 }: { negrita?: boolean; alto?: number; ancho?: number } = {}) {
+  estilo({ negrita = false, alto = 1, ancho = 1, chica = false }: { negrita?: boolean; alto?: number; ancho?: number; chica?: boolean } = {}) {
+    // Fuente A (normal) o B (chica): la B entra 64 veces en el ancho del papel
+    this.bytes(ESC, 0x4d, chica ? 1 : 0)
     const escala = ((Math.min(ancho, 4) - 1) << 4) | (Math.min(alto, 4) - 1)
     this.bytes(GS, 0x21, escala)
     this.bytes(ESC, 0x45, negrita ? 1 : 0)
@@ -96,13 +151,14 @@ export class TicketEscPos {
      * el renglon corto, una linea de letra doble se monta sobre la siguiente.
      * Por eso se ajusta acá y no a mano en cada bloque grande.
      */
-    this.interlineado(INTERLINEADO * Math.min(Math.max(alto, 1), 4))
+    const base = chica ? INTERLINEADO_CHICO : INTERLINEADO
+    this.interlineado(base * Math.min(Math.max(alto, 1), 4))
     return this
   }
 
   /** Vuelve a texto normal: conviene llamarlo después de cada bloque grande. */
   normal() {
-    return this.estilo({ negrita: false, alto: 1, ancho: 1 })
+    return this.estilo({ negrita: false, alto: 1, ancho: 1, chica: false })
   }
 
   separador(caracter = '-') {
