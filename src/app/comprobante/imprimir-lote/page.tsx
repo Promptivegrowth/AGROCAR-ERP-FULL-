@@ -4,10 +4,49 @@ import { numeroALetras } from '@/lib/utils'
 import { EMPRESA, SLOGAN_FONT_STACK } from '@/lib/empresa'
 import AutoPrint from './auto-print'
 import AyudaTicketera from '@/components/erp/ayuda-ticketera'
-import BotonTicketeraLote from './boton-ticketera-lote'
-import VistaTicket from '@/components/erp/vista-ticket'
-import type { DatosTicket } from '@/lib/ticket-comprobante'
-import { qrDataUri, moduloQrMinimo } from '@/lib/qr'
+import BotonTicketera from '@/components/erp/boton-ticketera'
+import { qrDataUri } from '@/lib/qr'
+
+/**
+ * Lado del QR en pantalla, en pixeles.
+ *
+ * SUNAT exige que el QR mida al menos 2 cm de lado en la representación
+ * impresa. El ticket se maqueta a 80 mm y se dibuja al ancho del cabezal
+ * (576 puntos sobre 72 mm), así que cada pixel de pantalla termina midiendo
+ * 0,238 mm en el papel: 88 pixeles son 21 mm impresos, con margen sobre el
+ * mínimo. Medirlo en pantalla y confiar en que salga igual es lo que hacía
+ * que quedara en 15,9 mm sin que nadie lo notara.
+ */
+const QR_PX = 88
+
+/**
+ * Rayas del ticket, dibujadas como cajas y no como bordes.
+ *
+ * El ticket se pasa a imagen para mandarlo a la ticketera, y en esa conversión
+ * los bordes de fila salen menos previsibles que una caja de un pixel de alto,
+ * que se dibuja igual en pantalla y en el papel.
+ */
+const reglaHorizontal = { height: 1, background: '#000' } as const
+
+/**
+ * Aire alrededor de las rayas, como caja y no como margen.
+ *
+ * Al pasar el ticket a imagen para la ticketera el texto se dibuja un par de
+ * pixeles más abajo que en pantalla y se come los espacios chicos: las rayas
+ * quedaban pegadas al renglón de arriba y parecía que tachaban la dirección
+ * del cliente y la fila de encabezados. Con cajas de este alto la separación
+ * sobrevive a la conversión — medido sobre el ticket ya impreso.
+ */
+const aire = (alto: number) => <div style={{ height: alto }} />
+
+/**
+ * Cantidad del ítem.
+ *
+ * Con decimales cuando los tiene: hay ventas de 0,42 kg de queso y
+ * redondearlas a entero deja una línea que dice que el cliente no se llevó
+ * nada, con importe cobrado igual. Los enteros siguen saliendo sin ",00".
+ */
+const fmtCantidad = (n: number) => Number.isInteger(n) ? String(n) : n.toFixed(2)
 
 export const dynamic = 'force-dynamic'
 
@@ -111,73 +150,8 @@ export default async function ImprimirLotePage({
     const doc = cli?.ruc ?? cli?.dni ?? comp.cliente_externo_doc ?? '—'
     const contenido = `AGROCAR|20519883296|${comp.tipo}|${comp.serie}-${pad(comp.numero, 6)}|` +
       `${Number(comp.total ?? 0).toFixed(2)}|${comp.fecha_emision}|${doc}`
-    qrPorComprobante.set(comp.id, await qrDataUri(contenido, 120))
+    qrPorComprobante.set(comp.id, await qrDataUri(contenido, 480))
   }))
-
-  /**
-   * Los mismos comprobantes, en crudo, para mandarlos a la ticketera.
-   *
-   * La vista de abajo sigue sirviendo para el PDF y para las computadoras que
-   * no tengan el agente instalado.
-   */
-  const ticketsEscPos: DatosTicket[] = lista.map((comp: any) => {
-    const cli: any = comp.clientes
-    const correlativo = `${comp.serie}-${pad(comp.numero, 6)}`
-    const total = Number(comp.total ?? 0)
-    const doc = cli?.ruc ?? cli?.dni ?? comp.cliente_externo_doc ?? null
-    const cobrado = comp.pedido_id ? (cobradoPorPedido.get(comp.pedido_id) ?? 0) : 0
-    const its = itemsPorComp.get(comp.id) ?? []
-    const contenidoQr = `AGROCAR|20519883296|${comp.tipo}|${correlativo}|${total.toFixed(2)}|${comp.fecha_emision}|${doc ?? '—'}`
-    return {
-      empresa: {
-        razon_social: EMPRESA.razon_social,
-        ruc: EMPRESA.ruc,
-        slogan: EMPRESA.slogan,
-        direccion: EMPRESA.direccion_comercial,
-        direccionAnexo: EMPRESA.direccion_fundo,
-        telefono: EMPRESA.telefono,
-        correo: EMPRESA.correo,
-      },
-      tipoDocumento: TIPO_TITULO[comp.tipo as string] ?? 'COMPROBANTE',
-      serieNumero: correlativo,
-      fechaEmision: new Date(comp.fecha_emision + 'T12:00:00-05:00')
-        .toLocaleDateString('es-PE', { day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'America/Lima' }),
-      fechaDespacho: comp.fecha_despacho
-        ? new Date(comp.fecha_despacho + 'T12:00:00-05:00')
-            .toLocaleDateString('es-PE', { day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'America/Lima' })
-        : null,
-      condicion: cobrado >= total && total > 0 ? 'CONTADO' : 'CREDITO',
-      cliente: {
-        nombre: cli?.razon_social ?? comp.cliente_externo_nombre ?? '—',
-        doc,
-        tipoDoc: cli?.ruc ? 'RUC' : cli?.dni ? 'DNI' : 'DOC',
-        direccion: cli?.direccion ?? null,
-        telefono: cli?.telefono ?? null,
-      },
-      lineas: its.map((it: any) => ({
-        codigo: it.productos?.codigo ?? null,
-        descripcion: (it.descripcion ?? it.productos?.descripcion ?? it.productos?.nombre ?? '—').trim(),
-        cantidad: Number(it.cantidad ?? 0),
-        precio: Number(it.precio_unitario ?? 0),
-        total: Number(it.subtotal ?? 0),
-      })),
-      opGravada: Number(comp.subtotal ?? 0),
-      igv: Number(comp.igv ?? 0),
-      total,
-      totalEnLetras: `${numeroALetras(total)} ${comp.moneda === 'USD' ? 'DOLARES AMERICANOS' : 'SOLES'}`,
-      usuario: (comp.profiles as any)?.full_name ?? null,
-      vendedor: comp.pedido_id ? (vendedorPorPedido.get(comp.pedido_id) ?? null) : null,
-      editado: Boolean(comp.editado),
-      impreso: new Date().toLocaleString('es-PE', { timeZone: 'America/Lima' }),
-      qr: contenidoQr,
-      qrModulo: moduloQrMinimo(contenidoQr),
-      logoUrl: '/logo-agrocar.png',
-    }
-  })
-
-  /** Para dibujar cada ticket sin volver a armar sus datos. */
-  const ticketPorComprobante = new Map<string, DatosTicket>()
-  lista.forEach((comp: any, i: number) => ticketPorComprobante.set(comp.id, ticketsEscPos[i]))
 
   return (
     <div className="envoltura bg-gray-200 print:bg-white">
@@ -241,7 +215,7 @@ export default async function ImprimirLotePage({
               {!esA4 && <><br /><AyudaTicketera /></>}
               {!esA4 && (
                 <div className="mt-2">
-                  <BotonTicketeraLote tickets={ticketsEscPos} />
+                  <BotonTicketera auto />
                 </div>
               )}
             </p>
@@ -305,7 +279,8 @@ export default async function ImprimirLotePage({
           return (
             <div
               key={comp.id}
-              className="pagebreak mx-auto bg-white shadow-lg print:shadow-none mb-6 print:mb-0"
+              className={`pagebreak mx-auto bg-white shadow-lg print:shadow-none mb-6 print:mb-0${esA4 ? '' : ' ticket-imprimible'}`}
+              data-comprobante={correlativo}
               style={{
                 // El ticket se muestra en pantalla al MISMO ancho con el que
                 // se imprime (72 mm, el área útil del rollo de 80 mm). Así lo
@@ -478,9 +453,146 @@ export default async function ImprimirLotePage({
                   </table>
                 </>
               ) : (
-                /* El mismo ticket que recibe la ticketera, dibujado con las
-                   medidas reales del papel: lo que se ve es lo que sale. */
-                <VistaTicket datos={ticketPorComprobante.get(comp.id)!} />
+                /* Ticket 80mm — MISMO formato aprobado del comprobante individual.
+                   Todo en negrita por pedido de Daniel: la térmica imprimía muy
+                   claro y no se leía bien. */
+                <>
+                  {/* Encabezado compacto: el logo y las direcciones son lo que
+                      más papel consumía. Logo a 95px (95 × 221/390 = 54 de
+                      alto) y direcciones en una línea cada una. */}
+                  <div style={{ textAlign: 'center', lineHeight: 1.1 }}>
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src="/logo-agrocar.png" alt="AGROCAR" width={112} height={63}
+                      style={{ width: 112, height: 63, margin: '0 auto', display: 'block' }} />
+                    <div style={{ fontFamily: SLOGAN_FONT_STACK, fontSize: 14, color: '#000' }}>
+                      {EMPRESA.slogan}
+                    </div>
+                    <div style={{ fontWeight: 'bold', fontSize: 12.5 }}>{EMPRESA.razon_social} · RUC {EMPRESA.ruc}</div>
+                    <div style={{ fontSize: 10 }}>{EMPRESA.direccion_comercial}</div>
+                    <div style={{ fontSize: 10 }}>{EMPRESA.direccion_fundo}</div>
+                    <div style={{ fontSize: 10 }}>Tel. {EMPRESA.telefono} · {EMPRESA.correo}</div>
+                  </div>
+
+                  {/* Título y correlativo */}
+                  <div style={{ textAlign: 'center', fontWeight: 'bold', fontSize: 12.5, marginTop: 4 }}>{titulo}</div>
+                  <div style={{ textAlign: 'center', fontWeight: 'bold', fontSize: 14, lineHeight: 1.15 }}>{correlativo}</div>
+                  {comp.editado && (
+                    <div style={{ textAlign: 'center', fontSize: 9, fontWeight: 'bold' }}>⚠ COMPROBANTE EDITADO</div>
+                  )}
+
+                  {/* Cabecera */}
+                  <div style={{ marginTop: 3, fontSize: 10.5, lineHeight: 1.25 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span>F. Emisión: {fechaEmision}</span>
+                      <span>Cond: {condicion}</span>
+                    </div>
+                    {fechaDespacho && <div>F. Despacho: {fechaDespacho}</div>}
+                    <div>
+                      {docCliente.label}: {docCliente.valor}
+                      {clienteTelefono && clienteTelefono !== '—' ? ` · Tel: ${clienteTelefono}` : ''}
+                    </div>
+                    <div>Cliente: {clienteNombre}</div>
+                    {clienteDireccion && clienteDireccion !== '—' && (
+                      <div>Dirección: {clienteDireccion}</div>
+                    )}
+                  </div>
+
+                  {/* Ítems en 2 líneas: descripción completa arriba, cifras abajo */}
+                  {aire(9)}
+                  <div style={reglaHorizontal} />
+                  {aire(8)}
+                  <table style={{ width: '100%', fontSize: 10.5, borderCollapse: 'collapse', tableLayout: 'fixed', lineHeight: 1.2 }}>
+                      <colgroup>
+                        <col style={{ width: 60 }} /><col /><col style={{ width: 38 }} />
+                        <col style={{ width: 48 }} /><col style={{ width: 52 }} />
+                      </colgroup>
+                    <tbody>
+                      <tr>
+                        <td style={{ textAlign: 'left' }}>CODIGO</td>
+                        <td style={{ textAlign: 'left' }}>PRODUCTO</td>
+                        <td style={{ textAlign: 'right' }}>CANT.</td>
+                        <td style={{ textAlign: 'right' }}>P.UNIT.</td>
+                        <td style={{ textAlign: 'right' }}>TOTAL</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                  {aire(8)}
+                  <div style={reglaHorizontal} />
+                  {aire(8)}
+                  <table style={{ width: '100%', fontSize: 10.5, borderCollapse: 'collapse', tableLayout: 'fixed', lineHeight: 1.2 }}>
+                      <colgroup>
+                        <col style={{ width: 60 }} /><col /><col style={{ width: 38 }} />
+                        <col style={{ width: 48 }} /><col style={{ width: 52 }} />
+                      </colgroup>
+                    <tbody>
+                      {items.length === 0 ? (
+                        <tr><td colSpan={5} style={{ padding: 6, textAlign: 'center', fontStyle: 'italic' }}>
+                          ⚠ Sin detalle de items
+                        </td></tr>
+                      ) : items.map((it: any) => (
+                        <Fragment key={it.id}>
+                          <tr style={{ verticalAlign: 'top' }}>
+                            <td style={{ padding: '2px 3px 0 0', fontSize: 9.5 }}>{it.productos?.codigo ?? '—'}</td>
+                            <td colSpan={4} style={{ padding: '1px 0 0 2px' }}>
+                              {(it.descripcion ?? it.productos?.descripcion ?? it.productos?.nombre ?? '—').trim()}
+                            </td>
+                          </tr>
+                          <tr>
+                            <td colSpan={2}></td>
+                            <td style={{ textAlign: 'right', padding: '0 2px 1px' }}>{fmtCantidad(Number(it.cantidad))}</td>
+                            <td style={{ textAlign: 'right', padding: '0 2px 1px' }}>{fmtNum(Number(it.precio_unitario))}</td>
+                            <td style={{ textAlign: 'right', padding: '0 0 1px 2px' }}>{fmtNum(Number(it.subtotal))}</td>
+                          </tr>
+                        </Fragment>
+                      ))}
+                    </tbody>
+                  </table>
+
+                  {/* QR + totales lado a lado */}
+                  {aire(9)}
+                  <div style={reglaHorizontal} />
+                  {aire(8)}
+                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: 5, paddingTop: 3 }}>
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={qrUrl} alt="QR" width={QR_PX} height={QR_PX} style={{ width: QR_PX, height: QR_PX, flexShrink: 0 }} />
+                    <div style={{ flex: 1, fontSize: 10.5, lineHeight: 1.3 }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <span>OP. GRAVADA:</span><span>S/ {fmtNum(subtotalNum)}</span>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <span>IGV 18%:</span><span>S/ {fmtNum(igvNum)}</span>
+                      </div>
+                      {aire(8)}
+            <div style={reglaHorizontal} />
+            {aire(8)}
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13 }}>
+                        <span>IMPORTE TOTAL:</span><span>S/ {fmtNum(totalNum)}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div style={{ fontSize: 10, marginTop: 3, lineHeight: 1.25 }}>
+                    SON: {totalLetras} {monedaLabel}
+                  </div>
+
+                  <div style={{ fontSize: 9.5, marginTop: 3, lineHeight: 1.25 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span>Usuario: {facturador?.full_name ?? '—'}</span>
+                      <span>VDR: {vendedorNombre}</span>
+                    </div>
+                    <div>Impreso: {impreso}</div>
+                  </div>
+
+                  <div style={{ textAlign: 'center', marginTop: 4, fontSize: 11 }}>
+                    ** GRACIAS POR SU COMPRA **
+                  </div>
+                  <div style={{ textAlign: 'center', fontSize: 8.5, lineHeight: 1.2 }}>
+                    Representación impresa · Consulta www.sunat.gob.pe
+                  </div>
+                  {/* Un respiro al final: sin esto la última línea queda al filo
+                      del recorte y al pasar a imagen se corta por la mitad. */}
+                  <div style={{ height: '2mm' }} />
+                </>
               )}
             </div>
           )

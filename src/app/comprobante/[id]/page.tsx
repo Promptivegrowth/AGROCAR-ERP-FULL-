@@ -5,10 +5,49 @@ import { numeroALetras } from '@/lib/utils'
 import { EMPRESA, SLOGAN_FONT_STACK } from '@/lib/empresa'
 import PrintButton from './print-button'
 import AyudaTicketera from '@/components/erp/ayuda-ticketera'
-import BotonTicketera from './boton-ticketera'
-import VistaTicket from '@/components/erp/vista-ticket'
-import type { DatosTicket } from '@/lib/ticket-comprobante'
-import { qrDataUri, moduloQrMinimo } from '@/lib/qr'
+import BotonTicketera from '@/components/erp/boton-ticketera'
+import { qrDataUri } from '@/lib/qr'
+
+/**
+ * Lado del QR en pantalla, en pixeles.
+ *
+ * SUNAT exige que el QR mida al menos 2 cm de lado en la representación
+ * impresa. El ticket se maqueta a 80 mm y se dibuja al ancho del cabezal
+ * (576 puntos sobre 72 mm), así que cada pixel de pantalla termina midiendo
+ * 0,238 mm en el papel: 88 pixeles son 21 mm impresos, con margen sobre el
+ * mínimo. Medirlo en pantalla y confiar en que salga igual es lo que hacía
+ * que quedara en 15,9 mm sin que nadie lo notara.
+ */
+const QR_PX = 88
+
+/**
+ * Rayas del ticket, dibujadas como cajas y no como bordes.
+ *
+ * El ticket se pasa a imagen para mandarlo a la ticketera, y en esa conversión
+ * los bordes de fila salen menos previsibles que una caja de un pixel de alto,
+ * que se dibuja igual en pantalla y en el papel.
+ */
+const reglaHorizontal = { height: 1, background: '#000' } as const
+
+/**
+ * Aire alrededor de las rayas, como caja y no como margen.
+ *
+ * Al pasar el ticket a imagen para la ticketera el texto se dibuja un par de
+ * pixeles más abajo que en pantalla y se come los espacios chicos: las rayas
+ * quedaban pegadas al renglón de arriba y parecía que tachaban la dirección
+ * del cliente y la fila de encabezados. Con cajas de este alto la separación
+ * sobrevive a la conversión — medido sobre el ticket ya impreso.
+ */
+const aire = (alto: number) => <div style={{ height: alto }} />
+
+/**
+ * Cantidad del ítem.
+ *
+ * Con decimales cuando los tiene: hay ventas de 0,42 kg de queso y
+ * redondearlas a entero deja una línea que dice que el cliente no se llevó
+ * nada, con importe cobrado igual. Los enteros siguen saliendo sin ",00".
+ */
+const fmtCantidad = (n: number) => Number.isInteger(n) ? String(n) : n.toFixed(2)
 
 export const dynamic = 'force-dynamic'
 
@@ -158,55 +197,7 @@ export default async function ComprobantePage({
 
   const qrData = `AGROCAR|20519883296|${comp.tipo}|${correlativo}|${totalNum.toFixed(2)}|${comp.fecha_emision}|${docCliente.valor}`
   // QR generado en el servidor, sin depender de una web externa
-  const qrUrl = await qrDataUri(qrData, 150)
-
-  /**
-   * Los mismos datos, en crudo, para imprimir por la ticketera.
-   *
-   * La vista HTML de abajo sigue existiendo para el PDF y para cuando no haya
-   * agente instalado; esto es lo que se manda en ESC/POS, donde el corte lo
-   * decide el ticket y no el driver.
-   */
-  const datosTicket: DatosTicket = {
-    empresa: {
-      razon_social: EMPRESA.razon_social,
-      ruc: EMPRESA.ruc,
-      slogan: EMPRESA.slogan,
-      direccion: EMPRESA.direccion_comercial,
-      direccionAnexo: EMPRESA.direccion_fundo,
-      telefono: EMPRESA.telefono,
-      correo: EMPRESA.correo,
-    },
-    tipoDocumento: titulo,
-    serieNumero: correlativo,
-    fechaEmision,
-    fechaDespacho,
-    condicion,
-    cliente: {
-      nombre: clienteNombre,
-      doc: docCliente.valor !== '—' ? docCliente.valor : null,
-      tipoDoc: docCliente.label,
-      direccion: clienteDireccion !== '—' ? clienteDireccion : null,
-      telefono: clienteTelefono !== '—' ? clienteTelefono : null,
-    },
-    lineas: (items ?? []).map((it: any) => ({
-      codigo: it.productos?.codigo ?? null,
-      descripcion: (it.descripcion ?? it.productos?.descripcion ?? it.productos?.nombre ?? '—').trim(),
-      cantidad: Number(it.cantidad ?? 0),
-      precio: Number(it.precio_unitario ?? 0),
-      total: Number(it.subtotal ?? 0),
-    })),
-    opGravada: subtotalNum,
-    igv: igvNum,
-    total: totalNum,
-    totalEnLetras: `${totalLetras} ${monedaLabel}`,
-    usuario: facturador?.full_name ?? null,
-    vendedor: vendedorNombre !== '—' ? vendedorNombre : null,
-    impreso,
-    qr: qrData,
-    qrModulo: moduloQrMinimo(qrData),
-    logoUrl: '/logo-agrocar.png',
-  }
+  const qrUrl = await qrDataUri(qrData, 480)
 
   // Toggle de formato (oculto al imprimir)
   const ToggleFormato = () => (
@@ -229,7 +220,7 @@ export default async function ComprobantePage({
         </a>
         <div className="ml-auto flex items-center gap-3">
           {!esA4 && <AyudaTicketera />}
-          {!esA4 && <BotonTicketera datos={datosTicket} />}
+          {!esA4 && <BotonTicketera />}
           <PrintButton />
         </div>
       </div>
@@ -456,21 +447,150 @@ export default async function ComprobantePage({
              la térmica de 80mm) y sin reescalado del navegador. El layout
              impreso reproduce exactamente la vista previa. */
           .ticket {
-            margin: 0 auto !important;
+            width: 100% !important;
+            max-width: 100% !important;
+            margin: 0 !important;
+            padding: 1mm !important;
             box-shadow: none !important;
             page-break-inside: avoid;
             -webkit-print-color-adjust: exact;
             print-color-adjust: exact;
           }
+          .ticket img { max-width: 100% !important; }
         }
       `}</style>
 
       <ToggleFormato />
 
-      {/* El mismo ticket que recibe la ticketera, dibujado con las medidas
-          reales del papel: lo que se ve es lo que sale. */}
-      <div className="mx-auto bg-white shadow-lg print:shadow-none" style={{ width: '80mm', padding: '1mm' }}>
-        <VistaTicket datos={datosTicket} />
+      {/* Ancho de 72 mm en pantalla y en papel: lo que se ve es lo que sale */}
+      <div className="ticket ticket-imprimible mx-auto bg-white shadow-lg print:shadow-none" data-comprobante={correlativo} style={{ maxWidth: '80mm', width: '80mm', padding: '1mm', fontFamily: '"Helvetica Neue", Arial, Helvetica, sans-serif', fontVariantNumeric: 'tabular-nums', fontSize: 11.5, lineHeight: 1.2, color: '#000', fontWeight: 'bold' }}>
+        {/* Logo + encabezado compactado */}
+        <div style={{ textAlign: 'center', lineHeight: 1.1 }}>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          {/* Alto explícito para que el ticket mida igual antes y después de
+              que cargue la imagen (95 × 221/390 = 54) */}
+          <img src="/logo-agrocar.png" alt="AGROCAR" width={112} height={63}
+            style={{ width: 112, height: 63, margin: '0 auto', display: 'block' }} />
+          <div style={{ fontFamily: SLOGAN_FONT_STACK, fontSize: 14, color: '#000' }}>
+            {EMPRESA.slogan}
+          </div>
+          <div style={{ fontWeight: 'bold', fontSize: 12.5 }}>{EMPRESA.razon_social} · RUC {EMPRESA.ruc}</div>
+          <div style={{ fontSize: 10 }}>{EMPRESA.direccion_comercial}</div>
+          <div style={{ fontSize: 10 }}>{EMPRESA.direccion_fundo}</div>
+          <div style={{ fontSize: 10 }}>Tel. {EMPRESA.telefono} · {EMPRESA.correo}</div>
+        </div>
+
+        {/* Título y correlativo */}
+        <div style={{ textAlign: 'center', fontWeight: 'bold', fontSize: 12.5, marginTop: 4 }}>{titulo}</div>
+        <div style={{ textAlign: 'center', fontWeight: 'bold', fontSize: 14, lineHeight: 1.15 }}>{correlativo}</div>
+
+        {/* Info cabecera (sin separadores) */}
+        <div style={{ marginTop: 3, fontSize: 10.5, lineHeight: 1.25 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+            <span>F. Emisión: {fechaEmision}</span>
+            <span>Cond: {condicion}</span>
+          </div>
+          <div>{docCliente.label}: {docCliente.valor}{clienteTelefono && clienteTelefono !== '—' ? ` · Tel: ${clienteTelefono}` : ''}</div>
+          <div>Cliente: {clienteNombre}</div>
+          {clienteDireccion && clienteDireccion !== '—' && (
+            <div>Dirección: {clienteDireccion}</div>
+          )}
+        </div>
+
+        {/* Tabla items — formato 2 líneas (pedido de Daniel):
+            Línea 1: código + descripción COMPLETA del producto (sin truncar)
+            Línea 2: cantidad · precio unitario · total */}
+        {aire(9)}
+        <div style={reglaHorizontal} />
+        {aire(8)}
+        <table style={{ width: '100%', fontSize: 10.5, borderCollapse: 'collapse', tableLayout: 'fixed', lineHeight: 1.2 }}>
+          <colgroup>
+            <col style={{ width: 60 }} /><col /><col style={{ width: 38 }} />
+            <col style={{ width: 48 }} /><col style={{ width: 52 }} />
+          </colgroup>
+          <tbody>
+            <tr>
+              <td style={{ textAlign: 'left' }}>CODIGO</td>
+              <td style={{ textAlign: 'left' }}>PRODUCTO</td>
+              <td style={{ textAlign: 'right' }}>CANT.</td>
+              <td style={{ textAlign: 'right' }}>P.UNIT.</td>
+              <td style={{ textAlign: 'right' }}>TOTAL</td>
+            </tr>
+          </tbody>
+        </table>
+        {aire(8)}
+        <div style={reglaHorizontal} />
+        {aire(8)}
+        <table style={{ width: '100%', fontSize: 10.5, borderCollapse: 'collapse', tableLayout: 'fixed', lineHeight: 1.2 }}>
+          <colgroup>
+            <col style={{ width: 60 }} /><col /><col style={{ width: 38 }} />
+            <col style={{ width: 48 }} /><col style={{ width: 52 }} />
+          </colgroup>
+          <tbody>
+            {(items ?? []).map((it: any) => (
+              <Fragment key={it.id}>
+                {/* Línea 1: código + descripción completa a todo el ancho */}
+                <tr style={{ verticalAlign: 'top' }}>
+                  <td style={{ padding: '2px 3px 0 0', fontSize: 9.5 }}>{it.productos?.codigo ?? '—'}</td>
+                  <td colSpan={4} style={{ padding: '1px 0 0 2px' }}>
+                    {(it.descripcion ?? it.productos?.descripcion ?? it.productos?.nombre ?? '—').trim()}
+                  </td>
+                </tr>
+                {/* Línea 2: cantidad · P.U. · total */}
+                <tr>
+                  <td colSpan={2}></td>
+                  <td style={{ textAlign: 'right', padding: '0 2px 1px' }}>{fmtCantidad(Number(it.cantidad))}</td>
+                  <td style={{ textAlign: 'right', padding: '0 2px 1px' }}>{fmtNum(Number(it.precio_unitario))}</td>
+                  <td style={{ textAlign: 'right', padding: '0 0 1px 2px', fontWeight: 'bold' }}>{fmtNum(Number(it.subtotal))}</td>
+                </tr>
+              </Fragment>
+            ))}
+          </tbody>
+        </table>
+
+        {/* QR + totales lado a lado, totales en negrita */}
+        {aire(9)}
+                  <div style={reglaHorizontal} />
+                  {aire(8)}
+                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: 5, paddingTop: 3 }}>
+          {/* QR pequeño a la izquierda */}
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={qrUrl} alt="QR" width={QR_PX} height={QR_PX} style={{ width: QR_PX, height: QR_PX, flexShrink: 0 }} />
+          {/* Totales a la derecha en negrita */}
+          <div style={{ flex: 1, fontSize: 10.5, lineHeight: 1.3 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'bold' }}>
+              <span>OP. GRAVADA:</span><span>S/ {fmtNum(subtotalNum)}</span>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'bold' }}>
+              <span>IGV 18%:</span><span>S/ {fmtNum(igvNum)}</span>
+            </div>
+            {aire(8)}
+            <div style={reglaHorizontal} />
+            {aire(8)}
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'bold', fontSize: 13 }}>
+              <span>IMPORTE TOTAL:</span><span>S/ {fmtNum(totalNum)}</span>
+            </div>
+          </div>
+        </div>
+
+        <div style={{ fontSize: 10, marginTop: 3, lineHeight: 1.25 }}>
+          <strong>SON:</strong> {totalLetras} {monedaLabel}
+        </div>
+
+        {/* Usuario + Vendedor en una línea */}
+        <div style={{ fontSize: 9.5, marginTop: 3, display: 'flex', justifyContent: 'space-between', lineHeight: 1.25 }}>
+          <span>Usuario: {facturador?.full_name ?? '—'}</span>
+          <span>VDR: {vendedorNombre}</span>
+        </div>
+        <div style={{ fontSize: 9.5, lineHeight: 1.25 }}>Impreso: {impreso}</div>
+
+        {/* "GRACIAS POR SU COMPRA" + leyenda SUNAT compactada */}
+        <div style={{ textAlign: 'center', fontWeight: 'bold', marginTop: 4, fontSize: 11 }}>
+          ** GRACIAS POR SU COMPRA **
+        </div>
+        <div style={{ textAlign: 'center', fontSize: 8.5, color: '#000', lineHeight: 1.2 }}>
+          Representación impresa · Consulta www.sunat.gob.pe
+        </div>
       </div>
 
       <div className="mx-auto mt-4 text-center print:hidden" style={{ maxWidth: 350 }}>
