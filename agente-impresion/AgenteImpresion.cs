@@ -367,6 +367,12 @@ class Agente
         c.Append("Access-Control-Allow-Origin: *\r\n");
         c.Append("Access-Control-Allow-Methods: GET, POST, OPTIONS\r\n");
         c.Append("Access-Control-Allow-Headers: Content-Type\r\n");
+        // Sin esta cabecera Chrome bloquea la llamada cuando el ERP corre en
+        // https://...vercel.app: desde Chrome 94 una pagina publica que quiere
+        // hablar con un servidor de la red local necesita que este lo autorice
+        // expresamente. Se llama Private Network Access. En local no hacia
+        // falta, y por eso el problema no aparecio hasta probar en produccion.
+        c.Append("Access-Control-Allow-Private-Network: true\r\n");
         c.Append("Access-Control-Max-Age: 86400\r\n");
         c.Append("Content-Length: ").Append(cuerpo.Length).Append("\r\n");
         c.Append("Connection: close\r\n\r\n");
