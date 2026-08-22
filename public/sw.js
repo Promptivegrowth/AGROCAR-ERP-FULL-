@@ -1,6 +1,11 @@
 // Service Worker — AGROCAR ERP
 // Versión cache (subir al cambiar para invalidar caches viejos)
-const CACHE_VERSION = 'agrocar-v1'
+//
+// v2: la v1 nunca se subió, así que los caches viejos jamás se limpiaban y las
+// pantallas seguían sirviéndose de una versión anterior aunque el sistema ya
+// estuviera actualizado. Pasó con la impresión de tickets: el ERP desplegado
+// tenía el cambio y la PWA seguía abriendo el diálogo viejo.
+const CACHE_VERSION = 'agrocar-v2'
 const STATIC_CACHE = `${CACHE_VERSION}-static`
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`
 const PAGES_CACHE = `${CACHE_VERSION}-pages`
@@ -63,6 +68,22 @@ function isApiOrAuth(url) {
          url.pathname.startsWith('/_next/data/')
 }
 
+/**
+ * Pantallas que NUNCA deben salir del cache.
+ *
+ * Un comprobante es un documento fiscal: servirlo de una copia guardada puede
+ * mostrar importes o correlativos que ya cambiaron, y encima deja al sistema
+ * imprimiendo con código viejo. Siempre se piden a la red.
+ */
+function isSiempreFresca(url) {
+  return url.pathname.startsWith('/comprobante/') ||
+         url.pathname.startsWith('/boleta/') ||
+         url.pathname.startsWith('/guia/') ||
+         url.pathname.startsWith('/guia-remision/') ||
+         url.pathname.startsWith('/rendicion/') ||
+         url.pathname.startsWith('/hoja-ruta/')
+}
+
 function isHTMLPage(request) {
   return request.mode === 'navigate' ||
          (request.method === 'GET' && request.headers.get('accept')?.includes('text/html'))
@@ -83,6 +104,11 @@ self.addEventListener('fetch', (event) => {
   // Esto evita que veas datos viejos sin saberlo.
   if (isApiOrAuth(url)) {
     return // Deja que el navegador maneje normal
+  }
+
+  // Documentos e impresión: siempre de la red, nunca del cache
+  if (isSiempreFresca(url)) {
+    return
   }
 
   // Para assets estáticos → CACHE-FIRST (rápidos, casi nunca cambian con el mismo hash)
