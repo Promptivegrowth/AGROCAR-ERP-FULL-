@@ -33,7 +33,28 @@ export default function DiagnosticoImpresion() {
       detalle: `${origen}${seguro ? ' (conexión segura)' : ''}`,
     })
 
-    // 2. ¿Contesta el agente?
+    // 2. ¿Se puede llegar al agente sin pedirle respuesta?
+    //
+    // Con mode 'no-cors' el navegador manda el pedido igual pero no deja leer
+    // la respuesta. Si esto pasa y lo de abajo falla, el agente está y quien
+    // corta es la política del navegador, no la red.
+    let alcanzable = false
+    try {
+      const control = new AbortController()
+      const reloj = setTimeout(() => control.abort(), 4000)
+      await fetch('http://127.0.0.1:9123/ping', { mode: 'no-cors', signal: control.signal, cache: 'no-store' })
+      clearTimeout(reloj)
+      alcanzable = true
+      r.push({ nombre: 'Conexión con el agente', ok: true, detalle: 'El agente está escuchando y responde.' })
+    } catch {
+      r.push({
+        nombre: 'Conexión con el agente',
+        ok: false,
+        detalle: 'No se llegó al agente. Puede estar cerrado, o el navegador corta la conexión con programas de esta computadora.',
+      })
+    }
+
+    // 3. ¿Contesta con permiso para que el ERP lea la respuesta?
     try {
       const control = new AbortController()
       const reloj = setTimeout(() => control.abort(), 4000)
@@ -50,7 +71,6 @@ export default function DiagnosticoImpresion() {
           ? `Respondió correctamente · versión ${d.version} · ${d.impresos ?? 0} tickets impresos`
           : `Contestó pero sin confirmar: ${JSON.stringify(d)}`,
       })
-
       if (Array.isArray(d?.impresoras)) {
         r.push({
           nombre: 'Impresoras que ve el agente',
@@ -59,18 +79,29 @@ export default function DiagnosticoImpresion() {
         })
       }
     } catch (e: any) {
-      const nombre = e?.name ?? ''
-      let detalle: string
-      if (nombre === 'AbortError') {
-        detalle = 'No contestó a tiempo. ¿Está corriendo el agente?'
-      } else {
-        detalle =
-          `El navegador no dejó conectar (${e?.message ?? 'error de red'}). ` +
-          'Puede ser que el agente esté cerrado, o que Chrome esté bloqueando ' +
-          'la conexión con programas de esta computadora.'
-      }
-      r.push({ nombre: 'Agente de impresión', ok: false, detalle })
+      const abortado = e?.name === 'AbortError'
+      r.push({
+        nombre: 'Agente de impresión',
+        ok: false,
+        detalle: abortado
+          ? 'No contestó a tiempo. ¿Está corriendo el agente?'
+          : alcanzable
+            ? 'El agente está andando, pero el navegador no deja que el sistema lea su respuesta. ' +
+              'Es una restricción del navegador para conexiones con programas de esta computadora ' +
+              '(hay que habilitarla, ver abajo).'
+            : `No se pudo conectar (${e?.message ?? 'error de red'}).`,
+      })
     }
+
+    // 4. Qué navegador es, que cambia cómo se habilita
+    const ua = typeof navigator !== 'undefined' ? navigator.userAgent : ''
+    const esEdge = /Edg\//.test(ua)
+    const esChrome = /Chrome\//.test(ua) && !esEdge
+    r.push({
+      nombre: 'Navegador',
+      ok: true,
+      detalle: esEdge ? 'Microsoft Edge' : esChrome ? 'Google Chrome' : ua.slice(0, 90),
+    })
 
     setPruebas(r)
     setCorriendo(false)
@@ -79,6 +110,9 @@ export default function DiagnosticoImpresion() {
   useEffect(() => { void correr() }, [])
 
   const agenteOk = pruebas.find((p) => p.nombre === 'Agente de impresión')?.ok === true
+  // El agente contesta pero el navegador no deja leerlo: hay que habilitarlo
+  const bloqueado =
+    !agenteOk && pruebas.find((p) => p.nombre === 'Conexión con el agente')?.ok === true
 
   return (
     <div className="space-y-5 max-w-3xl">
@@ -130,12 +164,30 @@ export default function DiagnosticoImpresion() {
           <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 text-sm text-amber-900 space-y-2">
             <p className="font-semibold">Esta computadora todavía imprime por el navegador.</p>
             <p>Los tickets salen igual, pero con la ventana de impresión y desperdiciando papel al final.</p>
-            <p className="font-semibold pt-1">Para dejarlo automático:</p>
-            <ol className="list-decimal ml-4 space-y-0.5">
-              <li>Ejecutar el instalador del agente de impresión en esta computadora.</li>
-              <li>Comprobar que quedó su ícono al lado del reloj.</li>
-              <li>Volver a probar con el botón de arriba.</li>
-            </ol>
+            {bloqueado ? (
+              <>
+                <p className="pt-1">
+                  El agente <b>está instalado y andando</b>, pero el navegador no lo deja
+                  comunicarse con el sistema. Es una restricción para conexiones con
+                  programas de la propia computadora.
+                </p>
+                <p className="font-semibold pt-1">Para habilitarlo en esta computadora:</p>
+                <ol className="list-decimal ml-4 space-y-0.5">
+                  <li>Ejecutar <b>habilitar-navegador.ps1</b> —viene junto al instalador del agente— como administrador.</li>
+                  <li>Cerrar por completo el navegador y volver a abrirlo.</li>
+                  <li>Volver a probar con el botón de arriba.</li>
+                </ol>
+              </>
+            ) : (
+              <>
+                <p className="font-semibold pt-1">Para dejarlo automático:</p>
+                <ol className="list-decimal ml-4 space-y-0.5">
+                  <li>Ejecutar el instalador del agente de impresión en esta computadora.</li>
+                  <li>Comprobar que quedó su ícono al lado del reloj.</li>
+                  <li>Volver a probar con el botón de arriba.</li>
+                </ol>
+              </>
+            )}
           </div>
         )
       )}
