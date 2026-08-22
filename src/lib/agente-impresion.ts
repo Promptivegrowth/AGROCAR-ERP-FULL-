@@ -14,6 +14,26 @@
 const AGENTE_URL = 'http://127.0.0.1:9123'
 const ESPERA_MS = 1500
 
+/**
+ * Pedido al agente, marcado como dirigido a esta misma computadora.
+ *
+ * Chrome y Edge restringen que una página de internet hable con programas
+ * locales —Local Network Access—. `targetAddressSpace: 'local'` le dice al
+ * navegador que el destino es local a propósito, que es la forma que la
+ * documentación de Chrome indica para este caso. La opción es reciente: los
+ * navegadores que no la conocen la ignoran, así que se manda siempre y si el
+ * pedido falla se reintenta sin ella.
+ */
+async function pedir(url: string, opciones: RequestInit = {}): Promise<Response> {
+  const conMarca = { ...opciones, targetAddressSpace: 'local' } as RequestInit
+  try {
+    return await fetch(url, conMarca)
+  } catch (e) {
+    // Algunos navegadores rechazan la opción desconocida: se reintenta limpio
+    return await fetch(url, opciones)
+  }
+}
+
 /** Impresora elegida en esta computadora; se recuerda en el navegador. */
 const CLAVE_IMPRESORA = 'agrocar.ticketera'
 
@@ -34,7 +54,7 @@ export async function estadoAgente(): Promise<EstadoAgente> {
   try {
     const control = new AbortController()
     const reloj = setTimeout(() => control.abort(), ESPERA_MS)
-    const r = await fetch(`${AGENTE_URL}/ping`, { signal: control.signal, cache: 'no-store' })
+    const r = await pedir(`${AGENTE_URL}/ping`, { signal: control.signal, cache: 'no-store' })
     clearTimeout(reloj)
     if (!r.ok) return { disponible: false, impresoras: [] }
     const d = await r.json()
@@ -97,7 +117,7 @@ export async function imprimirEscPos(base64: string, impresora?: string | null):
   try {
     const control = new AbortController()
     const reloj = setTimeout(() => control.abort(), 15000)
-    const r = await fetch(`${AGENTE_URL}/imprimir`, {
+    const r = await pedir(`${AGENTE_URL}/imprimir`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ impresora: impresora ?? '', base64 }),

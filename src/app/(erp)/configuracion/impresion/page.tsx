@@ -42,7 +42,8 @@ export default function DiagnosticoImpresion() {
     try {
       const control = new AbortController()
       const reloj = setTimeout(() => control.abort(), 4000)
-      await fetch('http://127.0.0.1:9123/ping', { mode: 'no-cors', signal: control.signal, cache: 'no-store' })
+      await fetch('http://127.0.0.1:9123/ping',
+        { mode: 'no-cors', signal: control.signal, cache: 'no-store', targetAddressSpace: 'local' } as RequestInit)
       clearTimeout(reloj)
       alcanzable = true
       r.push({ nombre: 'Conexión con el agente', ok: true, detalle: 'El agente está escuchando y responde.' })
@@ -61,7 +62,8 @@ export default function DiagnosticoImpresion() {
       const resp = await fetch('http://127.0.0.1:9123/ping', {
         signal: control.signal,
         cache: 'no-store',
-      })
+        targetAddressSpace: 'local',
+      } as RequestInit)
       clearTimeout(reloj)
       const d = await resp.json()
       r.push({
