@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect } from 'react'
-import { estadoAgente } from '@/lib/agente-impresion'
+import { equiposDisponibles } from '@/lib/cola-impresion'
 
 /**
  * Dispara window.print() cuando el logo y los QR ya cargaron.
@@ -109,9 +109,11 @@ export default function AutoPrint({ count, esTicket }: { count: number; esTicket
        * haya que apretar nada.
        */
       if (esTicket) {
-        const agente = await estadoAgente()
+        const equipos = await equiposDisponibles()
         if (cancelled) return
-        if (agente.disponible) return
+        // Hay ticketera registrada: imprime BotonTicketeraLote por la cola,
+        // sin abrir ningun dialogo.
+        if (equipos.length > 0) return
       }
 
       setTimeout(() => {

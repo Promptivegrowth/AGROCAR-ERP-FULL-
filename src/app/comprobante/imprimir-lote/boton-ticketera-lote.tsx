@@ -4,115 +4,108 @@ import { useEffect, useState } from 'react'
 import { Printer, Loader2, CheckCircle2 } from 'lucide-react'
 import { toast } from 'sonner'
 import {
-  estadoAgente, imprimirEscPos, impresoraElegida, guardarImpresora, adivinarTicketera,
-} from '@/lib/agente-impresion'
+  equiposDisponibles, equipoElegido, guardarEquipo, encolarTicket, esperarImpresion,
+  conectado, type Equipo,
+} from '@/lib/cola-impresion'
 import { construirTicket, type DatosTicket } from '@/lib/ticket-comprobante'
 
 /**
- * Impresión por lote directa a la ticketera.
+ * Impresión por lote directo a la ticketera.
  *
- * Los tickets se mandan de a uno, cada uno con su propio corte. Es a propósito:
- * si se mandaran todos juntos en un solo envío, la impresora los trata como un
- * documento y algunos drivers cortan una sola vez al final, que es justo el
- * problema que Daniel reportó al imprimir dos boletas y recibirlas pegadas.
+ * Se llega acá desde el botón "Imprimir tickets" de Facturación, que ya es la
+ * orden de imprimir, así que arranca solo: no tiene sentido pedir un segundo
+ * clic. El botón queda para repetir si hizo falta.
  *
- * Además, mandando de a uno, si falla el número siete se sabe cuál fue y los
- * seis anteriores ya salieron.
+ * Cada ticket se encola por separado y lleva su propio corte. Mandados juntos
+ * la impresora los trata como un documento y corta una sola vez al final, que
+ * es lo que pasaba antes con dos boletas saliendo pegadas.
  */
 export default function BotonTicketeraLote({ tickets }: { tickets: DatosTicket[] }) {
-  const [disponible, setDisponible] = useState(false)
-  const [impresoras, setImpresoras] = useState<string[]>([])
-  const [elegida, setElegida] = useState<string | null>(null)
+  const [equipos, setEquipos] = useState<Equipo[]>([])
+  const [elegido, setElegido] = useState<string>('')
   const [progreso, setProgreso] = useState<number | null>(null)
   const [listo, setListo] = useState(false)
-  const [yaImprimio, setYaImprimio] = useState(false)
+  const [yaEnvio, setYaEnvio] = useState(false)
 
   useEffect(() => {
     let vivo = true
-    estadoAgente().then((e) => {
+    equiposDisponibles().then((lista) => {
       if (!vivo) return
-      setDisponible(e.disponible)
-      setImpresoras(e.impresoras)
-      const guardada = impresoraElegida()
-      const valida = guardada && e.impresoras.includes(guardada) ? guardada : null
-      setElegida(valida ?? adivinarTicketera(e.impresoras))
+      setEquipos(lista)
+      const guardado = equipoElegido()
+      const valido = guardado && lista.some((e) => e.id === guardado) ? guardado : null
+      setElegido(valido ?? lista[0]?.id ?? '')
     })
     return () => { vivo = false }
   }, [])
 
-  const imprimirTodos = async () => {
+  const imprimirTodos = async (equipoId: string) => {
     setProgreso(0)
     let fallidos = 0
     let ultimoError = ''
+    let ultimoId: string | null = null
 
     for (let i = 0; i < tickets.length; i++) {
       setProgreso(i + 1)
       try {
         const t = await construirTicket(tickets[i], true)
-        const r = await imprimirEscPos(t.aBase64(), elegida)
-        if (!r.ok) {
-          fallidos++
-          ultimoError = r.motivo === 'sin-agente' ? 'el agente se cerró' : (r.detalle ?? 'error')
-          if (r.motivo === 'sin-agente') break
-        }
+        const r = await encolarTicket(t.aBase64(), equipoId, tickets[i].serieNumero)
+        if (r.ok) ultimoId = r.id
+        else { fallidos++; ultimoError = r.error }
       } catch (e: any) {
         fallidos++
-        ultimoError = e?.message ?? 'error al armar el ticket'
+        ultimoError = e?.message ?? 'no se pudo armar el ticket'
       }
-      // Un respiro entre tickets: el búfer de estas impresoras es chico y
-      // encimarlos hace que se pierda alguno.
-      await new Promise((r) => setTimeout(r, 350))
     }
 
+    // Se espera solo al último: si ese salió, los anteriores ya pasaron por la
+    // impresora, porque el agente los toma en orden.
+    if (ultimoId) await esperarImpresion(ultimoId, 20)
+
     setProgreso(null)
-    const salieron = tickets.length - fallidos
+    const enviados = tickets.length - fallidos
     if (fallidos === 0) {
       setListo(true)
       setTimeout(() => setListo(false), 3000)
-      toast.success(`${salieron} ticket${salieron === 1 ? '' : 's'} impreso${salieron === 1 ? '' : 's'}`, {
+      toast.success(`${enviados} ticket${enviados === 1 ? '' : 's'} a la ticketera`, {
         description: 'Cada uno con su corte',
       })
     } else {
-      toast.error(`Salieron ${salieron} de ${tickets.length}`, { description: ultimoError })
+      toast.error(`Se enviaron ${enviados} de ${tickets.length}`, { description: ultimoError })
     }
   }
 
-  /**
-   * Al abrirse la pantalla imprime solo.
-   *
-   * Se llega acá desde el botón "Imprimir tickets" de Facturación, que ya es
-   * la orden de imprimir: pedir un segundo clic sería un paso de más. El
-   * botón queda igual para repetir la impresión si hizo falta.
-   *
-   * La bandera evita que una recarga de la página vuelva a imprimir todo.
-   */
+  // Llega desde "Imprimir tickets": esa ya es la orden, imprime al abrirse
   useEffect(() => {
-    if (!disponible || tickets.length === 0 || yaImprimio) return
-    setYaImprimio(true)
-    void imprimirTodos()
+    if (!elegido || tickets.length === 0 || yaEnvio) return
+    setYaEnvio(true)
+    void imprimirTodos(elegido)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [disponible, tickets.length])
+  }, [elegido, tickets.length])
 
-  if (!disponible || tickets.length === 0) return null
+  if (equipos.length === 0 || tickets.length === 0) return null
 
   const enCurso = progreso !== null
 
   return (
     <div className="flex items-center gap-2 flex-wrap">
-      {impresoras.length > 1 && (
+      {equipos.length > 1 && (
         <select
-          value={elegida ?? ''}
-          onChange={(e) => { setElegida(e.target.value); guardarImpresora(e.target.value) }}
+          value={elegido}
+          onChange={(e) => { setElegido(e.target.value); guardarEquipo(e.target.value) }}
           className="h-9 max-w-[190px] px-2 text-xs border border-gray-300 rounded-md bg-white"
-          title="Impresora de tickets de esta computadora"
+          title="En qué computadora se imprime"
         >
-          <option value="">Elegir impresora…</option>
-          {impresoras.map((n) => <option key={n} value={n}>{n}</option>)}
+          {equipos.map((e) => (
+            <option key={e.id} value={e.id}>
+              {conectado(e) ? '● ' : '○ '}{e.nombre}
+            </option>
+          ))}
         </select>
       )}
       <button
         type="button"
-        onClick={imprimirTodos}
+        onClick={() => imprimirTodos(elegido)}
         disabled={enCurso}
         className="inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold text-black bg-[#FBE600] rounded-md hover:bg-[#E5D100] disabled:opacity-70"
       >
@@ -120,7 +113,7 @@ export default function BotonTicketeraLote({ tickets }: { tickets: DatosTicket[]
           : listo ? <CheckCircle2 className="w-4 h-4" />
           : <Printer className="w-4 h-4" />}
         {enCurso
-          ? `Imprimiendo ${progreso} de ${tickets.length}…`
+          ? `Enviando ${progreso} de ${tickets.length}…`
           : listo
             ? 'Impresos'
             : `Imprimir ${tickets.length} en ticketera`}

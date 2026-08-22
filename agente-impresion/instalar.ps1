@@ -31,6 +31,7 @@ $fuente   = Join-Path $aqui 'AgenteImpresion.cs'
 $destino  = Join-Path $env:LOCALAPPDATA 'AgrocarERP'
 $exe      = Join-Path $destino 'AgenteImpresionAgrocar.exe'
 $impresora = 'POS-80-Series'
+$URL_ERP   = 'https://agrocar-erp-full.vercel.app'
 
 Write-Host ""
 Write-Host "   ____                      _   _           " -ForegroundColor Yellow
@@ -79,27 +80,61 @@ try {
     Aviso "no se pudo registrar el inicio automatico: $($_.Exception.Message)"
 }
 
-# ── 3. Iniciarlo ────────────────────────────────────────────────────────────
-Titulo '3. Iniciando'
-Start-Process -FilePath $exe -WindowStyle Hidden
-Start-Sleep -Seconds 2
+# ── 3. Codigo de esta computadora ───────────────────────────────────────────
+#
+# El agente pregunta al ERP si hay tickets para ESTA computadora, y para eso
+# necesita su codigo. Se saca del sistema, en Configuracion > Impresion de
+# tickets, agregando la computadora y copiando el codigo.
+Titulo '3. Codigo de esta computadora'
 
-$ok = $false
-try {
-    $r = Invoke-RestMethod -Uri 'http://127.0.0.1:9123/ping' -TimeoutSec 6
-    if ($r.ok) {
-        $ok = $true
-        Bien "respondiendo (version $($r.version))"
-        Write-Host "  impresoras que ve:" -ForegroundColor Gray
-        $r.impresoras | ForEach-Object { Write-Host "    - $_" -ForegroundColor Gray }
+$config = Join-Path $destino 'agente.config'
+$tokenActual = $null
+if (Test-Path $config) {
+    foreach ($l in Get-Content $config) {
+        if ($l -match '^\s*token\s*=\s*(.+)$') { $tokenActual = $Matches[1].Trim() }
     }
-} catch {
-    Malo "el agente no responde en el puerto 9123"
-    Aviso "revisar que ningun antivirus lo haya bloqueado"
 }
 
-# ── 4. Ajustes de la ticketera ──────────────────────────────────────────────
-Titulo '4. Ajustando la ticketera'
+if ($tokenActual) {
+    Bien "ya estaba configurada (codigo $($tokenActual.Substring(0,8))...)"
+} else {
+    Write-Host "  Falta el codigo. Se obtiene asi:" -ForegroundColor Yellow
+    Write-Host "    1. En el ERP: Configuracion > Impresion de tickets"
+    Write-Host "    2. Agregar esta computadora con un nombre"
+    Write-Host "    3. Copiar el codigo que aparece"
+    Write-Host ""
+    $tk = Read-Host "  Pegar el codigo aca (Enter para hacerlo despues)"
+    if ($tk) {
+        $tokenActual = $tk.Trim()
+        # Si pegaron el bloque completo (url=...
+token=...), se rescata el token
+        if ($tokenActual -match 'token\s*=\s*([0-9a-fA-F-]{36})') { $tokenActual = $Matches[1] }
+    }
+}
+
+if ($tokenActual) {
+    $contenido = "# Agente de impresion AGROCAR - Promptive`r`n"
+    $contenido += "url=$URL_ERP`r`n"
+    $contenido += "token=$tokenActual`r`n"
+    $contenido += "# impresora= (opcional: nombre exacto si hay mas de una ticketera)`r`n"
+    Set-Content -Path $config -Value $contenido -Encoding UTF8
+    Bien "configuracion guardada en $config"
+}
+
+# ── 4. Iniciarlo ────────────────────────────────────────────────────────────
+Titulo '4. Iniciando'
+Get-Process -Name 'AgenteImpresionAgrocar' -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+Start-Sleep -Milliseconds 500
+Start-Process -FilePath $exe -WindowStyle Hidden
+Start-Sleep -Seconds 3
+
+$ok = $false
+$p = Get-Process -Name 'AgenteImpresionAgrocar' -ErrorAction SilentlyContinue
+if ($p) { $ok = $true; Bien "corriendo (PID $($p.Id))" }
+else { Malo "no se pudo iniciar"; Aviso "revisar que ningun antivirus lo haya bloqueado" }
+
+# ── 5. Ajustes de la ticketera ──────────────────────────────────────────────
+Titulo '5. Ajustando la ticketera'
 $prn = Get-Printer -Name $impresora -ErrorAction SilentlyContinue
 if (-not $prn) {
     Aviso "no hay ninguna impresora llamada '$impresora'; se saltea este paso"
@@ -129,8 +164,10 @@ if (-not $prn) {
 Write-Host ""
 if ($ok) {
     Write-Host "== Listo ==" -ForegroundColor Green
-    Write-Host "En el ERP, al abrir un comprobante en formato Ticket, aparece el boton"
-    Write-Host "'Imprimir en ticketera'. Si no aparece, recargar con Ctrl+F5."
+    Write-Host "En el ERP, Configuracion > Impresion de tickets, esta computadora"
+    Write-Host "deberia aparecer con un punto verde en menos de un minuto."
+    Write-Host ""
+    Write-Host "Desde ahi en adelante los tickets salen solos al facturar." -ForegroundColor White
     Write-Host ""
     Write-Host "El agente queda con su icono al lado del reloj. Doble clic ahi para" -ForegroundColor Gray
     Write-Host "ver su estado o cerrarlo." -ForegroundColor Gray

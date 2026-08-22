@@ -1,58 +1,68 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// AGENTE DE IMPRESIÓN AGROCAR — puente entre el ERP web y la ticketera
+// AGENTE DE IMPRESIÓN AGROCAR — Promptive
 //
-// El ERP corre en el navegador y no puede hablarle directo a la impresora: todo
-// pasa por el driver de Windows, que rasteriza la página a imagen —673 KB por
-// ticket— y decide el corte según el tamaño de papel. De ahí venía el papel
-// desperdiciado: el driver agrega su propio margen final y no hay forma de
-// pedirle "cortá acá".
+// Imprime los tickets del ERP en la ticketera térmica.
 //
-// Este agente recibe del ERP los bytes ESC/POS ya armados y los manda a la
-// impresora en modo RAW, sin pasar por el rasterizado. El corte lo decide el
-// ticket con el comando GS V y no el driver: 172 bytes en vez de 673 KB, y el
-// papel avanza solo lo necesario.
+// Por qué existe: el ERP corre en el navegador y desde ahí solo se puede
+// imprimir por el driver de Windows, que convierte la página en imagen —673 KB
+// por ticket— y decide el corte según el tamaño de papel, agregando su propio
+// margen. De ahí venía el papel desperdiciado, y no había forma de pedirle
+// "cortá acá". Este programa manda los comandos ESC/POS que arma el ERP, en
+// crudo: unos 400 bytes por ticket y el corte lo decide el ticket.
 //
-// No usa HttpListener a propósito: ese exige registrar la URL con permisos de
-// administrador. Con TcpListener sobre loopback arranca sin pedir nada.
+// Por qué pregunta en vez de escuchar: la primera versión era un servidor local
+// al que el navegador le hablaba, y Chrome y Edge están cerrando esa puerta
+// —Local Network Access—. Funcionaba a fuerza de cabeceras y permisos por
+// equipo, pero la restricción se endurece con cada versión. Acá se da vuelta la
+// relación: el agente le pregunta al ERP si hay algo para imprimir. Un programa
+// local no tiene esas restricciones, y de paso se puede facturar desde el
+// celular y que el ticket salga en la impresora de la oficina.
 //
 // Compilar (el compilador viene con Windows, no hay que instalar nada):
 //   %SystemRoot%\Microsoft.NET\Framework64\v4.0.30319\csc.exe
 //     /target:winexe /out:AgenteImpresionAgrocar.exe
 //     /reference:System.Drawing.dll /reference:System.Windows.Forms.dll
-//     AgenteImpresion.cs
+//     /win32icon:promptive.ico AgenteImpresion.cs
 // ─────────────────────────────────────────────────────────────────────────────
 
 using System;
 using System.Collections.Generic;
-using System.Reflection;
 using System.IO;
 using System.Net;
-using System.Net.Sockets;
+using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
 
 [assembly: AssemblyTitle("Agente de impresion AGROCAR")]
-[assembly: AssemblyDescription("Puente entre el ERP y la ticketera termica")]
+[assembly: AssemblyDescription("Imprime los tickets del ERP en la ticketera")]
 [assembly: AssemblyCompany("Promptive")]
 [assembly: AssemblyProduct("AGROCAR ERP")]
 [assembly: AssemblyCopyright("Promptive - Luciernaga & Asociados S.A.C.")]
-[assembly: AssemblyVersion("1.0.0.0")]
-[assembly: AssemblyFileVersion("1.0.0.0")]
+[assembly: AssemblyVersion("2.0.0.0")]
+[assembly: AssemblyFileVersion("2.0.0.0")]
 
 class Agente
 {
-    const int PUERTO = 9123;
-    const string VERSION = "1.0";
+    const string VERSION = "2.0";
     const string MARCA = "Promptive";
 
-    // Icono junto al reloj: sirve para ver de un vistazo que el agente esta
-    // andando, y para cerrarlo sin tener que buscarlo en el administrador de
-    // tareas. Sin esto el programa es invisible y nadie sabe si esta vivo.
+    // Cada segundo: suficiente para que el ticket salga apenas se factura, sin
+    // castigar al servidor. Si falla la red se va espaciando, ver EsperaActual.
+    const int INTERVALO_MS = 1000;
+
+    static string urlBase;
+    static string token;
+    static string impresora;
+
     static System.Windows.Forms.NotifyIcon bandeja;
     static int impresos = 0;
+    static int fallidos = 0;
+    static string ultimoEstado = "iniciando";
+    static DateTime ultimoContacto = DateTime.MinValue;
+    static int fallosSeguidos = 0;
 
-    // ── Impresión RAW por el spooler de Windows ──────────────────────────────
+    // ── Impresión RAW por el spooler ─────────────────────────────────────────
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
     class DOCINFO
     {
@@ -76,16 +86,16 @@ class Agente
     [DllImport("winspool.Drv", SetLastError = true)]
     static extern bool WritePrinter(IntPtr h, IntPtr buf, int n, out int written);
 
-    static string ImprimirRaw(string impresora, byte[] datos)
+    static string ImprimirRaw(string nombreImpresora, byte[] datos)
     {
         IntPtr hp;
-        if (!OpenPrinter(impresora, out hp, IntPtr.Zero))
-            return "No se pudo abrir la impresora " + impresora + " (error " + Marshal.GetLastWin32Error() + ")";
+        if (!OpenPrinter(nombreImpresora, out hp, IntPtr.Zero))
+            return "no se pudo abrir la impresora " + nombreImpresora + " (error " + Marshal.GetLastWin32Error() + ")";
 
         var di = new DOCINFO();
         di.pDocName = "AGROCAR ticket";
         di.pDataType = "RAW";
-        if (!StartDocPrinter(hp, 1, di)) { ClosePrinter(hp); return "StartDocPrinter fallo"; }
+        if (!StartDocPrinter(hp, 1, di)) { ClosePrinter(hp); return "la impresora rechazo el trabajo"; }
 
         StartPagePrinter(hp);
         IntPtr p = Marshal.AllocCoTaskMem(datos.Length);
@@ -97,7 +107,7 @@ class Agente
         EndDocPrinter(hp);
         ClosePrinter(hp);
 
-        return ok ? null : "WritePrinter fallo";
+        return ok ? null : "no se pudieron enviar los datos a la impresora";
     }
 
     static List<string> Impresoras()
@@ -112,7 +122,19 @@ class Agente
         return lista;
     }
 
-    // ── JSON a mano, para no arrastrar dependencias ──────────────────────────
+    static string AdivinarTicketera()
+    {
+        string[] pistas = { "pos-80", "pos80", "thermal", "termica", "receipt", "ticket", "80mm", "pos " };
+        foreach (string n in Impresoras())
+        {
+            string bajo = n.ToLowerInvariant();
+            foreach (string pista in pistas)
+                if (bajo.Contains(pista)) return n;
+        }
+        return null;
+    }
+
+    // ── Lectura de JSON, a mano para no arrastrar dependencias ───────────────
     static string Campo(string json, string nombre)
     {
         string marca = "\"" + nombre + "\"";
@@ -127,53 +149,238 @@ class Agente
         var sb = new StringBuilder();
         while (i < json.Length && json[i] != '"')
         {
-            if (json[i] == '\\' && i + 1 < json.Length) i++;
+            if (json[i] == '\\' && i + 1 < json.Length)
+            {
+                i++;
+                if (json[i] == 'n') { sb.Append('\n'); i++; continue; }
+                if (json[i] == 'r') { sb.Append('\r'); i++; continue; }
+                if (json[i] == 't') { sb.Append('\t'); i++; continue; }
+            }
             sb.Append(json[i]);
             i++;
         }
         return sb.ToString();
     }
 
-    static string Escapar(string s)
+    /** Separa los objetos del arreglo "trabajos" sin armar un parser completo. */
+    static List<string> Trabajos(string json)
     {
-        if (s == null) return "";
-        return s.Replace("\\", "\\\\").Replace("\"", "\\\"");
+        var lista = new List<string>();
+        int i = json.IndexOf("\"trabajos\"", StringComparison.Ordinal);
+        if (i < 0) return lista;
+        i = json.IndexOf('[', i);
+        if (i < 0) return lista;
+
+        int nivel = 0, inicio = -1;
+        bool enTexto = false, escapado = false;
+        for (int k = i; k < json.Length; k++)
+        {
+            char c = json[k];
+            if (enTexto)
+            {
+                if (escapado) escapado = false;
+                else if (c == '\\') escapado = true;
+                else if (c == '"') enTexto = false;
+                continue;
+            }
+            if (c == '"') { enTexto = true; continue; }
+            if (c == '{') { if (nivel == 0) inicio = k; nivel++; continue; }
+            if (c == '}')
+            {
+                nivel--;
+                if (nivel == 0 && inicio >= 0) { lista.Add(json.Substring(inicio, k - inicio + 1)); inicio = -1; }
+                continue;
+            }
+            if (c == ']' && nivel == 0) break;
+        }
+        return lista;
+    }
+
+    // ── Diálogo con el ERP ───────────────────────────────────────────────────
+    static string Pedir(string url)
+    {
+        var req = (HttpWebRequest)WebRequest.Create(url);
+        req.Method = "GET";
+        req.Timeout = 15000;
+        req.UserAgent = "AgenteImpresionAgrocar/" + VERSION;
+        using (var resp = (HttpWebResponse)req.GetResponse())
+        using (var lector = new StreamReader(resp.GetResponseStream(), Encoding.UTF8))
+            return lector.ReadToEnd();
+    }
+
+    static void Confirmar(string id, bool ok, string error)
+    {
+        try
+        {
+            var req = (HttpWebRequest)WebRequest.Create(urlBase + "/api/impresion/confirmar");
+            req.Method = "POST";
+            req.ContentType = "application/json";
+            req.Timeout = 15000;
+            req.UserAgent = "AgenteImpresionAgrocar/" + VERSION;
+
+            string cuerpo = "{\"token\":\"" + token + "\",\"id\":\"" + id + "\",\"ok\":" +
+                            (ok ? "true" : "false") +
+                            (error != null ? ",\"error\":\"" + error.Replace("\\", "").Replace("\"", "'") + "\"" : "") + "}";
+            byte[] datos = Encoding.UTF8.GetBytes(cuerpo);
+            req.ContentLength = datos.Length;
+            using (var s = req.GetRequestStream()) s.Write(datos, 0, datos.Length);
+            using (var r = req.GetResponse()) { }
+        }
+        catch { /* si no se pudo confirmar, el ticket se reintenta */ }
+    }
+
+    /**
+     * Cuánto esperar antes de volver a preguntar.
+     *
+     * Con la red caída no tiene sentido insistir cada segundo: se va espaciando
+     * hasta medio minuto. Apenas hay respuesta, se retoma el ritmo normal.
+     */
+    static int EsperaActual()
+    {
+        if (fallosSeguidos == 0) return INTERVALO_MS;
+        int espera = INTERVALO_MS * (1 << Math.Min(fallosSeguidos, 5));
+        return Math.Min(espera, 30000);
+    }
+
+    static void Ciclo()
+    {
+        while (true)
+        {
+            try
+            {
+                string url = urlBase + "/api/impresion/pendientes?token=" + Uri.EscapeDataString(token) +
+                             "&version=" + Uri.EscapeDataString(VERSION);
+                string json = Pedir(url);
+                fallosSeguidos = 0;
+                ultimoContacto = DateTime.Now;
+
+                string impresoraDelServidor = Campo(json, "impresora");
+                string usar = !string.IsNullOrEmpty(impresora) ? impresora
+                            : (!string.IsNullOrEmpty(impresoraDelServidor) ? impresoraDelServidor : AdivinarTicketera());
+
+                var trabajos = Trabajos(json);
+                if (trabajos.Count == 0)
+                {
+                    ultimoEstado = "esperando tickets";
+                }
+                else
+                {
+                    ultimoEstado = "imprimiendo";
+                    foreach (string t in trabajos)
+                    {
+                        string id = Campo(t, "id");
+                        string contenido = Campo(t, "contenido");
+                        if (string.IsNullOrEmpty(id) || string.IsNullOrEmpty(contenido)) continue;
+
+                        if (string.IsNullOrEmpty(usar))
+                        {
+                            Confirmar(id, false, "no hay ninguna ticketera en esta computadora");
+                            fallidos++;
+                            continue;
+                        }
+
+                        byte[] datos;
+                        try { datos = Convert.FromBase64String(contenido); }
+                        catch { Confirmar(id, false, "el ticket llego mal codificado"); fallidos++; continue; }
+
+                        string fallo = ImprimirRaw(usar, datos);
+                        if (fallo == null) { impresos++; Confirmar(id, true, null); }
+                        else { fallidos++; Confirmar(id, false, fallo); }
+
+                        // Respiro entre tickets: el bufer de estas impresoras es
+                        // chico y encimarlos hace que se pierda alguno.
+                        Thread.Sleep(350);
+                    }
+                }
+            }
+            catch (WebException e)
+            {
+                fallosSeguidos++;
+                var resp = e.Response as HttpWebResponse;
+                if (resp != null && (int)resp.StatusCode == 401)
+                    ultimoEstado = "esta computadora no esta registrada";
+                else
+                    ultimoEstado = "sin conexion con el sistema";
+            }
+            catch (Exception e)
+            {
+                fallosSeguidos++;
+                ultimoEstado = "error: " + e.Message;
+            }
+
+            ActualizarBandeja();
+            Thread.Sleep(EsperaActual());
+        }
+    }
+
+    // ── Configuración ────────────────────────────────────────────────────────
+    static string RutaConfig()
+    {
+        string dir = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "AgrocarERP");
+        Directory.CreateDirectory(dir);
+        return Path.Combine(dir, "agente.config");
+    }
+
+    /** Formato clave=valor: se puede abrir y corregir con el Bloc de notas. */
+    static void LeerConfig()
+    {
+        urlBase = "https://agrocar-erp-full.vercel.app";
+        token = null;
+        impresora = null;
+
+        string ruta = RutaConfig();
+        if (!File.Exists(ruta)) return;
+        foreach (string linea in File.ReadAllLines(ruta))
+        {
+            string l = linea.Trim();
+            if (l.Length == 0 || l.StartsWith("#")) continue;
+            int i = l.IndexOf('=');
+            if (i <= 0) continue;
+            string clave = l.Substring(0, i).Trim().ToLowerInvariant();
+            string valor = l.Substring(i + 1).Trim();
+            if (clave == "url") urlBase = valor.TrimEnd('/');
+            else if (clave == "token") token = valor;
+            else if (clave == "impresora") impresora = valor;
+        }
     }
 
     [STAThread]
     static void Main(string[] args)
     {
-        TcpListener servidor;
-        try
+        LeerConfig();
+
+        if (string.IsNullOrEmpty(token))
         {
-            servidor = new TcpListener(IPAddress.Loopback, PUERTO);
-            servidor.Start();
-        }
-        catch (Exception e)
-        {
-            MostrarError("No se pudo abrir el puerto " + PUERTO + ".\r\n\r\n" +
-                         "Puede que el agente ya este corriendo.\r\n\r\n" + e.Message);
+            System.Windows.Forms.MessageBox.Show(
+                "Falta configurar esta computadora.\r\n\r\n" +
+                "En el ERP: Configuracion > Impresion de tickets > Agregar esta computadora.\r\n" +
+                "Ahi se obtiene el codigo, que va en el archivo:\r\n\r\n" + RutaConfig(),
+                "Agente de impresion - " + MARCA);
+            try { System.Diagnostics.Process.Start("notepad.exe", RutaConfig()); } catch { }
             return;
         }
 
-        // El servidor atiende en su propio hilo para que la bandeja quede libre
-        Thread hilo = new Thread(delegate()
-        {
-            while (true)
-            {
-                try
-                {
-                    TcpClient cliente = servidor.AcceptTcpClient();
-                    ThreadPool.QueueUserWorkItem(delegate(object o) { Atender(cliente); });
-                }
-                catch { }
-            }
-        });
+        IniciarBandeja();
+
+        var hilo = new Thread(new ThreadStart(Ciclo));
         hilo.IsBackground = true;
         hilo.Start();
 
-        IniciarBandeja();
         System.Windows.Forms.Application.Run();
+    }
+
+    static void ActualizarBandeja()
+    {
+        if (bandeja == null) return;
+        try
+        {
+            string txt = "Impresion AGROCAR - " + ultimoEstado;
+            if (impresos > 0) txt += " (" + impresos + ")";
+            // El tooltip de Windows corta a los 63 caracteres
+            bandeja.Text = txt.Length > 62 ? txt.Substring(0, 62) : txt;
+        }
+        catch { }
     }
 
     static void IniciarBandeja()
@@ -204,23 +411,39 @@ class Agente
             menu.Items.Add(new System.Windows.Forms.ToolStripSeparator());
 
             var estado = new System.Windows.Forms.ToolStripMenuItem("Ver estado");
-            estado.Click += delegate(object s2, EventArgs e2)
+            estado.Click += delegate(object s, EventArgs e)
             {
                 var sb = new StringBuilder();
                 sb.AppendLine("Agente de impresion AGROCAR");
                 sb.AppendLine("por " + MARCA + "  -  version " + VERSION);
                 sb.AppendLine();
-                sb.AppendLine("Escuchando en 127.0.0.1:" + PUERTO);
-                sb.AppendLine("Tickets impresos desde que se abrio: " + impresos);
+                sb.AppendLine("Estado: " + ultimoEstado);
+                sb.AppendLine("Ultimo contacto: " +
+                    (ultimoContacto == DateTime.MinValue ? "todavia ninguno" : ultimoContacto.ToString("HH:mm:ss")));
+                sb.AppendLine("Tickets impresos: " + impresos);
+                if (fallidos > 0) sb.AppendLine("Con problemas: " + fallidos);
                 sb.AppendLine();
-                sb.AppendLine("Impresoras detectadas:");
+                sb.AppendLine("Sistema: " + urlBase);
+                sb.AppendLine("Impresora: " + (impresora ?? AdivinarTicketera() ?? "(ninguna encontrada)"));
+                sb.AppendLine("Configuracion: " + RutaConfig());
+                sb.AppendLine();
+                sb.AppendLine("Impresoras de esta computadora:");
                 foreach (string n in Impresoras()) sb.AppendLine("  - " + n);
                 System.Windows.Forms.MessageBox.Show(sb.ToString(), "Agente de impresion - " + MARCA);
             };
             menu.Items.Add(estado);
 
+            var abrirConfig = new System.Windows.Forms.ToolStripMenuItem("Abrir configuracion");
+            abrirConfig.Click += delegate(object s, EventArgs e)
+            {
+                try { System.Diagnostics.Process.Start("notepad.exe", RutaConfig()); } catch { }
+            };
+            menu.Items.Add(abrirConfig);
+
+            menu.Items.Add(new System.Windows.Forms.ToolStripSeparator());
+
             var salir = new System.Windows.Forms.ToolStripMenuItem("Cerrar el agente");
-            salir.Click += delegate(object s2, EventArgs e2)
+            salir.Click += delegate(object s, EventArgs e)
             {
                 bandeja.Visible = false;
                 System.Windows.Forms.Application.Exit();
@@ -228,158 +451,8 @@ class Agente
             menu.Items.Add(salir);
 
             bandeja.ContextMenuStrip = menu;
-            bandeja.DoubleClick += delegate(object s2, EventArgs e2) { estado.PerformClick(); };
+            bandeja.DoubleClick += delegate(object s, EventArgs e) { estado.PerformClick(); };
         }
         catch { /* sin bandeja el agente igual imprime */ }
-    }
-
-    static void MostrarError(string msg)
-    {
-        try { System.Windows.Forms.MessageBox.Show(msg, "Agente de impresion AGROCAR"); }
-        catch { Console.Error.WriteLine(msg); }
-    }
-
-    static void Atender(TcpClient cliente)
-    {
-        try
-        {
-            using (cliente)
-            {
-                NetworkStream flujo = cliente.GetStream();
-                cliente.ReceiveTimeout = 10000;
-
-                byte[] buffer = new byte[8192];
-                MemoryStream crudo = new MemoryStream();
-                int leidos, largoCuerpo = -1, finCabeceras = -1;
-
-                while ((leidos = flujo.Read(buffer, 0, buffer.Length)) > 0)
-                {
-                    crudo.Write(buffer, 0, leidos);
-                    string texto = Encoding.UTF8.GetString(crudo.ToArray());
-
-                    if (finCabeceras < 0)
-                    {
-                        int corte = texto.IndexOf("\r\n\r\n", StringComparison.Ordinal);
-                        if (corte >= 0)
-                        {
-                            finCabeceras = corte + 4;
-                            foreach (string linea in texto.Substring(0, corte).Split('\n'))
-                            {
-                                string l = linea.Trim();
-                                if (l.StartsWith("Content-Length:", StringComparison.OrdinalIgnoreCase))
-                                    int.TryParse(l.Substring(15).Trim(), out largoCuerpo);
-                            }
-                        }
-                    }
-                    if (finCabeceras >= 0)
-                    {
-                        int yaLeido = crudo.Length > finCabeceras ? (int)crudo.Length - finCabeceras : 0;
-                        if (largoCuerpo <= 0 || yaLeido >= largoCuerpo) break;
-                    }
-                }
-
-                string completo = Encoding.UTF8.GetString(crudo.ToArray());
-                if (completo.Length == 0) return;
-
-                string primera = completo.Split('\n')[0].Trim();
-                string[] partes = primera.Split(' ');
-                string metodo = partes.Length > 0 ? partes[0] : "";
-                string ruta = partes.Length > 1 ? partes[1] : "/";
-                string cuerpo = (finCabeceras >= 0 && completo.Length > finCabeceras)
-                    ? completo.Substring(finCabeceras) : "";
-
-                if (metodo == "OPTIONS") { Responder(flujo, 204, ""); return; }
-
-                if (ruta.StartsWith("/ping"))
-                {
-                    StringBuilder sb = new StringBuilder();
-                    sb.Append("{\"ok\":true,\"version\":\"").Append(VERSION)
-                      .Append("\",\"marca\":\"").Append(MARCA)
-                      .Append("\",\"impresos\":").Append(impresos)
-                      .Append(",\"impresoras\":[");
-                    List<string> lista = Impresoras();
-                    for (int i = 0; i < lista.Count; i++)
-                    {
-                        if (i > 0) sb.Append(',');
-                        sb.Append('"').Append(Escapar(lista[i])).Append('"');
-                    }
-                    sb.Append("]}");
-                    Responder(flujo, 200, sb.ToString());
-                    return;
-                }
-
-                if (ruta.StartsWith("/imprimir") && metodo == "POST")
-                {
-                    string impresora = Campo(cuerpo, "impresora");
-                    string b64 = Campo(cuerpo, "base64");
-
-                    if (string.IsNullOrEmpty(b64))
-                    {
-                        Responder(flujo, 400, "{\"ok\":false,\"error\":\"falta el contenido a imprimir\"}");
-                        return;
-                    }
-                    if (string.IsNullOrEmpty(impresora))
-                    {
-                        foreach (string n in Impresoras())
-                        {
-                            if (n.IndexOf("POS", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                                n.IndexOf("80", StringComparison.Ordinal) >= 0)
-                            { impresora = n; break; }
-                        }
-                    }
-                    if (string.IsNullOrEmpty(impresora))
-                    {
-                        Responder(flujo, 400, "{\"ok\":false,\"error\":\"no se indico impresora y no se encontro ninguna ticketera\"}");
-                        return;
-                    }
-
-                    byte[] datos;
-                    try { datos = Convert.FromBase64String(b64); }
-                    catch { Responder(flujo, 400, "{\"ok\":false,\"error\":\"contenido mal codificado\"}"); return; }
-
-                    string error = ImprimirRaw(impresora, datos);
-                    if (error == null)
-                    {
-                        impresos++;
-                        Responder(flujo, 200, "{\"ok\":true,\"bytes\":" + datos.Length + "}");
-                    }
-                    else
-                    {
-                        Responder(flujo, 500, "{\"ok\":false,\"error\":\"" + Escapar(error) + "\"}");
-                    }
-                    return;
-                }
-
-                Responder(flujo, 404, "{\"ok\":false,\"error\":\"ruta desconocida\"}");
-            }
-        }
-        catch { }
-    }
-
-    static void Responder(NetworkStream flujo, int codigo, string json)
-    {
-        byte[] cuerpo = Encoding.UTF8.GetBytes(json);
-        StringBuilder c = new StringBuilder();
-        c.Append("HTTP/1.1 ").Append(codigo).Append(codigo == 200 ? " OK" : " X").Append("\r\n");
-        c.Append("Content-Type: application/json; charset=utf-8\r\n");
-        // El ERP corre en otro origen (https://...vercel.app): sin estas
-        // cabeceras el navegador descarta la respuesta aunque haya impreso bien.
-        c.Append("Access-Control-Allow-Origin: *\r\n");
-        c.Append("Access-Control-Allow-Methods: GET, POST, OPTIONS\r\n");
-        c.Append("Access-Control-Allow-Headers: Content-Type\r\n");
-        // Sin esta cabecera Chrome bloquea la llamada cuando el ERP corre en
-        // https://...vercel.app: desde Chrome 94 una pagina publica que quiere
-        // hablar con un servidor de la red local necesita que este lo autorice
-        // expresamente. Se llama Private Network Access. En local no hacia
-        // falta, y por eso el problema no aparecio hasta probar en produccion.
-        c.Append("Access-Control-Allow-Private-Network: true\r\n");
-        c.Append("Access-Control-Max-Age: 86400\r\n");
-        c.Append("Content-Length: ").Append(cuerpo.Length).Append("\r\n");
-        c.Append("Connection: close\r\n\r\n");
-
-        byte[] bc = Encoding.UTF8.GetBytes(c.ToString());
-        flujo.Write(bc, 0, bc.Length);
-        if (cuerpo.Length > 0) flujo.Write(cuerpo, 0, cuerpo.Length);
-        flujo.Flush();
     }
 }
