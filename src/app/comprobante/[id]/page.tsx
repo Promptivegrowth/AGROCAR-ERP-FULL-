@@ -5,6 +5,8 @@ import { numeroALetras } from '@/lib/utils'
 import { EMPRESA, SLOGAN_FONT_STACK } from '@/lib/empresa'
 import PrintButton from './print-button'
 import AyudaTicketera from '@/components/erp/ayuda-ticketera'
+import BotonTicketera from './boton-ticketera'
+import type { DatosTicket } from '@/lib/ticket-comprobante'
 import { qrDataUri } from '@/lib/qr'
 
 export const dynamic = 'force-dynamic'
@@ -157,6 +159,50 @@ export default async function ComprobantePage({
   // QR generado en el servidor, sin depender de una web externa
   const qrUrl = await qrDataUri(qrData, 150)
 
+  /**
+   * Los mismos datos, en crudo, para imprimir por la ticketera.
+   *
+   * La vista HTML de abajo sigue existiendo para el PDF y para cuando no haya
+   * agente instalado; esto es lo que se manda en ESC/POS, donde el corte lo
+   * decide el ticket y no el driver.
+   */
+  const datosTicket: DatosTicket = {
+    empresa: {
+      razon_social: EMPRESA.razon_social,
+      ruc: EMPRESA.ruc,
+      direccion: EMPRESA.direccion_comercial,
+      telefono: EMPRESA.telefono,
+      correo: EMPRESA.correo,
+    },
+    tipoDocumento: titulo,
+    serieNumero: correlativo,
+    fechaEmision,
+    fechaDespacho,
+    condicion,
+    cliente: {
+      nombre: clienteNombre,
+      doc: docCliente.valor !== '—' ? docCliente.valor : null,
+      tipoDoc: docCliente.label,
+      direccion: clienteDireccion !== '—' ? clienteDireccion : null,
+      telefono: clienteTelefono !== '—' ? clienteTelefono : null,
+    },
+    lineas: (items ?? []).map((it: any) => ({
+      codigo: it.productos?.codigo ?? null,
+      descripcion: (it.descripcion ?? it.productos?.descripcion ?? it.productos?.nombre ?? '—').trim(),
+      cantidad: Number(it.cantidad ?? 0),
+      precio: Number(it.precio_unitario ?? 0),
+      total: Number(it.subtotal ?? 0),
+    })),
+    opGravada: subtotalNum,
+    igv: igvNum,
+    total: totalNum,
+    totalEnLetras: `${totalLetras} ${monedaLabel}`,
+    usuario: null,
+    vendedor: vendedorNombre !== '—' ? vendedorNombre : null,
+    qr: qrData,
+    logoUrl: '/logo-agrocar.png',
+  }
+
   // Toggle de formato (oculto al imprimir)
   const ToggleFormato = () => (
     <div className="max-w-4xl mx-auto mb-3 px-4 print:hidden">
@@ -178,6 +224,7 @@ export default async function ComprobantePage({
         </a>
         <div className="ml-auto flex items-center gap-3">
           {!esA4 && <AyudaTicketera />}
+          {!esA4 && <BotonTicketera datos={datosTicket} />}
           <PrintButton />
         </div>
       </div>
