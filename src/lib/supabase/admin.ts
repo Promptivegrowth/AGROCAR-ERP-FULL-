@@ -15,5 +15,18 @@ export function createAdminClient() {
   }
   return createClient<Database>(url, key, {
     auth: { persistSession: false, autoRefreshToken: false },
+    /**
+     * Sin cache.
+     *
+     * Next guarda las respuestas de las lecturas y las vuelve a servir sin
+     * preguntar a la base. Para datos que cambian a cada segundo eso devuelve
+     * cosas viejas: la cola de impresion se veia vacia aunque el ticket ya
+     * estuviera esperando, porque la primera consulta —cuando no habia nada—
+     * quedo guardada. Con service_role siempre queremos el dato real.
+     */
+    global: {
+      fetch: (entrada: any, opciones: any = {}) =>
+        fetch(entrada, { ...opciones, cache: 'no-store' }),
+    },
   })
 }

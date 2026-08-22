@@ -49,13 +49,22 @@ export async function GET(request: Request) {
     .update({ ultima_conexion: new Date().toISOString(), version_agente: version })
     .eq('id', equipo.id)
 
-  const { data: trabajos } = await (supabase as any)
+  const { data: trabajos, error: falloCola } = await (supabase as any)
     .from('cola_impresion')
     .select('id, contenido, descripcion')
     .eq('equipo_id', equipo.id)
     .eq('estado', 'pendiente')
     .order('created_at', { ascending: true })
     .limit(MAXIMO_POR_VEZ)
+
+  // Un fallo al leer la cola tiene que verse: si se devuelve una lista vacia,
+  // parece que no hay nada que imprimir y el ticket se pierde en silencio.
+  if (falloCola) {
+    return NextResponse.json(
+      { ok: false, error: `no se pudo leer la cola: ${falloCola.message}` },
+      { status: 500 },
+    )
+  }
 
   return NextResponse.json({
     ok: true,

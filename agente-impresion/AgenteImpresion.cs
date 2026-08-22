@@ -244,6 +244,7 @@ class Agente
 
     static void Ciclo()
     {
+        Log("agente v" + VERSION + " iniciado - sistema " + urlBase);
         while (true)
         {
             try
@@ -266,6 +267,7 @@ class Agente
                 else
                 {
                     ultimoEstado = "imprimiendo";
+                    Log("recibidos " + trabajos.Count + " ticket(s), impresora: " + (usar ?? "NINGUNA"));
                     foreach (string t in trabajos)
                     {
                         string id = Campo(t, "id");
@@ -284,8 +286,8 @@ class Agente
                         catch { Confirmar(id, false, "el ticket llego mal codificado"); fallidos++; continue; }
 
                         string fallo = ImprimirRaw(usar, datos);
-                        if (fallo == null) { impresos++; Confirmar(id, true, null); }
-                        else { fallidos++; Confirmar(id, false, fallo); }
+                        if (fallo == null) { impresos++; Log("impreso " + id); Confirmar(id, true, null); }
+                        else { fallidos++; Log("FALLO al imprimir " + id + ": " + fallo); Confirmar(id, false, fallo); }
 
                         // Respiro entre tickets: el bufer de estas impresoras es
                         // chico y encimarlos hace que se pierda alguno.
@@ -301,19 +303,65 @@ class Agente
                     ultimoEstado = "esta computadora no esta registrada";
                 else
                     ultimoEstado = "sin conexion con el sistema";
+                if (fallosSeguidos <= 3 || fallosSeguidos % 20 == 0)
+                    Log("red: " + ultimoEstado + " (" + e.Message + ")");
             }
             catch (Exception e)
             {
                 fallosSeguidos++;
                 ultimoEstado = "error: " + e.Message;
+                Log("ERROR " + e.GetType().Name + ": " + e.Message);
             }
 
-            ActualizarBandeja();
-            Thread.Sleep(EsperaActual());
+            // Fuera del try de arriba a proposito, pero protegido: si algo de
+            // esto lanzara, el hilo moriria en silencio y el agente quedaria
+            // vivo pero sin preguntar nunca mas. Paso exactamente eso.
+            try { ActualizarBandeja(); } catch { }
+            try { Thread.Sleep(EsperaActual()); } catch { Thread.Sleep(INTERVALO_MS); }
         }
     }
 
     // ── Configuración ────────────────────────────────────────────────────────
+    /**
+     * Registro de actividad.
+     *
+     * El agente corre sin ventana, asi que cuando algo falla no queda rastro.
+     * Este archivo es la unica forma de saber que paso en la computadora del
+     * cliente sin pedirle que abra nada raro. Se recorta solo para que no
+     * crezca sin control.
+     */
+    static readonly object candadoLog = new object();
+
+    static string RutaLog()
+    {
+        string dir = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "AgrocarERP");
+        Directory.CreateDirectory(dir);
+        return Path.Combine(dir, "agente.log");
+    }
+
+    static void Log(string mensaje)
+    {
+        try
+        {
+            lock (candadoLog)
+            {
+                string ruta = RutaLog();
+                var info = new FileInfo(ruta);
+                if (info.Exists && info.Length > 512 * 1024)
+                {
+                    // Se conserva la mitad final: lo viejo ya no sirve
+                    string[] lineas = File.ReadAllLines(ruta);
+                    File.WriteAllLines(ruta, lineas, Encoding.UTF8);
+                }
+                File.AppendAllText(ruta,
+                    DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") + "  " + mensaje + Environment.NewLine,
+                    Encoding.UTF8);
+            }
+        }
+        catch { }
+    }
+
     static string RutaConfig()
     {
         string dir = Path.Combine(
@@ -348,6 +396,26 @@ class Agente
     [STAThread]
     static void Main(string[] args)
     {
+        /**
+         * TLS 1.2.
+         *
+         * .NET Framework negocia por defecto protocolos viejos que los
+         * servidores ya no aceptan, y la conexion falla con "no se puede crear
+         * un canal seguro SSL/TLS" sin mas explicacion. Paso exactamente eso:
+         * el agente arrancaba, no lograba hablar con el ERP y quedaba vivo
+         * pero mudo. Se piden los protocolos modernos de forma explicita.
+         */
+        try
+        {
+            System.Net.ServicePointManager.SecurityProtocol =
+                (SecurityProtocolType)3072 |    // TLS 1.2
+                (SecurityProtocolType)12288;    // TLS 1.3 donde exista
+        }
+        catch
+        {
+            try { System.Net.ServicePointManager.SecurityProtocol = (SecurityProtocolType)3072; } catch { }
+        }
+
         LeerConfig();
 
         if (string.IsNullOrEmpty(token))
