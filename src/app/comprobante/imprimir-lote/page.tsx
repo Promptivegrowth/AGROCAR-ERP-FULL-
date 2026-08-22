@@ -4,6 +4,8 @@ import { numeroALetras } from '@/lib/utils'
 import { EMPRESA, SLOGAN_FONT_STACK } from '@/lib/empresa'
 import AutoPrint from './auto-print'
 import AyudaTicketera from '@/components/erp/ayuda-ticketera'
+import BotonTicketeraLote from './boton-ticketera-lote'
+import type { DatosTicket } from '@/lib/ticket-comprobante'
 import { qrDataUri } from '@/lib/qr'
 
 export const dynamic = 'force-dynamic'
@@ -111,6 +113,61 @@ export default async function ImprimirLotePage({
     qrPorComprobante.set(comp.id, await qrDataUri(contenido, 120))
   }))
 
+  /**
+   * Los mismos comprobantes, en crudo, para mandarlos a la ticketera.
+   *
+   * La vista de abajo sigue sirviendo para el PDF y para las computadoras que
+   * no tengan el agente instalado.
+   */
+  const ticketsEscPos: DatosTicket[] = lista.map((comp: any) => {
+    const cli: any = comp.clientes
+    const correlativo = `${comp.serie}-${pad(comp.numero, 6)}`
+    const total = Number(comp.total ?? 0)
+    const doc = cli?.ruc ?? cli?.dni ?? comp.cliente_externo_doc ?? null
+    const cobrado = comp.pedido_id ? (cobradoPorPedido.get(comp.pedido_id) ?? 0) : 0
+    const its = itemsPorComp.get(comp.id) ?? []
+    return {
+      empresa: {
+        razon_social: EMPRESA.razon_social,
+        ruc: EMPRESA.ruc,
+        direccion: EMPRESA.direccion_comercial,
+        telefono: EMPRESA.telefono,
+        correo: EMPRESA.correo,
+      },
+      tipoDocumento: TIPO_TITULO[comp.tipo as string] ?? 'COMPROBANTE',
+      serieNumero: correlativo,
+      fechaEmision: new Date(comp.fecha_emision + 'T12:00:00-05:00')
+        .toLocaleDateString('es-PE', { day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'America/Lima' }),
+      fechaDespacho: comp.fecha_despacho
+        ? new Date(comp.fecha_despacho + 'T12:00:00-05:00')
+            .toLocaleDateString('es-PE', { day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'America/Lima' })
+        : null,
+      condicion: cobrado >= total && total > 0 ? 'CONTADO' : 'CREDITO',
+      cliente: {
+        nombre: cli?.razon_social ?? comp.cliente_externo_nombre ?? '—',
+        doc,
+        tipoDoc: cli?.ruc ? 'RUC' : cli?.dni ? 'DNI' : 'DOC',
+        direccion: cli?.direccion ?? null,
+        telefono: cli?.telefono ?? null,
+      },
+      lineas: its.map((it: any) => ({
+        codigo: it.productos?.codigo ?? null,
+        descripcion: (it.descripcion ?? it.productos?.descripcion ?? it.productos?.nombre ?? '—').trim(),
+        cantidad: Number(it.cantidad ?? 0),
+        precio: Number(it.precio_unitario ?? 0),
+        total: Number(it.subtotal ?? 0),
+      })),
+      opGravada: Number(comp.subtotal ?? 0),
+      igv: Number(comp.igv ?? 0),
+      total,
+      totalEnLetras: `${numeroALetras(total)} ${comp.moneda === 'USD' ? 'DOLARES AMERICANOS' : 'SOLES'}`,
+      usuario: null,
+      vendedor: comp.pedido_id ? (vendedorPorPedido.get(comp.pedido_id) ?? null) : null,
+      qr: `AGROCAR|20519883296|${comp.tipo}|${correlativo}|${total.toFixed(2)}|${comp.fecha_emision}|${doc ?? '—'}`,
+      logoUrl: '/logo-agrocar.png',
+    }
+  })
+
   return (
     <div className="envoltura bg-gray-200 print:bg-white">
       <AutoPrint count={lista.length} esTicket={!esA4} />
@@ -171,6 +228,11 @@ export default async function ImprimirLotePage({
             <p className="text-xs text-gray-500">
               Formato: {esA4 ? 'A4 SUNAT' : 'Ticket 80mm'} · El diálogo de impresión se abre automáticamente.
               {!esA4 && <><br /><AyudaTicketera /></>}
+              {!esA4 && (
+                <div className="mt-2">
+                  <BotonTicketeraLote tickets={ticketsEscPos} />
+                </div>
+              )}
             </p>
           </div>
           <button
