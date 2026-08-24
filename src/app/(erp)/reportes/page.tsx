@@ -648,9 +648,20 @@ function ReporteIndividualSelectores({
 
   return (
     <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 space-y-2">
-      <p className="text-xs font-semibold text-blue-900 flex items-center gap-1">
-        🎯 Abrir reporte individual (selecciona y click)
-      </p>
+      <div className="flex items-center justify-between gap-2 flex-wrap">
+        <p className="text-xs font-semibold text-blue-900 flex items-center gap-1">
+          🎯 Abrir reporte individual (selecciona y click)
+        </p>
+        {/* El equipo completo en un solo documento: Daniel lo pidió para no
+            tener que abrir uno por uno y poder comparar de un vistazo. */}
+        <a
+          href="/reportes/equipo"
+          target="_blank" rel="noopener noreferrer"
+          className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-bold bg-blue-700 hover:bg-blue-800 text-white rounded-md"
+        >
+          👥 Todos en un solo reporte →
+        </a>
+      </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
         {/* Selector VENDEDOR */}
