@@ -241,6 +241,9 @@ export default function FacturacionPage() {
    * imprimir cientos de comprobantes viejos. Lo que se reimprime a diario es
    * lo del día.
    */
+  function seleccionarTodos() {
+    setSeleccionados(new Set(comprobantesFiltrados.map((c: any) => c.id)))
+  }
   function seleccionarHoy() {
     setSeleccionados(new Set(comprobantesDeHoy.map((c: any) => c.id)))
   }
@@ -1114,11 +1117,18 @@ export default function FacturacionPage() {
                   <table className="w-full text-sm">
                     <thead className="border-b border-gray-100 bg-gray-50/50">
                       <tr>
-                        {/* Sin casillero acá: hacía lo mismo que "Seleccionar los
-                            facturados hoy" y que "Limpiar", y al no tener nombre se
-                            leía como si marcara todo el historial. La columna queda
-                            para alinear con los casilleros de cada fila. */}
-                        <th className="w-10 py-3 px-3" />
+                        {/* Marca todo lo que haya en pantalla: con los filtros
+                            puestos, los del rango; sin filtros, todo el historial.
+                            Para lo del día está el botón de arriba. */}
+                        <th className="w-10 py-3 px-3">
+                          <input
+                            type="checkbox"
+                            checked={comprobantesFiltrados.length > 0 && seleccionados.size === comprobantesFiltrados.length}
+                            onChange={() => seleccionados.size === comprobantesFiltrados.length ? limpiarSeleccion() : seleccionarTodos()}
+                            className="rounded"
+                            title={`Marcar los ${comprobantesFiltrados.length} comprobantes que se están viendo`}
+                          />
+                        </th>
                         {['Serie-Número', 'Tipo', 'Cliente', 'Vendedor', 'Fecha', 'Total', 'Estado', 'Acciones'].map((h) => (
                           <th key={h} className="text-left py-3 px-4 text-xs font-semibold text-gray-500 uppercase tracking-wide">
                             {h}
