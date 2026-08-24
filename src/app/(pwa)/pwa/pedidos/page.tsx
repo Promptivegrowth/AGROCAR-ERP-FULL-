@@ -7,6 +7,7 @@ import { toast } from 'sonner'
 import { createClient } from '@/lib/supabase/client'
 import { useDebounce } from '@/lib/hooks/use-debounce'
 import { hoyLima } from '@/lib/fechas-pe'
+import { construirLinkWhatsapp, esTelefonoPeruanoValido } from '@/lib/whatsapp'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
@@ -57,6 +58,26 @@ export default function PedidosPage() {
   const [seleccionados, setSeleccionados] = useState<ProductoSeleccionado[]>([])
   const [descuento, setDescuento] = useState('')
   const [incluirIgv, setIncluirIgv] = useState(true)
+
+  /**
+   * Venta directa: se entrega, se cobra y se emite el comprobante ahí mismo.
+   *
+   * Es lo que hace el repartidor cuando vende del camión al paso. Antes no
+   * tenía cómo registrarlo: tomaba un pedido que se facturaba horas después
+   * en la oficina, o directamente no lo registraba. Acá sale el comprobante
+   * en el momento, que es lo que corresponde a una venta al contado, y el
+   * cobro queda pegado a esa venta y no a las facturas viejas del cliente.
+   */
+  const [ventaDirecta, setVentaDirecta] = useState(false)
+  const [pagoEfectivo, setPagoEfectivo] = useState('')
+  const [pagoYape, setPagoYape] = useState('')
+  const [pagoPlin, setPagoPlin] = useState('')
+  const [pagoTransfer, setPagoTransfer] = useState('')
+  const [nroOperacion, setNroOperacion] = useState('')
+  const [ventaHecha, setVentaHecha] = useState<{
+    comprobanteId: string; serie: string; numero: string; tipo: string
+    total: number; vuelto: number; cliente: string; telefono: string | null
+  } | null>(null)
   const [loadingEnvio, setLoadingEnvio] = useState(false)
   const [tipoPago, setTipoPago] = useState<'contado' | 'credito'>('contado')
   const [direccionesCliente, setDireccionesCliente] = useState<Array<{ id: string; nombre: string; direccion: string; es_principal: boolean }>>([])
@@ -122,7 +143,11 @@ export default function PedidosPage() {
         setUserRole(role)
         // Deja el pedido en contado desde el arranque para que no dependa
         // de que la persona toque el selector
-        if (role === 'repartidor' || role === 'chofer') setTipoPago('contado')
+        if (role === 'repartidor' || role === 'chofer') {
+          setTipoPago('contado')
+          // Para ellos la venta del camión es el caso normal, no la excepción
+          setVentaDirecta(true)
+        }
       }
 
       // Cargar ID de la lista MAYORISTA (lista A en AGROCAR — mayorista / distribuidores)
@@ -367,6 +392,20 @@ export default function PedidosPage() {
   const totalFinal = subtotalConIgv - descuentoMonto
   const baseImponible = incluirIgv ? totalFinal / 1.18 : totalFinal
   const igvMonto = incluirIgv ? totalFinal - baseImponible : 0
+
+  // Cobro de la venta directa
+  const num = (v: string) => parseFloat(v.replace(',', '.')) || 0
+  const pagoElectronico = num(pagoYape) + num(pagoPlin) + num(pagoTransfer)
+  const pagoRecibido = num(pagoEfectivo) + pagoElectronico
+  const vuelto = Math.max(0, Math.round((pagoRecibido - totalFinal) * 100) / 100)
+  /**
+   * Factura solo con RUC.
+   *
+   * SUNAT no admite factura sin RUC del comprador; con DNI corresponde
+   * boleta. Se decide por el dato del cliente y no se deja elegir, para que
+   * en la calle no salga un comprobante mal emitido.
+   */
+  const tipoComprobante = (clienteSeleccionado as any)?.ruc ? 'factura' : 'boleta'
   const subtotalBruto = subtotalConIgv
   const requiereAutorizacion = descuentoPct > DESCUENTO_MAX_SIN_AUTH
   const pedidoMinimo = totalFinal >= MINIMO_PEDIDO || seleccionados.length === 0
@@ -508,6 +547,65 @@ export default function PedidosPage() {
         descuento_porcentaje: descuentoPct,
         subtotal: s.subtotal,
       }))
+
+      if (ventaDirecta) {
+        const { data: venta, error: errVenta } = await (supabase.rpc as any)('registrar_venta_directa', {
+          p_cliente_id: clienteSeleccionado.id,
+          p_items: itemsPayload.map((i: any) => ({
+            producto_id: i.producto_id,
+            lote_id: i.lote_id,
+            cantidad: i.cantidad,
+            precio_unitario: i.precio_unitario,
+            subtotal: i.subtotal,
+          })),
+          p_tipo_comprobante: tipoComprobante,
+          p_pagos: {
+            efectivo: num(pagoEfectivo),
+            yape: num(pagoYape),
+            plin: num(pagoPlin),
+            transferencia: num(pagoTransfer),
+            nro_operacion: nroOperacion.trim() || null,
+          },
+          p_subtotal: baseImponible,
+          p_igv: igvMonto,
+          p_total: totalFinal,
+          p_incluir_igv: incluirIgv,
+          p_notas: notasPedido,
+          p_permitir_sin_stock: permitirSinStock,
+          p_motivo_reposicion: motivo,
+          p_descuento_porcentaje: descuentoPct,
+          p_descuento_monto: descuentoMonto,
+        })
+
+        if (errVenta) {
+          setMensajeError(errVenta.message)
+          toast.error('No se pudo registrar la venta', { description: errVenta.message })
+          return false
+        }
+
+        setVentaHecha({
+          comprobanteId: venta.comprobante_id,
+          serie: venta.serie,
+          numero: venta.numero,
+          tipo: venta.tipo,
+          total: Number(venta.total),
+          vuelto: Number(venta.vuelto ?? 0),
+          cliente: venta.cliente,
+          telefono: (clienteSeleccionado as any).telefono ?? null,
+        })
+        toast.success(`${venta.serie}-${venta.numero} emitida`, {
+          description: Number(venta.vuelto) > 0
+            ? `Vuelto: S/ ${Number(venta.vuelto).toFixed(2)}`
+            : `${venta.cliente} · S/ ${Number(venta.total).toFixed(2)}`,
+        })
+        setClienteSeleccionado(null)
+        setClienteSearch('')
+        setSeleccionados([])
+        setPagoEfectivo(''); setPagoYape(''); setPagoPlin(''); setPagoTransfer(''); setNroOperacion('')
+        setDescuento('')
+        setDeudaCliente(0)
+        return true
+      }
 
       const { data: result, error } = await (supabase.rpc as any)('crear_pedido_atomico', {
         p_pedido: pedidoPayload,
@@ -894,6 +992,90 @@ export default function PedidosPage() {
               </CardContent>
             </Card>
 
+
+        {/* Comprobante recién emitido: el repartidor no tiene impresora en la
+            calle, así que el cliente se lo lleva como enlace. La página del
+            comprobante es pública —no pide usuario— para que abra en
+            cualquier teléfono. */}
+        {ventaHecha && tab === 'nuevo' && (
+          <Card className="border-0 shadow-lg ring-2 ring-green-500">
+            <CardContent className="p-4 space-y-3">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-xs text-green-700 font-semibold uppercase tracking-wide">Comprobante emitido</p>
+                  <p className="text-lg font-bold text-gray-900">{ventaHecha.serie}-{ventaHecha.numero}</p>
+                  <p className="text-sm text-gray-600">{ventaHecha.cliente} · S/ {ventaHecha.total.toFixed(2)}</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setVentaHecha(null)}
+                  className="text-xs text-gray-400 px-2 py-1"
+                >
+                  Cerrar
+                </button>
+              </div>
+
+              {ventaHecha.vuelto > 0 && (
+                <div className="rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-sm font-bold text-amber-900">
+                  Entregar vuelto: S/ {ventaHecha.vuelto.toFixed(2)}
+                </div>
+              )}
+
+              <div className="grid grid-cols-2 gap-2">
+                <a
+                  href={`/comprobante/${ventaHecha.comprobanteId}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="h-12 flex items-center justify-center rounded-xl border-2 border-gray-200 text-sm font-semibold text-gray-700"
+                >
+                  Ver comprobante
+                </a>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    const url = `${window.location.origin}/comprobante/${ventaHecha.comprobanteId}`
+                    try {
+                      await navigator.clipboard.writeText(url)
+                      toast.success('Enlace copiado')
+                    } catch {
+                      toast.error('No se pudo copiar', { description: url })
+                    }
+                  }}
+                  className="h-12 rounded-xl border-2 border-gray-200 text-sm font-semibold text-gray-700"
+                >
+                  Copiar enlace
+                </button>
+              </div>
+
+              {esTelefonoPeruanoValido(ventaHecha.telefono) ? (
+                <a
+                  href={construirLinkWhatsapp(
+                    ventaHecha.telefono as string,
+                    `Hola ${ventaHecha.cliente}, gracias por su compra.
+` +
+                    `${ventaHecha.tipo === 'factura' ? 'Factura' : 'Boleta'} ${ventaHecha.serie}-${ventaHecha.numero}
+` +
+                    `Total: S/ ${ventaHecha.total.toFixed(2)}
+
+` +
+                    `Puede verla acá:
+${typeof window !== 'undefined' ? window.location.origin : ''}/comprobante/${ventaHecha.comprobanteId}`,
+                  ) ?? '#'}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="h-12 w-full flex items-center justify-center rounded-xl bg-green-600 text-white font-bold"
+                >
+                  Enviar por WhatsApp
+                </a>
+              ) : (
+                <p className="text-[11px] text-gray-500 text-center">
+                  El cliente no tiene celular registrado — copia el enlace y mándaselo por donde puedas.
+                </p>
+              )}
+            </CardContent>
+          </Card>
+        )}
+
             {/* Tipo de pago. El repartidor vende SOLO al contado: lo que sale
                 del camión se cobra en el momento. Daniel: "solo al contado,
                 nada de crédito, eso solamente para repartidor". */}
@@ -1159,6 +1341,103 @@ export default function PedidosPage() {
               </Card>
             )}
 
+
+            {/* Venta directa: cobro y comprobante en el momento */}
+            <Card className="border-0 shadow-sm">
+              <CardContent className="p-4">
+                <button
+                  type="button"
+                  onClick={() => setVentaDirecta(!ventaDirecta)}
+                  className="w-full flex items-center justify-between gap-3 text-left"
+                >
+                  <div>
+                    <h3 className="font-semibold text-gray-800">🧾 Entregar y cobrar ahora</h3>
+                    <p className="text-[11px] text-gray-500 mt-0.5">
+                      {ventaDirecta
+                        ? 'Sale el comprobante en el momento y la mercadería baja del stock'
+                        : 'Queda como pedido, se factura en la oficina'}
+                    </p>
+                  </div>
+                  <span className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors ${ventaDirecta ? 'bg-green-500' : 'bg-gray-300'}`}>
+                    <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${ventaDirecta ? 'translate-x-6' : 'translate-x-1'}`} />
+                  </span>
+                </button>
+
+                {ventaDirecta && (
+                  <div className="mt-4 space-y-3">
+                    {requiereAutorizacion && (
+                      <div className="rounded-lg bg-red-50 border border-red-200 px-3 py-2 text-xs text-red-800">
+                        <span className="font-semibold">Este descuento necesita autorización.</span>{' '}
+                        No se puede cobrar y facturar en el momento: una vez emitido el
+                        comprobante ya no hay nada que autorizar. Envíalo como pedido, o
+                        bájale el descuento.
+                      </div>
+                    )}
+
+                    <div className="flex items-center justify-between text-xs bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
+                      <span className="text-gray-600">Se emite</span>
+                      <span className="font-semibold text-gray-900 uppercase">
+                        {tipoComprobante}
+                        {tipoComprobante === 'boleta' && (
+                          <span className="ml-1 font-normal text-gray-500 normal-case">(el cliente no tiene RUC)</span>
+                        )}
+                      </span>
+                    </div>
+
+                    {([
+                      ['Efectivo', pagoEfectivo, setPagoEfectivo],
+                      ['Yape', pagoYape, setPagoYape],
+                      ['Plin', pagoPlin, setPagoPlin],
+                      ['Transferencia', pagoTransfer, setPagoTransfer],
+                    ] as const).map(([etiqueta, valor, set]) => (
+                      <div key={etiqueta} className="flex items-center gap-3">
+                        <span className="flex-none w-28 text-xs font-semibold text-gray-700">{etiqueta}</span>
+                        <Input
+                          type="number" inputMode="decimal" step="0.01" min="0" placeholder="0.00"
+                          value={valor}
+                          onChange={(e) => (set as (v: string) => void)(e.target.value)}
+                          className="h-11 text-right"
+                        />
+                      </div>
+                    ))}
+
+                    {pagoElectronico > 0 && (
+                      <Input
+                        placeholder="Nro. de operación (Yape / Plin / transferencia)"
+                        value={nroOperacion}
+                        onChange={(e) => setNroOperacion(e.target.value)}
+                        className="h-11"
+                      />
+                    )}
+
+                    <div className="rounded-lg bg-gray-50 border border-gray-200 px-3 py-2 text-sm space-y-1">
+                      <div className="flex justify-between">
+                        <span className="text-gray-600">Total de la venta</span>
+                        <span className="font-semibold">S/ {totalFinal.toFixed(2)}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-gray-600">Recibido</span>
+                        <span className={pagoRecibido + 0.005 < totalFinal ? 'text-red-600 font-semibold' : 'font-semibold'}>
+                          S/ {pagoRecibido.toFixed(2)}
+                        </span>
+                      </div>
+                      {vuelto > 0 && (
+                        <div className="flex justify-between text-green-700 font-bold border-t border-gray-200 pt-1">
+                          <span>Vuelto a entregar</span>
+                          <span>S/ {vuelto.toFixed(2)}</span>
+                        </div>
+                      )}
+                      {pagoRecibido + 0.005 < totalFinal && (
+                        <p className="text-[11px] text-red-600 pt-1">
+                          Falta S/ {(totalFinal - pagoRecibido).toFixed(2)} — la venta directa se cobra completa.
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
             {/* Botón enviar */}
             <Button
               onClick={enviarPedido}
@@ -1167,6 +1446,8 @@ export default function PedidosPage() {
                 seleccionados.length === 0 ||
                 !fechaDespacho ||
                 totalFinal < MINIMO_PEDIDO ||
+                (ventaDirecta && pagoRecibido + 0.005 < totalFinal) ||
+                (ventaDirecta && requiereAutorizacion) ||
                 loadingEnvio
               }
               className="w-full h-14 bg-[#FBE600] hover:bg-[#E5D100] text-black font-bold text-base rounded-xl shadow-md"
@@ -1174,12 +1455,12 @@ export default function PedidosPage() {
               {loadingEnvio ? (
                 <>
                   <Loader2 className="w-5 h-5 animate-spin" />
-                  Enviando pedido...
+                  {ventaDirecta ? 'Emitiendo comprobante...' : 'Enviando pedido...'}
                 </>
               ) : (
                 <>
                   <ShoppingCart className="w-5 h-5" />
-                  Enviar Pedido
+                  {ventaDirecta ? `Cobrar y emitir ${tipoComprobante}` : 'Enviar Pedido'}
                 </>
               )}
             </Button>
