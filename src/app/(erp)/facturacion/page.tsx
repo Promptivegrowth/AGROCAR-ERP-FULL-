@@ -233,9 +233,6 @@ export default function FacturacionPage() {
   const comprobantesDeHoy = comprobantesFiltrados.filter(
     (c: any) => c.created_at && fechaLima(c.created_at) === hoy,
   )
-  const todosLosDeHoyMarcados =
-    comprobantesDeHoy.length > 0 && comprobantesDeHoy.every((c: any) => seleccionados.has(c.id))
-
   /**
    * Marca los comprobantes del día.
    *
@@ -1117,25 +1114,11 @@ export default function FacturacionPage() {
                   <table className="w-full text-sm">
                     <thead className="border-b border-gray-100 bg-gray-50/50">
                       <tr>
-                        {/* La columna dice qué marca: sin el rótulo, el casillero
-                            parecía marcar todo lo que hubiera en pantalla. */}
-                        <th className="w-14 py-3 px-3 align-middle">
-                          <div className="flex flex-col items-center gap-0.5">
-                            <input
-                              type="checkbox"
-                              checked={todosLosDeHoyMarcados}
-                              onChange={() => todosLosDeHoyMarcados ? limpiarSeleccion() : seleccionarHoy()}
-                              disabled={comprobantesDeHoy.length === 0}
-                              className="rounded"
-                              title={comprobantesDeHoy.length === 0
-                                ? 'Hoy no se ha facturado ningún comprobante'
-                                : `Marcar los ${comprobantesDeHoy.length} comprobantes facturados hoy`}
-                            />
-                            <span className="text-[9px] font-semibold text-gray-500 uppercase tracking-wide leading-none">
-                              Hoy
-                            </span>
-                          </div>
-                        </th>
+                        {/* Sin casillero acá: hacía lo mismo que "Seleccionar los
+                            facturados hoy" y que "Limpiar", y al no tener nombre se
+                            leía como si marcara todo el historial. La columna queda
+                            para alinear con los casilleros de cada fila. */}
+                        <th className="w-10 py-3 px-3" />
                         {['Serie-Número', 'Tipo', 'Cliente', 'Vendedor', 'Fecha', 'Total', 'Estado', 'Acciones'].map((h) => (
                           <th key={h} className="text-left py-3 px-4 text-xs font-semibold text-gray-500 uppercase tracking-wide">
                             {h}
