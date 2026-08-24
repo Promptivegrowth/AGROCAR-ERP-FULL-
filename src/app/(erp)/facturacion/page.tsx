@@ -8,7 +8,7 @@ import NotaCreditoDialog from './nota-credito-dialog'
 import { toast } from 'sonner'
 import { createClient } from '@/lib/supabase/client'
 import { formatCurrency, formatDate } from '@/lib/utils'
-import { hoyLima } from '@/lib/fechas-pe'
+import { hoyLima, fechaLima } from '@/lib/fechas-pe'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -122,7 +122,7 @@ export default function FacturacionPage() {
       supabase
         .from('comprobantes')
         .select(`
-          id, serie, numero, tipo, fecha_emision, total, estado, editado, editado_at, enviado_sunat,
+          id, serie, numero, tipo, fecha_emision, created_at, total, estado, editado, editado_at, enviado_sunat,
           cliente_externo_nombre, cliente_externo_doc,
           clientes(razon_social, ruc, dni),
           pedidos(numero, profiles!pedidos_vendedor_id_fkey(full_name))
@@ -215,8 +215,37 @@ export default function FacturacionPage() {
       return next
     })
   }
-  function seleccionarTodos() {
-    setSeleccionados(new Set(comprobantesFiltrados.map((c: any) => c.id)))
+  /**
+   * Los comprobantes facturados hoy, con la fecha de Perú.
+   *
+   * Se miran por cuándo se emitieron y no por la fecha que llevan impresa:
+   * esa la hereda del despacho del pedido, así que lo que se factura hoy para
+   * repartir mañana sale con la fecha de mañana. Medido sobre los 203
+   * comprobantes del sistema: en 197 la fecha impresa no es el día en que se
+   * facturaron, y los 42 de hoy llevan todos la fecha de mañana. Filtrar por
+   * la fecha impresa habría dejado la lista del día vacía.
+   *
+   * El día se calcula en hora de Lima y no en la de la computadora: con la
+   * hora del navegador, pasadas las 7 de la tarde el sistema ya estaría en el
+   * día siguiente.
+   */
+  const hoy = hoyLima()
+  const comprobantesDeHoy = comprobantesFiltrados.filter(
+    (c: any) => c.created_at && fechaLima(c.created_at) === hoy,
+  )
+  const todosLosDeHoyMarcados =
+    comprobantesDeHoy.length > 0 && comprobantesDeHoy.every((c: any) => seleccionados.has(c.id))
+
+  /**
+   * Marca los comprobantes del día.
+   *
+   * Antes marcaba todos los que hubiera en pantalla, que son todos los
+   * emitidos desde que arrancó el sistema: apretarlo por error mandaba a
+   * imprimir cientos de comprobantes viejos. Lo que se reimprime a diario es
+   * lo del día.
+   */
+  function seleccionarHoy() {
+    setSeleccionados(new Set(comprobantesDeHoy.map((c: any) => c.id)))
   }
   function limpiarSeleccion() {
     setSeleccionados(new Set())
@@ -1041,8 +1070,15 @@ export default function FacturacionPage() {
                     </Button>
                   )}
                   <div className="flex-1" />
-                  <Button variant="outline" size="sm" onClick={seleccionarTodos} disabled={comprobantesFiltrados.length === 0} className="text-xs h-8">
-                    Seleccionar todos
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={seleccionarHoy}
+                    disabled={comprobantesDeHoy.length === 0}
+                    className="text-xs h-8"
+                    title="Marca los comprobantes facturados hoy, sin importar la fecha de despacho que lleven impresa. Para otros días, márcalos uno por uno."
+                  >
+                    Seleccionar los facturados hoy ({comprobantesDeHoy.length})
                   </Button>
                 {seleccionados.size > 0 && (
                   <Button variant="outline" size="sm" onClick={limpiarSeleccion} className="text-xs h-8">
@@ -1084,9 +1120,11 @@ export default function FacturacionPage() {
                         <th className="w-10 py-3 px-3">
                           <input
                             type="checkbox"
-                            checked={comprobantesFiltrados.length > 0 && seleccionados.size === comprobantesFiltrados.length}
-                            onChange={() => seleccionados.size === comprobantesFiltrados.length ? limpiarSeleccion() : seleccionarTodos()}
+                            checked={todosLosDeHoyMarcados}
+                            onChange={() => todosLosDeHoyMarcados ? limpiarSeleccion() : seleccionarHoy()}
+                            disabled={comprobantesDeHoy.length === 0}
                             className="rounded"
+                            title="Marcar los comprobantes facturados hoy"
                           />
                         </th>
                         {['Serie-Número', 'Tipo', 'Cliente', 'Vendedor', 'Fecha', 'Total', 'Estado', 'Acciones'].map((h) => (
