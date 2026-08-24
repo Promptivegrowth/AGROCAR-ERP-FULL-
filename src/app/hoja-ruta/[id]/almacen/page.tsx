@@ -1,7 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { notFound } from 'next/navigation'
 import HojaRutaAlmacenActions from './almacen-actions'
-import { EMPRESA, SLOGAN_FONT_STACK } from '@/lib/empresa'
+import { EMPRESA } from '@/lib/empresa'
 
 export const dynamic = 'force-dynamic'
 
@@ -106,10 +106,6 @@ export default async function HojaRutaAlmacenPage({ params }: { params: Promise<
   const v = despacho.vehiculos as any
 
   // Fechas en hora de Lima
-  const fechaDespachoFmt = new Date(despacho.fecha_despacho + 'T12:00:00').toLocaleDateString('es-PE', {
-    weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
-    timeZone: 'America/Lima',
-  })
   const generadoFmt = new Date().toLocaleString('es-PE', {
     day: '2-digit', month: '2-digit', year: 'numeric',
     hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false,
@@ -152,45 +148,29 @@ export default async function HojaRutaAlmacenPage({ params }: { params: Promise<
           derecha. Daniel pidió que el almacenero anote ahí, una observación
           por línea de producto. */}
       <div className="max-w-5xl mx-auto px-6 py-8 print:max-w-full print:mx-0 print:px-0 print:py-0">
-        {/* Membrete empresa */}
-        <div className="text-center pb-1 border-b border-gray-200 mb-3">
-          <div className="font-bold text-[12pt]">{EMPRESA.razon_social} · RUC {EMPRESA.ruc}</div>
-          <div style={{ fontFamily: SLOGAN_FONT_STACK, fontSize: 16, color: '#1f2937', lineHeight: 1 }}>{EMPRESA.slogan}</div>
-          <div className="text-[9pt] text-gray-600">{EMPRESA.direccion_comercial} · Tel. {EMPRESA.telefono} · {EMPRESA.correo}</div>
+        {/* Encabezado mínimo, el mismo de la hoja de reparto.
+            Pedido de Daniel: el membrete centrado con el nombre, el eslogan y
+            la dirección se comía media hoja en un documento que no sale de la
+            empresa. Queda AGROCAR a un costado, el título al medio y la fecha
+            al otro, en un solo renglón.
+            La fecha "desde/hasta" también se va: repetía dos veces el mismo
+            día, que ya está acá arriba. */}
+        <div className="flex items-baseline justify-between pb-1 border-b-2 border-black">
+          <span className="font-bold text-[10pt] whitespace-nowrap">{EMPRESA.razon_social}</span>
+          <h1 className="text-[12pt] font-bold text-gray-900 underline">REPARTO DE MERCADERIA POR ZONA</h1>
+          <span className="text-[8pt] text-gray-600 whitespace-nowrap">
+            {fechaCorta} · {generadoFmt.split(' ')[1]}
+          </span>
         </div>
 
-        {/* Cabecera del documento */}
-        <div className="flex items-start justify-between mb-3 print:mb-2">
-          <div></div>
-          <div className="text-right text-[10pt] text-gray-700">
-            <div className="capitalize">{fechaDespachoFmt}</div>
-            <div className="font-mono">{generadoFmt.split(' ')[1]}</div>
-          </div>
-        </div>
-
-        <h2 className="text-center text-[13pt] font-bold tracking-wide mb-1">
-          REPARTO DE MERCADERIA POR ZONA
-        </h2>
-
-        {/* Datos del vehículo + fecha */}
-        <div className="border-y border-gray-300 py-0.5 mb-2 text-[9.5pt] flex items-baseline gap-4 flex-wrap">
-          <div>
-            <span className="font-bold">Fecha:</span>{' '}
-            <span className="text-gray-700">Desde: {fechaCorta} hasta: {fechaCorta}</span>
-          </div>
-          <div>
-            <span className="font-bold">Vehículo:</span>{' '}
-            <span className="text-gray-700 font-mono">{v?.placa ?? '—'}</span>
-            {v?.descripcion && <span className="text-gray-500 text-[9pt]"> · {v.descripcion}</span>}
-          </div>
-          <div>
-            <span className="font-bold">Despacho:</span>{' '}
-            <span className="text-gray-700 font-mono">{despacho.numero}</span>
-          </div>
-          <div>
-            <span className="font-bold">Pedidos:</span>{' '}
-            <span className="text-gray-700">{despacho.total_pedidos}</span>
-          </div>
+        {/* Metadatos */}
+        <div className="flex items-center gap-4 py-1.5 text-[11px] text-gray-700 border-b border-gray-200">
+          <span>
+            <strong>Vehículo:</strong> {v?.placa ?? '—'}
+            {v?.descripcion ? ` · ${v.descripcion}` : ''}
+          </span>
+          <span><strong>Despacho:</strong> <span className="font-mono">{despacho.numero}</span></span>
+          <span><strong>Pedidos:</strong> {despacho.total_pedidos}</span>
         </div>
 
         {/* Tabla consolidada */}
