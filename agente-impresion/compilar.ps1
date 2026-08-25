@@ -58,7 +58,8 @@ $argumentos = @(
     '/win32icon:promptive.ico',
     '/resource:promptive.ico,icono',
     '/resource:promptive.png,isotipo',
-    'AgenteImpresion.cs', 'VentanaInstalacion.cs'
+    '/reference:System.Management.dll',
+    'AgenteImpresion.cs', 'VentanaInstalacion.cs', 'VentanaImpresoras.cs'
 )
 
 if (Test-Path $exe) { Remove-Item $exe -Force }

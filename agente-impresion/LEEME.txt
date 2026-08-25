@@ -53,10 +53,11 @@ SI ALGO NO SALE
   el ticket sale solo.
 
 - Otra impresora de la computadora dejo de funcionar:
-  una version anterior del instalador cambiaba el puerto de la ticketera y
-  podia equivocarse de impresora. Ejecutar revisar-impresoras.ps1 (clic
-  derecho > "Ejecutar con PowerShell"): muestra como esta cada una y ofrece
-  devolverla a su puerto. El instalador actual ya no toca ninguna.
+  clic derecho en el icono del reloj > "Revisar impresoras de esta PC".
+  Muestra como esta cada una, marca en rojo las que quedaron apuntando a un
+  puerto que no les corresponde y ofrece devolverlas. Una version anterior
+  del instalador podia equivocarse de impresora al ajustar la ticketera; la
+  actual ya no toca ninguna.
 
 - Para ver que paso:
   el agente escribe todo lo que hace en

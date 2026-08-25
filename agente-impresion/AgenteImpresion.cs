@@ -752,6 +752,26 @@ class Agente
             };
             menu.Items.Add(elegirImpresora);
 
+            /*
+             * Revisar las impresoras de la computadora.
+             *
+             * Va en el menu del agente y no en un script aparte porque el
+             * agente ya esta instalado en cada maquina: quien lo necesita lo
+             * encuentra ahi, sin archivos sueltos ni consola.
+             */
+            var revisar = new System.Windows.Forms.ToolStripMenuItem("Revisar impresoras de esta PC");
+            revisar.Click += delegate(object s, EventArgs e)
+            {
+                try { using (var v = new VentanaImpresoras()) v.ShowDialog(); }
+                catch (Exception ex)
+                {
+                    System.Windows.Forms.MessageBox.Show(
+                        "No se pudo abrir la revision." + SALTO + SALTO + ex.Message,
+                        "Agente de impresion - " + MARCA);
+                }
+            };
+            menu.Items.Add(revisar);
+
             var probar = new System.Windows.Forms.ToolStripMenuItem("Imprimir una prueba");
             probar.Click += delegate(object s, EventArgs e)
             {
