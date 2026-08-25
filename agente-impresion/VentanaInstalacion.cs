@@ -47,7 +47,7 @@ public class VentanaInstalacion : Form
         MaximizeBox = false;
         MinimizeBox = false;
         StartPosition = FormStartPosition.CenterScreen;
-        ClientSize = new Size(560, 430);
+        ClientSize = new Size(560, 448);
         BackColor = Color.White;
         Font = new Font("Segoe UI", 9.5f);
         try { Icon = IconoPropio(); } catch { }
@@ -55,6 +55,38 @@ public class VentanaInstalacion : Form
         ConstruirEncabezado();
         ConstruirCuerpo();
         ConstruirPie();
+
+        // El codigo se acaba de copiar del ERP, asi que lo normal es que ya
+        // este en el portapapeles: se toma solo y queda un paso menos.
+        Shown += delegate { PegarDelPortapapeles(true); };
+    }
+
+    /**
+     * Trae el codigo del portapapeles.
+     *
+     * Se lee directo y no se depende de que el pegado del cuadro de texto se
+     * comporte bien con un texto de varios renglones.
+     */
+    void PegarDelPortapapeles() { PegarDelPortapapeles(false); }
+
+    void PegarDelPortapapeles(bool silencioso)
+    {
+        string texto = null;
+        try { if (Clipboard.ContainsText()) texto = Clipboard.GetText(); } catch { }
+
+        if (string.IsNullOrEmpty(texto))
+        {
+            if (!silencioso) Aviso("No hay nada copiado", Rojo);
+            return;
+        }
+        if (SacarCodigo(texto) == null)
+        {
+            if (!silencioso) Aviso("Lo copiado no tiene un código de computadora", Rojo);
+            return;
+        }
+        campoCodigo.Text = texto.Trim();
+        campoCodigo.SelectionStart = campoCodigo.TextLength;
+        RevisarCodigo();
     }
 
     /** El icono de la ventana y de la barra de tareas. */
@@ -123,7 +155,7 @@ public class VentanaInstalacion : Form
     void ConstruirCuerpo()
     {
         var cuerpo = new Panel();
-        cuerpo.Bounds = new Rectangle(0, 92, 560, 290);
+        cuerpo.Bounds = new Rectangle(0, 92, 560, 308);
         cuerpo.BackColor = Color.White;
 
         cuerpo.Controls.Add(Paso(1,
@@ -136,16 +168,38 @@ public class VentanaInstalacion : Form
             "Puedes pegar solo el código o el bloque completo; se entiende igual.", 118);
         cuerpo.Controls.Add(paso2);
 
+        /*
+         * De varias lineas a proposito.
+         *
+         * Lo que se copia del ERP son dos renglones —la direccion y el
+         * codigo—. En un campo de una sola linea, pegarlo dejaba el cuadro
+         * aparentemente vacio y el aviso de codigo incompleto, sin que se
+         * entendiera que habia pasado. Aca se ve todo lo que se pego.
+         */
         campoCodigo = new TextBox();
-        campoCodigo.Bounds = new Rectangle(52, 186, 456, 26);
-        campoCodigo.Font = new Font("Consolas", 10f);
+        campoCodigo.Bounds = new Rectangle(52, 182, 352, 52);
+        campoCodigo.Font = new Font("Consolas", 9.5f);
         campoCodigo.BorderStyle = BorderStyle.FixedSingle;
+        campoCodigo.Multiline = true;
+        campoCodigo.ScrollBars = ScrollBars.Vertical;
         campoCodigo.TextChanged += delegate { RevisarCodigo(); };
         cuerpo.Controls.Add(campoCodigo);
 
+        var botonPegar = new Button();
+        botonPegar.Text = "Pegar";
+        botonPegar.Bounds = new Rectangle(412, 182, 96, 52);
+        botonPegar.FlatStyle = FlatStyle.Flat;
+        botonPegar.FlatAppearance.BorderColor = Borde;
+        botonPegar.BackColor = Color.White;
+        botonPegar.ForeColor = Pizarra;
+        botonPegar.Font = new Font("Segoe UI", 9.5f, FontStyle.Bold);
+        botonPegar.Cursor = Cursors.Hand;
+        botonPegar.Click += delegate { PegarDelPortapapeles(); };
+        cuerpo.Controls.Add(botonPegar);
+
         botonInstalar = new Button();
         botonInstalar.Text = "Instalar";
-        botonInstalar.Bounds = new Rectangle(52, 226, 456, 44);
+        botonInstalar.Bounds = new Rectangle(52, 248, 456, 44);
         botonInstalar.FlatStyle = FlatStyle.Flat;
         botonInstalar.FlatAppearance.BorderSize = 0;
         botonInstalar.BackColor = Amarillo;
@@ -247,11 +301,12 @@ public class VentanaInstalacion : Form
 
     void RevisarCodigo()
     {
-        bool vale = SacarCodigo(campoCodigo.Text) != null;
-        botonInstalar.Enabled = vale;
-        estado.ForeColor = vale ? Verde : PizarraSuave;
-        estado.Text = campoCodigo.Text.Trim().Length == 0 ? ""
-            : vale ? "Código válido" : "Ese código no parece completo";
+        string codigo = SacarCodigo(campoCodigo.Text);
+        botonInstalar.Enabled = codigo != null;
+
+        if (campoCodigo.Text.Trim().Length == 0) { Aviso("", PizarraSuave); return; }
+        if (codigo != null) { Aviso("Código reconocido: " + codigo.Substring(0, 8) + "…", Verde); return; }
+        Aviso("No se reconoce un código. Cópialo de nuevo desde el ERP.", Rojo);
     }
 
     void Instalar()
