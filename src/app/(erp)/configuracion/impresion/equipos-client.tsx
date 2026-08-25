@@ -25,6 +25,7 @@ type Equipo = {
   activo: boolean
   ultima_conexion: string | null
   version_agente: string | null
+  avance_corte_mm: number | null
 }
 
 export default function EquiposImpresion() {
@@ -67,6 +68,30 @@ export default function EquiposImpresion() {
   const cambiarActivo = async (e: Equipo) => {
     await (supabase as any).from('equipos_impresion').update({ activo: !e.activo }).eq('id', e.id)
     await cargar()
+  }
+
+  /**
+   * Cuánto adelanta el papel esa ticketera antes de cortar.
+   *
+   * La cuchilla no está a la misma distancia del cabezal en todos los modelos:
+   * con 15 mm una corta justo y otra se come la última línea del comprobante.
+   * Es el único ajuste que hay que tocar cuando el corte no sale bien.
+   */
+  const cambiarAvance = async (e: Equipo, valor: string) => {
+    const mm = parseFloat(valor)
+    if (!Number.isFinite(mm) || mm < 5 || mm > 40) {
+      toast.error('Entre 5 y 40 mm', {
+        description: 'Menos corta el comprobante; más solo desperdicia papel.',
+      })
+      return
+    }
+    const { error } = await (supabase as any)
+      .from('equipos_impresion').update({ avance_corte_mm: mm }).eq('id', e.id)
+    if (error) { toast.error('No se pudo guardar', { description: error.message }); return }
+    await cargar()
+    toast.success(`${e.nombre}: corta ${mm} mm más abajo`, {
+      description: 'Imprime un ticket para ver cómo queda.',
+    })
   }
 
   const borrar = async (e: Equipo) => {
@@ -147,6 +172,20 @@ export default function EquiposImpresion() {
                   <code className="text-[10px] text-gray-400 break-all">{e.token}</code>
                 </div>
                 <div className="flex items-center gap-1.5 shrink-0">
+                  <label className="flex items-center gap-1 text-[11px] text-gray-600 mr-1"
+                         title="Si el corte se come la última línea, súbelo. Si sobra papel en blanco al final, bájalo.">
+                    Corte
+                    <input
+                      type="number" min={5} max={40} step={0.5}
+                      defaultValue={e.avance_corte_mm ?? 15}
+                      onBlur={(ev) => {
+                        const v = ev.target.value
+                        if (parseFloat(v) !== (e.avance_corte_mm ?? 15)) void cambiarAvance(e, v)
+                      }}
+                      className="w-14 h-7 px-1 text-xs text-right border border-gray-300 rounded"
+                    />
+                    mm
+                  </label>
                   <Button size="sm" variant="outline" onClick={() => copiar(e)} className="gap-1 text-xs">
                     {copiado === e.id ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
                     {copiado === e.id ? 'Copiado' : 'Copiar código'}
@@ -169,6 +208,10 @@ export default function EquiposImpresion() {
             <li>Agregarla acá con un nombre y copiar su código.</li>
             <li>En esa computadora, ejecutar el instalador del agente de impresión.</li>
             <li>Pegar el código cuando lo pida. Listo: el punto se pone verde.</li>
+            <li>
+              Si al imprimir el corte se come la última línea, subir los milímetros
+              de «Corte»; si sobra papel en blanco al final, bajarlos.
+            </li>
           </ol>
         </div>
       </CardContent>

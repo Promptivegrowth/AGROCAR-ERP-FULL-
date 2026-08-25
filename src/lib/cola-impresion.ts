@@ -21,6 +21,12 @@ export type Equipo = {
   nombre: string
   activo: boolean
   ultima_conexion: string | null
+  /**
+   * Milímetros que adelanta el papel antes de cortar, propios de esa
+   * ticketera: la cuchilla no está a la misma distancia del cabezal en todos
+   * los modelos.
+   */
+  avance_corte_mm: number | null
 }
 
 export function equipoElegido(): string | null {
@@ -44,7 +50,7 @@ export async function equiposDisponibles(): Promise<Equipo[]> {
   const supabase = createClient()
   const { data } = await (supabase as any)
     .from('equipos_impresion')
-    .select('id, nombre, activo, ultima_conexion')
+    .select('id, nombre, activo, ultima_conexion, avance_corte_mm')
     .eq('activo', true)
     .order('nombre')
   const lista = (data ?? []) as Equipo[]

@@ -33,13 +33,15 @@ export const ANCHO_PUNTOS = 576
 export const PUNTO_MM = 25.4 / 203
 
 /**
- * Papel que se adelanta antes de cortar, en puntos.
+ * Papel que se adelanta antes de cortar, en milímetros.
  *
- * La cuchilla está unos 15 mm por encima del cabezal; a 203 puntos por pulgada
- * eso son 120 puntos. Es una medida de la impresora, no del diseño del ticket:
- * sin ese avance el corte cae sobre el texto y se pierde el pie.
+ * La cuchilla está por encima del cabezal, así que sin ese avance el corte cae
+ * sobre el texto y se pierde el pie del comprobante. Cuánto exactamente
+ * depende del modelo: 15 mm sirve para la ticketera de la oficina y no para
+ * la de Daniel, que se comía la última línea. Por eso cada computadora guarda
+ * el suyo y este valor es solo el punto de partida.
  */
-const CORTE_PUNTOS = 120
+const CORTE_MM = 15
 
 /** Filas por bloque al mandar una imagen. */
 const BANDA_MAXIMA = 255
@@ -75,8 +77,16 @@ export class TicketEscPos {
    * a la cuchilla es física y no cambia, mientras que un renglón mide lo que
    * diga el interlineado.
    */
-  cortar() {
-    this.avanzarPuntos(CORTE_PUNTOS)
+  cortar(avanceMm = CORTE_MM) {
+    const puntos = Math.round(Math.max(5, Math.min(40, avanceMm)) / PUNTO_MM)
+    // El avance máximo de una sola orden es de 255 puntos; de sobra para el
+    // rango que se admite, pero se parte igual por si alguien lo sube.
+    let queda = puntos
+    while (queda > 0) {
+      const paso = Math.min(queda, 255)
+      this.avanzarPuntos(paso)
+      queda -= paso
+    }
     return this.bytes(GS, 0x56, 0x42, 0x00)
   }
 

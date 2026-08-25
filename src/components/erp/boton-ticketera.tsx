@@ -54,10 +54,12 @@ export default function BotonTicketera({ auto = false }: { auto?: boolean } = {}
 
     setProgreso(0)
     await imagenesListas()
+    // Cada ticketera corta a su propia distancia
+    const avance = equipos.find((e) => e.id === elegido)?.avance_corte_mm ?? undefined
     const ids: string[] = []
     try {
       for (let i = 0; i < nodos.length; i++) {
-        const ticket = await ticketDesdeNodo(nodos[i])
+        const ticket = await ticketDesdeNodo(nodos[i], avance ?? undefined)
         const r = await encolarTicket(
           ticket.aBase64(),
           elegido,

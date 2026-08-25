@@ -63,7 +63,7 @@ function sinBlancoFinal(puntos: boolean[][]): boolean[][] {
  * Espera a que las tipografías estén cargadas: sin eso el eslogan sale con la
  * letra de reemplazo, que es justamente la que Daniel no pidió.
  */
-export async function ticketDesdeNodo(nodo: HTMLElement): Promise<TicketEscPos> {
+export async function ticketDesdeNodo(nodo: HTMLElement, avanceCorteMm?: number): Promise<TicketEscPos> {
   try {
     await document.fonts.ready
   } catch {
@@ -94,6 +94,6 @@ export async function ticketDesdeNodo(nodo: HTMLElement): Promise<TicketEscPos> 
   const t = new TicketEscPos()
   t.alinear('izq')
   t.imagen(puntos)
-  t.cortar()
+  t.cortar(avanceCorteMm)
   return t
 }
