@@ -26,6 +26,7 @@ type Equipo = {
   ultima_conexion: string | null
   version_agente: string | null
   avance_corte_mm: number | null
+  impresora_detectada: string | null
 }
 
 export default function EquiposImpresion() {
@@ -162,6 +163,16 @@ export default function EquiposImpresion() {
                     {e.nombre}
                     {!e.activo && <span className="ml-2 text-[10px] text-gray-500 font-normal">(desactivada)</span>}
                   </p>
+                  {/* Una computadora conectada pero sin ticketera imprime
+                      nada: eso tiene que verse acá y no descubrirse recién al
+                      facturar. */}
+                  {conectado(e) && (
+                    e.impresora_detectada
+                      ? <p className="text-[11px] text-gray-600">Imprime por: <span className="font-medium">{e.impresora_detectada}</span></p>
+                      : <p className="text-[11px] text-red-600 font-semibold">
+                          No encuentra ninguna ticketera — elegirla desde el menú del agente
+                        </p>
+                  )}
                   <p className="text-[11px] text-gray-500">
                     {conectado(e)
                       ? `Conectada · agente v${e.version_agente ?? '?'}`

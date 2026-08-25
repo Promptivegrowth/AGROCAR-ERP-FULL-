@@ -311,8 +311,18 @@ class Agente
         {
             try
             {
+                /*
+                 * Se informa por que ticketera va a imprimir.
+                 *
+                 * Asi en el ERP se ve cual computadora esta conectada pero sin
+                 * encontrar impresora. Antes esa se veia igual que una que
+                 * funciona —con su punto verde— y no habia forma de notarlo
+                 * hasta que alguien intentaba facturar.
+                 */
+                string usaAhora = !string.IsNullOrEmpty(impresora) ? impresora : AdivinarTicketera();
                 string url = urlBase + "/api/impresion/pendientes?token=" + Uri.EscapeDataString(token) +
-                             "&version=" + Uri.EscapeDataString(VERSION);
+                             "&version=" + Uri.EscapeDataString(VERSION) +
+                             "&impresora=" + Uri.EscapeDataString(usaAhora ?? "");
                 string json = Pedir(url);
                 fallosSeguidos = 0;
                 ultimoContacto = DateTime.Now;

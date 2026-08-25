@@ -22,6 +22,15 @@ export async function GET(request: Request) {
   const url = new URL(request.url)
   const token = url.searchParams.get('token')?.trim()
   const version = url.searchParams.get('version')?.trim() ?? null
+  /**
+   * Por qué ticketera está imprimiendo esa computadora.
+   *
+   * Lo informa el propio agente. Sirve para ver desde el ERP cuál está
+   * conectada pero sin encontrar impresora: antes esa se veía igual que una
+   * que funciona, con su punto verde, y no había forma de notarlo hasta que
+   * alguien intentaba facturar.
+   */
+  const detectada = url.searchParams.get('impresora')?.trim() || null
 
   if (!token) {
     return NextResponse.json({ ok: false, error: 'falta el token del equipo' }, { status: 400 })
@@ -46,7 +55,11 @@ export async function GET(request: Request) {
   // cuando una caja lleva rato sin conectarse.
   await (supabase as any)
     .from('equipos_impresion')
-    .update({ ultima_conexion: new Date().toISOString(), version_agente: version })
+    .update({
+      ultima_conexion: new Date().toISOString(),
+      version_agente: version,
+      impresora_detectada: detectada,
+    })
     .eq('id', equipo.id)
 
   const { data: trabajos, error: falloCola } = await (supabase as any)
