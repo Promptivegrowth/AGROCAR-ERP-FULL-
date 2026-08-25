@@ -312,8 +312,69 @@ public class VentanaInstalacion : Form
         botonInstalar.Enabled = codigo != null;
 
         if (campoCodigo.Text.Trim().Length == 0) { Aviso("", PizarraSuave); return; }
-        if (codigo != null) { Aviso("Código reconocido: " + codigo.Substring(0, 8) + "…", Verde); return; }
-        Aviso("No se reconoce un código. Cópialo de nuevo desde el ERP.", Rojo);
+        if (codigo == null)
+        {
+            Aviso("No se reconoce un código. Cópialo de nuevo desde el ERP.", Rojo);
+            return;
+        }
+        Aviso("Verificando el código…", PizarraSuave);
+        PreguntarDeQuienEs(codigo);
+    }
+
+    /**
+     * A qué computadora pertenece el código.
+     *
+     * Cada computadora tiene el suyo y el instalador toma lo que haya en el
+     * portapapeles, así que es fácil llegar con el de otra máquina. Dos
+     * agentes con el mismo código escuchan la misma cola y los tickets salen
+     * donde no son. Mostrando el nombre antes de instalar, quien instala ve
+     * enseguida si se equivocó.
+     *
+     * Se pregunta en segundo plano: sin internet o con el sistema caído la
+     * instalación sigue siendo posible, solo que sin esta confirmación.
+     */
+    void PreguntarDeQuienEs(string codigo)
+    {
+        string url = (SacarUrl(campoCodigo.Text) ?? "https://agrocar-erp-full.vercel.app")
+            + "/api/impresion/verificar?token=" + Uri.EscapeDataString(codigo);
+
+        var hilo = new System.Threading.Thread(delegate()
+        {
+            string nombre = null, problema = null;
+            try
+            {
+                var pedido = (System.Net.HttpWebRequest)System.Net.WebRequest.Create(url);
+                pedido.Timeout = 8000;
+                using (var r = (System.Net.HttpWebResponse)pedido.GetResponse())
+                using (var lector = new StreamReader(r.GetResponseStream()))
+                {
+                    string json = lector.ReadToEnd();
+                    var m = System.Text.RegularExpressions.Regex.Match(json, @"""equipo""\s*:\s*""([^""]*)""");
+                    if (m.Success) nombre = m.Groups[1].Value;
+                }
+            }
+            catch (System.Net.WebException ex)
+            {
+                var r = ex.Response as System.Net.HttpWebResponse;
+                if (r != null && (int)r.StatusCode == 404)
+                    problema = "Ese código no corresponde a ninguna computadora registrada";
+            }
+            catch { }
+
+            string n = nombre, p2 = problema;
+            try
+            {
+                BeginInvoke(new Action(delegate()
+                {
+                    if (n != null) Aviso("Se instalará como: " + n, Verde);
+                    else if (p2 != null) { Aviso(p2, Rojo); botonInstalar.Enabled = false; }
+                    else Aviso("Código reconocido: " + codigo.Substring(0, 8) + "…", Verde);
+                }));
+            }
+            catch { }
+        });
+        hilo.IsBackground = true;
+        hilo.Start();
     }
 
     void Instalar()
