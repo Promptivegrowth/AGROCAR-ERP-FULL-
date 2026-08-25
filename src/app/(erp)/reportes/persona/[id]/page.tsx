@@ -1,7 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { notFound } from 'next/navigation'
-import { hoyLima } from '@/lib/fechas-pe'
+import { hoyLima, fechaLima, rangoDiaLima } from '@/lib/fechas-pe'
 import { EMPRESA, SLOGAN_FONT_STACK } from '@/lib/empresa'
 import PersonaReporteActions from './persona-reporte-actions'
 
@@ -49,8 +49,8 @@ async function getData(personaId: string, desde: string, hasta: string) {
         clientes(razon_social, ruc, dni),
         cliente_externo_nombre
       `)
-      .gte('fecha_emision', desde)
-      .lte('fecha_emision', hasta)
+      .gte('created_at', rangoDiaLima(desde).desde)
+      .lt('created_at', rangoDiaLima(hasta).hasta)
       .neq('estado', 'anulado')
       .order('created_at', { ascending: false }),
     (supabase as any).from('cobros')
@@ -81,9 +81,15 @@ async function getData(personaId: string, desde: string, hasta: string) {
     d.pedidos_count++
     d.pedidos_monto += Number(p.total ?? 0)
   })
+  /**
+   * Los comprobantes se cuentan por el día en que se emitieron, no por la
+   * fecha que llevan impresa: esa es la del despacho del pedido, y en AGROCAR
+   * se factura hoy lo que se reparte mañana. Con `fecha_emision` el trabajo
+   * de una persona aparecía corrido un día.
+   */
   ;(compRes.data ?? []).forEach((c: any) => {
     if (c.pedidos?.vendedor_id !== personaId) return
-    const f = c.fecha_emision
+    const f = fechaLima(c.created_at)
     if (!dias.has(f)) dias.set(f, inicializarDia(f))
     const d = dias.get(f)!
     d.comprobantes_count++

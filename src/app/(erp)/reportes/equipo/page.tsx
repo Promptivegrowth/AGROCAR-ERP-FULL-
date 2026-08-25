@@ -1,6 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { formatCurrency, formatDate } from '@/lib/utils'
-import { hoyLima } from '@/lib/fechas-pe'
+import { hoyLima, fechaLima, rangoDiaLima } from '@/lib/fechas-pe'
 import { EMPRESA, SLOGAN_FONT_STACK } from '@/lib/empresa'
 import EquipoReporteActions from './equipo-reporte-actions'
 
@@ -87,9 +87,12 @@ async function getData(desde: string, hasta: string) {
       .select('vendedor_id, total, fecha_pedido')
       .gte('fecha_pedido', desde).lte('fecha_pedido', hasta)
       .in('vendedor_id', ids),
+    // Por el momento de emisión y no por la fecha impresa, que es la del
+    // despacho: se factura hoy lo que se reparte mañana.
     (supabase as any).from('comprobantes')
-      .select('total, fecha_emision, estado, pedidos(vendedor_id)')
-      .gte('fecha_emision', desde).lte('fecha_emision', hasta)
+      .select('total, created_at, estado, pedidos(vendedor_id)')
+      .gte('created_at', rangoDiaLima(desde).desde)
+      .lt('created_at', rangoDiaLima(hasta).hasta)
       .neq('estado', 'anulado'),
     (supabase as any).from('cobros')
       .select('cobrador_id, efectivo, yape, plin, transferencia, total, fecha')
@@ -114,7 +117,7 @@ async function getData(desde: string, hasta: string) {
     d.pedidos_monto += Number(p.total ?? 0)
   })
   ;((compRes.data ?? []) as any[]).forEach((c) => {
-    const d = dia(c.pedidos?.vendedor_id, c.fecha_emision)
+    const d = dia(c.pedidos?.vendedor_id, fechaLima(c.created_at))
     if (!d) return
     d.comprobantes_count++
     d.comprobantes_monto += Number(c.total ?? 0)

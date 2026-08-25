@@ -1,7 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { formatCurrency } from '@/lib/utils'
 import RendicionActions from './rendicion-actions'
-import { hoyLima } from '@/lib/fechas-pe'
+import { hoyLima, rangoDiaLima } from '@/lib/fechas-pe'
 import { EMPRESA, SLOGAN_FONT_STACK } from '@/lib/empresa'
 
 export const dynamic = 'force-dynamic'
@@ -34,14 +34,26 @@ async function getData(fecha: string) {
     .select('id, vendedor_id, total, fecha_pedido')
     .eq('fecha_pedido', fecha)
 
-  // Comprobantes emitidos en el día — usamos el vendedor del pedido
+  /**
+   * Comprobantes emitidos en el día — por el momento en que se emitieron.
+   *
+   * No por `fecha_emision`, que es la del despacho del pedido: en AGROCAR se
+   * factura hoy lo que se reparte mañana, así que ese campo lleva la fecha de
+   * mañana. Filtrando por él, la rendición del domingo 23 daba cero mientras
+   * ese día se habían emitido 42 comprobantes.
+   *
+   * La rendición diaria responde "qué hizo cada uno hoy", y eso se mide por
+   * cuándo se registró el trabajo, no por la fecha que el papel lleva impresa.
+   */
+  const { desde: iniLima, hasta: finLima } = rangoDiaLima(fecha)
   const { data: comprobantes } = await (supabase as any)
     .from('comprobantes')
     .select(`
-      id, total, fecha_emision, pedido_id,
+      id, total, fecha_emision, pedido_id, created_at,
       pedidos(vendedor_id)
     `)
-    .eq('fecha_emision', fecha)
+    .gte('created_at', iniLima)
+    .lt('created_at', finLima)
     .neq('estado', 'anulado')
 
   // Cobros del día por cobrador
@@ -123,6 +135,7 @@ async function getData(fecha: string) {
     (acc, r) => ({
       pedidos: acc.pedidos + r.pedidos_count,
       pedidos_monto: acc.pedidos_monto + r.pedidos_monto,
+      comprobantes_count: acc.comprobantes_count + r.comprobantes_count,
       comprobantes_monto: acc.comprobantes_monto + r.comprobantes_monto,
       cobros_count: acc.cobros_count + r.cobros_count,
       efectivo: acc.efectivo + r.efectivo,
@@ -131,7 +144,7 @@ async function getData(fecha: string) {
       transferencia: acc.transferencia + r.transferencia,
       cobros_total: acc.cobros_total + r.cobros_total,
     }),
-    { pedidos: 0, pedidos_monto: 0, comprobantes_monto: 0, cobros_count: 0,
+    { pedidos: 0, pedidos_monto: 0, comprobantes_count: 0, comprobantes_monto: 0, cobros_count: 0,
       efectivo: 0, yape: 0, plin: 0, transferencia: 0, cobros_total: 0 },
   )
 
@@ -162,21 +175,28 @@ export default async function RendicionDiariaPage({
       ) : (
         <table className="w-full rendicion-table border-collapse border border-gray-300">
           <colgroup>
-            <col style={{ width: '22%' }} />{/* Persona */}
-            <col style={{ width: '6%' }} />{/* Ped */}
-            <col style={{ width: '11%' }} />{/* Ventas día */}
+            {/* Pedidos y comprobantes van en columnas separadas: en AGROCAR
+                son de días distintos. El vendedor toma el pedido hoy y se
+                factura al cierre para repartir mañana, así que juntarlos en
+                una sola casilla mostraba cero justo el día en que se había
+                facturado todo. */}
+            <col style={{ width: '20%' }} />{/* Persona */}
+            <col style={{ width: '5%' }} />{/* Pedidos tomados */}
+            <col style={{ width: '6%' }} />{/* Comprobantes emitidos */}
+            <col style={{ width: '11%' }} />{/* Facturado */}
             <col style={{ width: '6%' }} />{/* Cobros */}
-            <col style={{ width: '11%' }} />{/* Efectivo */}
-            <col style={{ width: '10%' }} />{/* Yape */}
-            <col style={{ width: '10%' }} />{/* Plin */}
-            <col style={{ width: '11%' }} />{/* Transfer */}
-            <col style={{ width: '13%' }} />{/* Total */}
+            <col style={{ width: '10%' }} />{/* Efectivo */}
+            <col style={{ width: '9%' }} />{/* Yape */}
+            <col style={{ width: '8%' }} />{/* Plin */}
+            <col style={{ width: '10%' }} />{/* Transfer */}
+            <col style={{ width: '15%' }} />{/* Total */}
           </colgroup>
           <thead>
             <tr className="bg-gray-100 text-[9pt]">
               <th className="text-left py-1 px-2 border border-gray-300">Persona</th>
               <th className="text-center py-1 px-2 border border-gray-300">Ped.</th>
-              <th className="text-right py-1 px-2 border border-gray-300">Ventas día</th>
+              <th className="text-center py-1 px-2 border border-gray-300">Comp.</th>
+              <th className="text-right py-1 px-2 border border-gray-300">Facturado</th>
               <th className="text-center py-1 px-2 border border-gray-300">Cobros</th>
               <th className="text-right py-1 px-2 border border-gray-300">Efectivo</th>
               <th className="text-right py-1 px-2 border border-gray-300">Yape</th>
@@ -208,8 +228,9 @@ export default async function RendicionDiariaPage({
                   </a>
                   <span className="hidden print:inline">{r.nombre}</span>
                 </td>
-                <td className="py-1 px-2 border border-gray-200 text-center font-mono">{r.comprobantes_count > 0 ? r.comprobantes_count : r.pedidos_count}</td>
-                <td className="py-1 px-2 border border-gray-200 text-right font-mono">{formatCurrency(r.comprobantes_monto || r.pedidos_monto)}</td>
+                <td className="py-1 px-2 border border-gray-200 text-center font-mono">{r.pedidos_count || '—'}</td>
+                <td className="py-1 px-2 border border-gray-200 text-center font-mono">{r.comprobantes_count || '—'}</td>
+                <td className="py-1 px-2 border border-gray-200 text-right font-mono">{r.comprobantes_monto ? formatCurrency(r.comprobantes_monto) : '—'}</td>
                 <td className="py-1 px-2 border border-gray-200 text-center font-mono">{r.cobros_count}</td>
                 <td className="py-1 px-2 border border-gray-200 text-right font-mono">{formatCurrency(r.efectivo)}</td>
                 <td className="py-1 px-2 border border-gray-200 text-right font-mono">{formatCurrency(r.yape)}</td>
@@ -271,9 +292,10 @@ export default async function RendicionDiariaPage({
         {/* Totales globales */}
         <div className="mt-6 border-2 border-black bg-yellow-50/40 p-4">
           <h3 className="text-[11pt] font-bold mb-2 text-center">TOTALES GENERALES DEL DÍA</h3>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-[10pt]">
-            <div className="text-center"><div className="text-gray-600">Pedidos/Comprob.</div><div className="font-bold font-mono">{data.totales.pedidos}</div></div>
-            <div className="text-center"><div className="text-gray-600">Ventas día</div><div className="font-bold font-mono">{formatCurrency(data.totales.comprobantes_monto || data.totales.pedidos_monto)}</div></div>
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-3 text-[10pt]">
+            <div className="text-center"><div className="text-gray-600">Pedidos tomados</div><div className="font-bold font-mono">{data.totales.pedidos}</div></div>
+            <div className="text-center"><div className="text-gray-600">Comprobantes emitidos</div><div className="font-bold font-mono">{data.totales.comprobantes_count}</div></div>
+            <div className="text-center"><div className="text-gray-600">Facturado</div><div className="font-bold font-mono">{formatCurrency(data.totales.comprobantes_monto)}</div></div>
             <div className="text-center"><div className="text-gray-600">Total cobros</div><div className="font-bold font-mono text-green-700">{formatCurrency(data.totales.cobros_total)}</div></div>
             <div className="text-center"><div className="text-gray-600"># Cobros</div><div className="font-bold font-mono">{data.totales.cobros_count}</div></div>
           </div>
