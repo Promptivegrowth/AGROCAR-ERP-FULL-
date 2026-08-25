@@ -58,7 +58,14 @@ public class VentanaInstalacion : Form
 
         // El codigo se acaba de copiar del ERP, asi que lo normal es que ya
         // este en el portapapeles: se toma solo y queda un paso menos.
-        Shown += delegate { PegarDelPortapapeles(true); };
+        // Si quedo listo, el foco va al boton: solo falta Enter.
+        AcceptButton = null;
+        Shown += delegate
+        {
+            PegarDelPortapapeles(true);
+            if (botonInstalar.Enabled) { AcceptButton = botonInstalar; botonInstalar.Focus(); }
+            else campoCodigo.Focus();
+        };
     }
 
     /**

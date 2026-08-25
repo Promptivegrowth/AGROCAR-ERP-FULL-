@@ -418,44 +418,54 @@ class Agente
             try { System.Net.ServicePointManager.SecurityProtocol = (SecurityProtocolType)3072; } catch { }
         }
 
-        /*
-         * Uno solo por computadora.
-         *
-         * Dos agentes escuchando la misma cola es peor que ninguno: los dos
-         * levantan el mismo ticket y sale impreso dos veces. Pasa sin querer
-         * —se abre el archivo de la descarga estando ya instalado—, asi que se
-         * bloquea de entrada.
-         *
-         * El candado es por sesion de Windows y no global: en una computadora
-         * compartida, cada usuario es una instalacion distinta.
-         */
-        bool primero;
-        var candado = new Mutex(true, "AgrocarAgenteImpresionPromptive", out primero);
-        if (!primero)
-        {
-            var r = System.Windows.Forms.MessageBox.Show(
-                "El agente de impresion ya esta funcionando en esta computadora." + SALTO + SALTO +
-                "Lo puedes ver con su icono al lado del reloj." + SALTO + SALTO +
-                "Quieres volver a configurarlo con otro codigo?",
-                "Agente de impresion - " + MARCA,
-                System.Windows.Forms.MessageBoxButtons.YesNo,
-                System.Windows.Forms.MessageBoxIcon.Information,
-                System.Windows.Forms.MessageBoxDefaultButton.Button2);
-
-            if (r != System.Windows.Forms.DialogResult.Yes) return;
-
-            // Se cierra el que estaba, para que quede uno solo, y se sigue
-            // como si fuera una instalacion nueva.
-            CerrarOtrasInstancias();
-            try { candado.Dispose(); } catch { }
-            candado = new Mutex(true, "AgrocarAgenteImpresionPromptive", out primero);
-            try { File.Delete(RutaConfig()); } catch { }
-        }
-
         LeerConfig();
 
         /*
-         * Sin codigo todavia: esta computadora no esta instalada.
+         * El candado se toma solo para trabajar, no para instalar.
+         *
+         * Dos agentes escuchando la misma cola es peor que ninguno: los dos
+         * levantan el mismo ticket y el comprobante sale impreso dos veces.
+         *
+         * Pero el candado no puede tomarse antes de saber que se va a hacer.
+         * Cuando lo tomaba de entrada, el instalador se lo quedaba, lanzaba al
+         * agente recien copiado y ese agente se chocaba contra su propio
+         * instalador: mostraba "ya esta funcionando" y no arrancaba. La
+         * instalacion terminaba sin dejar nada corriendo.
+         *
+         * Es por sesion de Windows y no global: en una computadora compartida,
+         * cada usuario es una instalacion distinta.
+         */
+        Mutex candado = null;
+        if (!string.IsNullOrEmpty(token))
+        {
+            bool primero;
+            candado = new Mutex(true, "AgrocarAgenteImpresionPromptive", out primero);
+            if (!primero)
+            {
+                var r = System.Windows.Forms.MessageBox.Show(
+                    "El agente de impresion ya esta funcionando en esta computadora." + SALTO + SALTO +
+                    "Lo puedes ver con su icono al lado del reloj." + SALTO + SALTO +
+                    "Quieres volver a configurarlo con otro codigo?",
+                    "Agente de impresion - " + MARCA,
+                    System.Windows.Forms.MessageBoxButtons.YesNo,
+                    System.Windows.Forms.MessageBoxIcon.Information,
+                    System.Windows.Forms.MessageBoxDefaultButton.Button2);
+
+                if (r != System.Windows.Forms.DialogResult.Yes) return;
+
+                // Se cierra el que estaba y se suelta el candado: lo que sigue
+                // es una instalacion, y el agente que arranque al final lo va a
+                // necesitar libre.
+                CerrarOtrasInstancias();
+                try { candado.Dispose(); } catch { }
+                candado = null;
+                try { File.Delete(RutaConfig()); } catch { }
+                token = null;
+            }
+        }
+
+        /*
+         * Sin codigo: esta computadora todavia no esta instalada.
          *
          * El mismo archivo hace las dos cosas —instalar y despues trabajar—
          * para que quien lo recibe tenga un solo archivo que abrir.
@@ -468,9 +478,9 @@ class Agente
             {
                 System.Windows.Forms.Application.Run(v);
             }
-            // La instalacion arranca el agente desde su carpeta definitiva y
-            // este proceso se retira: si siguiera vivo el de la descarga,
-            // cerrar esa ventana mataria el agente.
+            // La instalacion deja al agente andando desde su carpeta definitiva
+            // y este proceso se retira: si siguiera vivo el de la descarga,
+            // cerrar esa ventana mataria al agente.
             return;
         }
 
