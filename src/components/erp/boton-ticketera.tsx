@@ -87,10 +87,13 @@ export default function BotonTicketera({ auto = false }: { auto?: boolean } = {}
     if (fin === 'impreso') {
       setListo(true)
       setTimeout(() => setListo(false), 2500)
-      toast.success(ids.length === 1 ? 'Ticket impreso' : `${ids.length} tickets impresos`)
+      toast.success(
+        ids.length === 1 ? 'Ticket impreso' : `${ids.length} tickets impresos`,
+        { description: destino ? `Salió por ${destino}` : undefined },
+      )
     } else if (fin === 'error') {
       toast.error('La ticketera no pudo imprimirlo', {
-        description: 'Revisa que esté encendida y con papel.',
+        description: `Revisa que ${destino || 'la ticketera'} esté encendida y con papel.`,
       })
     } else {
       const eq = equipos.find((e) => e.id === elegido)
@@ -135,10 +138,19 @@ export default function BotonTicketera({ auto = false }: { auto?: boolean } = {}
   if (equipos.length === 0 || cuantos === 0) return null
 
   const enCurso = progreso !== null
+  /**
+   * A qué computadora va.
+   *
+   * Va en el propio botón y no solo en el selector de al lado: el selector se
+   * acuerda de la última elección, así que es facil apretar Imprimir creyendo
+   * que sale por la ticketera de al lado y que el papel salga en otra oficina.
+   * Paso dos veces antes de que se entendiera.
+   */
+  const destino = equipos.find((e) => e.id === elegido)?.nombre ?? ''
 
   return (
     <div className="flex items-center gap-2">
-      {equipos.length > 1 && (
+      {equipos.length > 0 && (
         <select
           value={elegido}
           onChange={(e) => { setElegido(e.target.value); guardarEquipo(e.target.value) }}
@@ -164,7 +176,9 @@ export default function BotonTicketera({ auto = false }: { auto?: boolean } = {}
         {enCurso
           ? (cuantos > 1 ? `Enviando ${progreso}/${cuantos}…` : 'Imprimiendo…')
           : listo ? 'Impreso'
-          : cuantos > 1 ? `Imprimir ${cuantos} en ticketera` : 'Imprimir en ticketera'}
+          : cuantos > 1
+            ? `Imprimir ${cuantos} en ${destino || 'ticketera'}`
+            : `Imprimir en ${destino || 'ticketera'}`}
       </button>
     </div>
   )
