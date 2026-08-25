@@ -1,0 +1,62 @@
+AGENTE DE IMPRESION — AGROCAR ERP
+Promptive · Luciernaga y Asociados S.A.C.
+
+QUE HACE
+---------
+Deja que los tickets salgan solos por la ticketera, sin la ventana de
+impresion de Windows y sin desperdiciar papel: el corte lo ordena el propio
+ticket. Se instala una sola vez en cada computadora que tenga ticketera.
+
+
+COMO SE INSTALA (5 minutos)
+----------------------------
+1. Copiar esta carpeta completa a la computadora que tiene la ticketera.
+
+2. En el ERP, entrar a:  Configuracion  >  Impresion de tickets
+   Escribir un nombre para esa computadora (por ejemplo "Caja principal"),
+   apretar Agregar, y despues "Copiar codigo".
+
+3. En esta carpeta, clic derecho sobre  instalar.ps1
+   y elegir "Ejecutar con PowerShell".
+   Conviene hacerlo como administrador: asi tambien corrige el puerto de la
+   ticketera y el margen del driver.
+
+4. Cuando lo pida, pegar el codigo del paso 2 y dar Enter.
+
+5. Listo. En el ERP, esa computadora aparece con un punto verde en menos de
+   un minuto.
+
+
+DE AHI EN ADELANTE
+-------------------
+- El agente arranca solo con Windows y queda con su icono al lado del reloj.
+- En Facturacion, el boton "Imprimir en ticketera" manda el ticket y sale por
+  la impresora en menos de un segundo.
+- El lote de tickets sale solo al abrirse la pantalla.
+- Doble clic en el icono del reloj para ver su estado o cerrarlo.
+
+
+SI ALGO NO SALE
+----------------
+- El punto en el ERP sigue gris:
+  revisar que el agente este corriendo (icono al lado del reloj) y que la
+  computadora tenga internet.
+
+- El ticket queda "esperando":
+  la ticketera esta apagada, sin papel o con la tapa abierta. Al resolverlo,
+  el ticket sale solo.
+
+- Para ver que paso:
+  el agente escribe un registro de su actividad en
+  %LOCALAPPDATA%\AgrocarERP\agente.log
+
+- Para reinstalar o cambiar de computadora:
+  volver a correr instalar.ps1. Si se cambia de computadora, dar de baja la
+  anterior desde el ERP (Configuracion > Impresion de tickets > Desactivar).
+
+
+QUE HAY EN ESTA CARPETA
+------------------------
+  instalar.ps1          el instalador — es lo unico que hay que ejecutar
+  AgenteImpresion.cs    el codigo del agente; el instalador lo compila
+  promptive.ico         el icono
