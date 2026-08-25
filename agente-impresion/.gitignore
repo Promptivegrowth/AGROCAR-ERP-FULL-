@@ -1,2 +1,3 @@
-# El ejecutable se compila en cada máquina con instalar.ps1
+# El ejecutable se genera con compilar.ps1 y se entrega al cliente;
+# no se versiona porque se rehace en cada cambio del agente.
 *.exe
