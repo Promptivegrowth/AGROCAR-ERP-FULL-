@@ -27,6 +27,7 @@ type Equipo = {
   version_agente: string | null
   avance_corte_mm: number | null
   impresora_detectada: string | null
+  impresoras_disponibles: string | null
 }
 
 export default function EquiposImpresion() {
@@ -93,6 +94,27 @@ export default function EquiposImpresion() {
     toast.success(`${e.nombre}: corta ${mm} mm más abajo`, {
       description: 'Imprime un ticket para ver cómo queda.',
     })
+  }
+
+  /**
+   * Forzar por cuál impresora imprime esa computadora.
+   *
+   * El agente adivina por el nombre, y en una computadora con dos entradas
+   * parecidas —la real y alguna que quedó de antes— puede elegir la
+   * equivocada: Windows acepta el trabajo, el agente lo da por impreso y no
+   * sale papel. Acá se elige la correcta sin ir hasta la computadora.
+   */
+  const forzarImpresora = async (e: Equipo, nombre: string) => {
+    const { error } = await (supabase as any)
+      .from('equipos_impresion')
+      .update({ impresora: nombre || null })
+      .eq('id', e.id)
+    if (error) { toast.error('No se pudo guardar', { description: error.message }); return }
+    await cargar()
+    toast.success(
+      nombre ? `${e.nombre} imprimirá por ${nombre}` : `${e.nombre} vuelve a detectarla sola`,
+      { description: 'El cambio se aplica en el próximo ticket.' },
+    )
   }
 
   const borrar = async (e: Equipo) => {
@@ -180,6 +202,23 @@ export default function EquiposImpresion() {
                         ? `Última vez: ${new Date(e.ultima_conexion).toLocaleString('es-PE', { timeZone: 'America/Lima' })}`
                         : 'Todavía no se ha conectado'}
                   </p>
+                  {/* Elegir la impresora a distancia: la lista la informa el
+                      propio agente de esa computadora. */}
+                  {conectado(e) && e.impresoras_disponibles && (
+                    <div className="mt-1 flex items-center gap-1.5">
+                      <span className="text-[11px] text-gray-500">Usar:</span>
+                      <select
+                        value={e.impresora ?? ''}
+                        onChange={(ev) => void forzarImpresora(e, ev.target.value)}
+                        className="h-7 max-w-[240px] px-1 text-[11px] border border-gray-300 rounded bg-white"
+                      >
+                        <option value="">Detectar sola{e.impresora_detectada ? ` (${e.impresora_detectada})` : ''}</option>
+                        {e.impresoras_disponibles.split('|').filter(Boolean).map((n) => (
+                          <option key={n} value={n}>{n}</option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
                   <code className="text-[10px] text-gray-400 break-all">{e.token}</code>
                 </div>
                 <div className="flex items-center gap-1.5 shrink-0">
@@ -222,6 +261,11 @@ export default function EquiposImpresion() {
             <li>
               Si al imprimir el corte se come la última línea, subir los milímetros
               de «Corte»; si sobra papel en blanco al final, bajarlos.
+            </li>
+            <li>
+              Si dice que imprimió y no sale papel, probar otra impresora en «Usar»:
+              hay computadoras con más de una entrada parecida y Windows acepta el
+              trabajo igual.
             </li>
           </ol>
         </div>

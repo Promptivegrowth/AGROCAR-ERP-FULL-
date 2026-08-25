@@ -31,6 +31,15 @@ export async function GET(request: Request) {
    * alguien intentaba facturar.
    */
   const detectada = url.searchParams.get('impresora')?.trim() || null
+  /**
+   * Todas las impresoras de esa computadora.
+   *
+   * Cuando la deteccion automatica elige la equivocada —hay maquinas con dos
+   * entradas parecidas, la real y una que quedo de antes— Windows acepta el
+   * trabajo igual y no sale papel. Teniendo la lista acá, se puede forzar la
+   * correcta desde el ERP sin ir hasta la computadora.
+   */
+  const disponibles = url.searchParams.get('impresoras')?.trim() || null
 
   if (!token) {
     return NextResponse.json({ ok: false, error: 'falta el token del equipo' }, { status: 400 })
@@ -59,6 +68,7 @@ export async function GET(request: Request) {
       ultima_conexion: new Date().toISOString(),
       version_agente: version,
       impresora_detectada: detectada,
+      ...(disponibles ? { impresoras_disponibles: disponibles } : {}),
     })
     .eq('id', equipo.id)
 

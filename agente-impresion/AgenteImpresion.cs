@@ -144,7 +144,7 @@ class Agente
             "receipt", "ticket", "80mm", "58mm", "pos ", "tek", "xprinter",
             "zjiang", "zj-", "rp80", "t80", "tm-t", "ep-", "gprinter",
         };
-        var reales = ImpresorasReales();
+        var reales = ImpresorasRealesEnCache();
         foreach (string n in reales)
         {
             string bajo = n.ToLowerInvariant();
@@ -161,6 +161,39 @@ class Agente
      * en la nube; si se cuela una de esas, el ticket se va a un PDF que nadie
      * abre nunca.
      */
+    /*
+     * La lista de impresoras se guarda un rato.
+     *
+     * Preguntarle a Windows cuales hay es una operacion cara —habla con el
+     * administrador de impresion— y el ciclo corre una vez por segundo. Se
+     * hacia en cada vuelta solo para informarle al ERP que ticketera se esta
+     * usando, un dato que no cambia de un segundo al otro. El agente terminaba
+     * cerrandose solo.
+     */
+    static System.Collections.Generic.List<string> impresorasEnCache;
+    static DateTime impresorasVistas = DateTime.MinValue;
+    const int CACHE_IMPRESORAS_SEG = 60;
+
+    static System.Collections.Generic.List<string> ImpresorasRealesEnCache()
+    {
+        if (impresorasEnCache == null ||
+            (DateTime.Now - impresorasVistas).TotalSeconds > CACHE_IMPRESORAS_SEG)
+        {
+            try
+            {
+                impresorasEnCache = ImpresorasReales();
+                impresorasVistas = DateTime.Now;
+            }
+            catch (Exception ex)
+            {
+                Log("no se pudo leer la lista de impresoras: " + ex.Message);
+                if (impresorasEnCache == null)
+                    impresorasEnCache = new System.Collections.Generic.List<string>();
+            }
+        }
+        return impresorasEnCache;
+    }
+
     static System.Collections.Generic.List<string> ImpresorasReales()
     {
         string[] falsas = {
@@ -309,6 +342,14 @@ class Agente
         Log("agente v" + VERSION + " iniciado - sistema " + urlBase);
         while (true)
         {
+            /*
+             * Nada de lo que pase adentro puede cerrar el agente.
+             *
+             * Una excepcion que se escape de un hilo de fondo termina el
+             * proceso entero, sin aviso y sin dejar rastro: la computadora se
+             * queda sin agente y los tickets se acumulan esperando a alguien
+             * que ya no esta. Cualquier falla se anota y se sigue.
+             */
             try
             {
                 /*
@@ -322,7 +363,8 @@ class Agente
                 string usaAhora = !string.IsNullOrEmpty(impresora) ? impresora : AdivinarTicketera();
                 string url = urlBase + "/api/impresion/pendientes?token=" + Uri.EscapeDataString(token) +
                              "&version=" + Uri.EscapeDataString(VERSION) +
-                             "&impresora=" + Uri.EscapeDataString(usaAhora ?? "");
+                             "&impresora=" + Uri.EscapeDataString(usaAhora ?? "") +
+                             "&impresoras=" + Uri.EscapeDataString(string.Join("|", ImpresorasRealesEnCache().ToArray()));
                 string json = Pedir(url);
                 fallosSeguidos = 0;
                 ultimoContacto = DateTime.Now;
@@ -553,6 +595,24 @@ class Agente
             // cerrar esa ventana mataria al agente.
             return;
         }
+
+        /*
+         * Si algo se escapa, queda anotado.
+         *
+         * Una excepcion sin atrapar cierra el proceso en silencio: la
+         * computadora se queda sin agente, los tickets se acumulan y desde el
+         * ERP se ve como "no conectada", sin ninguna pista de que paso. Al
+         * menos que quede escrito en el registro.
+         */
+        AppDomain.CurrentDomain.UnhandledException += delegate(object o, UnhandledExceptionEventArgs ev)
+        {
+            try { Log("SE CERRO POR UN ERROR: " + (ev.ExceptionObject != null ? ev.ExceptionObject.ToString() : "?")); }
+            catch { }
+        };
+        System.Windows.Forms.Application.ThreadException += delegate(object o, System.Threading.ThreadExceptionEventArgs ev)
+        {
+            try { Log("error en la ventana: " + ev.Exception); } catch { }
+        };
 
         IniciarBandeja();
 
