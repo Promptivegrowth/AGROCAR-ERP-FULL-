@@ -8,30 +8,30 @@ impresion de Windows y sin desperdiciar papel: el corte lo ordena el propio
 ticket. Se instala una sola vez en cada computadora que tenga ticketera.
 
 
-COMO SE INSTALA (5 minutos)
-----------------------------
-1. Copiar esta carpeta completa a la computadora que tiene la ticketera.
+PARA QUIEN INSTALA  (3 pasos, un solo archivo)
+-----------------------------------------------
+1. Abrir  AgenteImpresionAgrocar.exe  (doble clic).
 
 2. En el ERP, entrar a:  Configuracion  >  Impresion de tickets
-   Escribir un nombre para esa computadora (por ejemplo "Caja principal"),
-   apretar Agregar, y despues "Copiar codigo".
+   Escribir un nombre para esa computadora — por ejemplo "Caja principal" —,
+   presionar Agregar y luego Copiar codigo.
 
-3. En esta carpeta, clic derecho sobre  instalar.ps1
-   y elegir "Ejecutar con PowerShell".
-   Conviene hacerlo como administrador: asi tambien corrige el puerto de la
-   ticketera y el margen del driver.
+3. Pegar ese codigo en la ventana del programa y presionar Instalar.
 
-4. Cuando lo pida, pegar el codigo del paso 2 y dar Enter.
+Listo. El programa se copia solo a donde corresponde, queda arrancando con
+Windows y se pone a trabajar. En el ERP esa computadora aparece con un punto
+verde en menos de un minuto.
 
-5. Listo. En el ERP, esa computadora aparece con un punto verde en menos de
-   un minuto.
+Si Windows avisa que no reconoce el programa: "Mas informacion" >
+"Ejecutar de todas formas". Es porque el archivo no esta firmado
+digitalmente, no porque tenga algo raro.
 
 
 DE AHI EN ADELANTE
 -------------------
 - El agente arranca solo con Windows y queda con su icono al lado del reloj.
-- En Facturacion, el boton "Imprimir en ticketera" manda el ticket y sale por
-  la impresora en menos de un segundo.
+- En Facturacion, "Imprimir en ticketera" manda el ticket y sale en menos de
+  un segundo.
 - El lote de tickets sale solo al abrirse la pantalla.
 - Doble clic en el icono del reloj para ver su estado o cerrarlo.
 
@@ -47,16 +47,23 @@ SI ALGO NO SALE
   el ticket sale solo.
 
 - Para ver que paso:
-  el agente escribe un registro de su actividad en
+  el agente escribe todo lo que hace en
   %LOCALAPPDATA%\AgrocarERP\agente.log
 
-- Para reinstalar o cambiar de computadora:
-  volver a correr instalar.ps1. Si se cambia de computadora, dar de baja la
-  anterior desde el ERP (Configuracion > Impresion de tickets > Desactivar).
+- Para cambiar de computadora:
+  instalar en la nueva y dar de baja la anterior desde el ERP
+  (Configuracion > Impresion de tickets > Desactivar).
 
 
-QUE HAY EN ESTA CARPETA
-------------------------
-  instalar.ps1          el instalador — es lo unico que hay que ejecutar
-  AgenteImpresion.cs    el codigo del agente; el instalador lo compila
-  promptive.ico         el icono
+PARA QUIEN LO ENTREGA  (Promptive)
+-----------------------------------
+Al cliente se le manda UN SOLO archivo: AgenteImpresionAgrocar.exe
+
+Para generarlo: clic derecho sobre compilar.ps1 > "Ejecutar con PowerShell".
+Usa el compilador de C# que ya trae Windows; no hay que instalar nada.
+
+  AgenteImpresion.cs      el agente: pregunta por tickets y los imprime
+  VentanaInstalacion.cs   la ventana de instalacion
+  promptive.ico           icono de la ventana y de la barra de tareas
+  promptive.png           isotipo del encabezado
+  compilar.ps1            genera el ejecutable

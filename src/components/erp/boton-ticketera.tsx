@@ -48,7 +48,7 @@ export default function BotonTicketera({ auto = false }: { auto?: boolean } = {}
   const [yaSalio, setYaSalio] = useState(false)
 
   const imprimir = async () => {
-    if (!elegido) { toast.error('Elegí en qué computadora imprimir'); return }
+    if (!elegido) { toast.error('Elige en qué computadora imprimir'); return }
     const nodos = Array.from(document.querySelectorAll<HTMLElement>('.ticket-imprimible'))
     if (nodos.length === 0) { toast.error('No hay ningún ticket en pantalla'); return }
 
@@ -88,7 +88,7 @@ export default function BotonTicketera({ auto = false }: { auto?: boolean } = {}
       toast.success(ids.length === 1 ? 'Ticket impreso' : `${ids.length} tickets impresos`)
     } else if (fin === 'error') {
       toast.error('La ticketera no pudo imprimirlo', {
-        description: 'Revisá que esté encendida y con papel.',
+        description: 'Revisa que esté encendida y con papel.',
       })
     } else {
       const eq = equipos.find((e) => e.id === elegido)
