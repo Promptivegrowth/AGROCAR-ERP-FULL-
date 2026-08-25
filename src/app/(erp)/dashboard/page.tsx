@@ -1,6 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { formatCurrency, formatDate } from '@/lib/utils'
-import { hoyLima } from '@/lib/fechas-pe'
+import { hoyLima, fechaLima, rangoDiaLima } from '@/lib/fechas-pe'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import {
@@ -21,6 +21,18 @@ export const dynamic = 'force-dynamic'
 async function getDashboardData() {
   const supabase = await createClient()
   const today = hoyLima()
+  /**
+   * El día de hoy en hora de Lima, para lo que se mide por el momento en que
+   * se registró.
+   *
+   * `created_at` guarda el instante con huso horario. Compararlo contra
+   * "2026-08-25T00:00:00" a secas lo interpreta en UTC, que va cinco horas
+   * adelante: de las 7 de la tarde en adelante, lo que se registra en Tacna
+   * caía en el día siguiente.
+   */
+  const dia = rangoDiaLima(today)
+  /** El primero de los siete días que muestra el gráfico. */
+  const hace7 = fechaLima(new Date(new Date(today + 'T12:00:00-05:00').getTime() - 6 * 24 * 60 * 60 * 1000))
 
   const [
     { data: pedidosHoy },
@@ -39,13 +51,20 @@ async function getDashboardData() {
     supabase
       .from('pedidos')
       .select('id, total, estado')
-      .gte('created_at', `${today}T00:00:00`)
-      .lte('created_at', `${today}T23:59:59`),
+      .gte('created_at', dia.desde)
+      .lt('created_at', dia.hasta),
     supabase
+      /**
+       * Facturado hoy: por el momento en que se emitió.
+       *
+       * `fecha_emision` es la del despacho del pedido —se factura hoy lo que
+       * se reparte mañana—, así que midiendo por ese campo el tablero mostraba
+       * cero justo el día en que se había facturado todo.
+       */
       .from('comprobantes')
       .select('total')
-      .gte('fecha_emision', today)
-      .lte('fecha_emision', today)
+      .gte('created_at', dia.desde)
+      .lt('created_at', dia.hasta)
       .neq('estado', 'anulado'),
     supabase
       .from('cobros')
@@ -55,7 +74,7 @@ async function getDashboardData() {
     supabase
       .from('gps_checkins')
       .select('usuario_id')
-      .gte('created_at', `${today}T00:00:00`)
+      .gte('created_at', dia.desde)
       .lte('created_at', `${today}T23:59:59`)
       .eq('tipo', 'entrada'),
     supabase
@@ -68,15 +87,19 @@ async function getDashboardData() {
         id, numero, total, estado, created_at,
         clientes(razon_social)
       `)
-      .gte('created_at', `${today}T00:00:00`)
+      .gte('created_at', dia.desde)
       .order('created_at', { ascending: false })
       .limit(10),
     supabase
+      // Igual que el "facturado hoy": por el momento de emisión. Midiendo por
+      // la fecha impresa aparecían barras en días que todavía no llegaron,
+      // porque hay comprobantes fechados a futuro con el despacho.
       .from('comprobantes')
-      .select('fecha_emision, total')
-      .gte('fecha_emision', new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0])
+      .select('created_at, total')
+      .gte('created_at', rangoDiaLima(hace7).desde)
+      .lt('created_at', dia.hasta)
       .neq('estado', 'anulado')
-      .order('fecha_emision', { ascending: true }),
+      .order('created_at', { ascending: true }),
     supabase
       .from('solicitudes_cliente' as any)
       .select('id', { count: 'exact', head: true })
@@ -111,11 +134,13 @@ async function getDashboardData() {
   // Ventas últimos 7 días
   const ventasPorDia: Record<string, number> = {}
   for (let i = 6; i >= 0; i--) {
-    const d = new Date(Date.now() - i * 24 * 60 * 60 * 1000)
-    ventasPorDia[d.toISOString().split('T')[0]] = 0
+    // Los días se arman en hora de Lima: con toISOString, de las 7 de la tarde
+    // en adelante el tablero saltaba al día siguiente.
+    const d = new Date(new Date(today + 'T12:00:00-05:00').getTime() - i * 24 * 60 * 60 * 1000)
+    ventasPorDia[fechaLima(d)] = 0
   }
-  ventasSemana?.forEach((c) => {
-    const day = c.fecha_emision
+  ventasSemana?.forEach((c: any) => {
+    const day = fechaLima(c.created_at)
     if (ventasPorDia[day] !== undefined) {
       ventasPorDia[day] += c.total ?? 0
     }
@@ -372,7 +397,7 @@ export default async function DashboardPage() {
           <Card className="border-gray-200 shadow-sm">
             <CardHeader className="pb-2">
               <CardTitle className="text-base font-semibold text-gray-800">
-                Ventas Últimos 7 Días
+                Facturado · Últimos 7 días
               </CardTitle>
             </CardHeader>
             <CardContent>
