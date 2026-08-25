@@ -42,6 +42,12 @@ SI ALGO NO SALE
   revisar que el agente este corriendo (icono al lado del reloj) y que la
   computadora tenga internet.
 
+- Dice que no encuentra la impresora:
+  clic derecho en el icono del reloj > "Elegir impresora" y marcar cual es.
+  El agente la reconoce sola por el nombre, pero hay marcas que no dicen ni
+  "POS" ni "80mm" en ningun lado. Ahi mismo esta "Imprimir una prueba" para
+  confirmar que quedo bien antes de facturar.
+
 - El ticket queda "esperando":
   la ticketera esta apagada, sin papel o con la tapa abierta. Al resolverlo,
   el ticket sale solo.

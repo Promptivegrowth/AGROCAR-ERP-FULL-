@@ -124,16 +124,76 @@ class Agente
         return lista;
     }
 
+    /**
+     * Cual de las impresoras instaladas es la ticketera.
+     *
+     * Primero por el nombre, que es lo que suele delatarlas. La lista de
+     * pistas se quedo corta con la de Daniel —una TEK, que no dice "POS" ni
+     * "80mm" por ningun lado— asi que si eso no alcanza se descartan las que
+     * no son impresoras de verdad (guardar en PDF, XPS, fax) y, si queda una
+     * sola, esa es.
+     *
+     * Cuando hay varias y ninguna se delata, no se adivina: se elige a mano
+     * desde el menu del agente. Mandar un ticket a la impresora equivocada es
+     * peor que no imprimirlo.
+     */
     static string AdivinarTicketera()
     {
-        string[] pistas = { "pos-80", "pos80", "thermal", "termica", "receipt", "ticket", "80mm", "pos " };
-        foreach (string n in Impresoras())
+        string[] pistas = {
+            "pos-80", "pos80", "pos 80", "thermal", "termica", "térmica",
+            "receipt", "ticket", "80mm", "58mm", "pos ", "tek", "xprinter",
+            "zjiang", "zj-", "rp80", "t80", "tm-t", "ep-", "gprinter",
+        };
+        var reales = ImpresorasReales();
+        foreach (string n in reales)
         {
             string bajo = n.ToLowerInvariant();
             foreach (string pista in pistas)
                 if (bajo.Contains(pista)) return n;
         }
-        return null;
+        return reales.Count == 1 ? reales[0] : null;
+    }
+
+    /**
+     * Las impresoras instaladas, sin las que en realidad no imprimen.
+     *
+     * Windows trae de fabrica varias que son destinos de archivo o servicios
+     * en la nube; si se cuela una de esas, el ticket se va a un PDF que nadie
+     * abre nunca.
+     */
+    static System.Collections.Generic.List<string> ImpresorasReales()
+    {
+        string[] falsas = {
+            "microsoft print to pdf", "microsoft xps", "onenote", "fax",
+            "pdfcreator", "adobe pdf", "enviar a onenote", "print to pdf",
+        };
+        var lista = new System.Collections.Generic.List<string>();
+        foreach (string n in Impresoras())
+        {
+            string bajo = n.ToLowerInvariant();
+            bool falsa = false;
+            foreach (string f in falsas) if (bajo.Contains(f)) { falsa = true; break; }
+            if (!falsa) lista.Add(n);
+        }
+        return lista;
+    }
+
+    /** Deja anotada en la configuracion la impresora elegida a mano. */
+    static void GuardarImpresora(string nombre)
+    {
+        try
+        {
+            string ruta = RutaConfig();
+            var lineas = new System.Collections.Generic.List<string>();
+            if (File.Exists(ruta))
+                foreach (string l in File.ReadAllLines(ruta))
+                    if (!l.TrimStart().StartsWith("impresora=")) lineas.Add(l);
+            if (!string.IsNullOrEmpty(nombre)) lineas.Add("impresora=" + nombre);
+            File.WriteAllLines(ruta, lineas.ToArray());
+            impresora = string.IsNullOrEmpty(nombre) ? null : nombre;
+            Log("impresora elegida a mano: " + (nombre ?? "(automatica)"));
+        }
+        catch (Exception ex) { Log("no se pudo guardar la impresora: " + ex.Message); }
     }
 
     // ── Lectura de JSON, a mano para no arrastrar dependencias ───────────────
@@ -571,6 +631,96 @@ class Agente
                 System.Windows.Forms.MessageBox.Show(sb.ToString(), "Agente de impresion - " + MARCA);
             };
             menu.Items.Add(estado);
+
+            /*
+             * Elegir la impresora a mano.
+             *
+             * La deteccion por nombre no da con todas: la ticketera de Daniel
+             * es una TEK y no dice "POS" ni "80mm" en ningun lado, asi que el
+             * agente instalaba bien y despues no encontraba a donde imprimir.
+             * Aca se ve la lista de las que tiene Windows y se marca cual es.
+             */
+            var elegirImpresora = new System.Windows.Forms.ToolStripMenuItem("Elegir impresora");
+            elegirImpresora.DropDownOpening += delegate(object s, EventArgs e)
+            {
+                elegirImpresora.DropDownItems.Clear();
+                string actual = impresora ?? AdivinarTicketera();
+
+                var automatica = new System.Windows.Forms.ToolStripMenuItem("Detectar sola");
+                automatica.Checked = string.IsNullOrEmpty(impresora);
+                automatica.Click += delegate(object s2, EventArgs e2)
+                {
+                    GuardarImpresora(null);
+                    ActualizarBandeja();
+                };
+                elegirImpresora.DropDownItems.Add(automatica);
+                elegirImpresora.DropDownItems.Add(new System.Windows.Forms.ToolStripSeparator());
+
+                var reales = ImpresorasReales();
+                if (reales.Count == 0)
+                {
+                    var vacio = new System.Windows.Forms.ToolStripMenuItem("(Windows no tiene ninguna instalada)");
+                    vacio.Enabled = false;
+                    elegirImpresora.DropDownItems.Add(vacio);
+                    return;
+                }
+                foreach (string nombre in reales)
+                {
+                    string n = nombre;
+                    var it = new System.Windows.Forms.ToolStripMenuItem(n);
+                    it.Checked = (n == actual);
+                    it.Click += delegate(object s2, EventArgs e2)
+                    {
+                        GuardarImpresora(n);
+                        ActualizarBandeja();
+                        System.Windows.Forms.MessageBox.Show(
+                            "Los tickets van a salir por:" + SALTO + SALTO + n,
+                            "Agente de impresion - " + MARCA);
+                    };
+                    elegirImpresora.DropDownItems.Add(it);
+                }
+            };
+            menu.Items.Add(elegirImpresora);
+
+            var probar = new System.Windows.Forms.ToolStripMenuItem("Imprimir una prueba");
+            probar.Click += delegate(object s, EventArgs e)
+            {
+                string usar = impresora ?? AdivinarTicketera();
+                if (string.IsNullOrEmpty(usar))
+                {
+                    System.Windows.Forms.MessageBox.Show(
+                        "No hay ninguna ticketera elegida." + SALTO + SALTO +
+                        "Usa \"Elegir impresora\" en este mismo menu y marca cual es.",
+                        "Agente de impresion - " + MARCA);
+                    return;
+                }
+                // El salto de linea va como byte y no dentro del texto: el
+                // ticket no es una cadena de Windows sino ordenes para la
+                // impresora.
+                var t = new System.Collections.Generic.List<byte>();
+                Action<string> renglon = delegate(string txt)
+                {
+                    t.AddRange(Encoding.ASCII.GetBytes(txt));
+                    t.Add(0x0a);
+                };
+                t.AddRange(new byte[] { 0x1b, 0x40 });        // reiniciar
+                t.AddRange(new byte[] { 0x1b, 0x61, 0x01 });  // centrar
+                renglon("AGROCAR");
+                renglon("Prueba de impresion");
+                renglon(DateTime.Now.ToString("dd/MM/yyyy HH:mm"));
+                renglon(usar);
+                t.AddRange(new byte[] { 0x1b, 0x4a, 120 });        // avanzar hasta la cuchilla
+                t.AddRange(new byte[] { 0x1d, 0x56, 0x42, 0x00 }); // cortar
+                string err = ImprimirRaw(usar, t.ToArray());
+                System.Windows.Forms.MessageBox.Show(
+                    err == null
+                        ? "Salio la prueba por:" + SALTO + SALTO + usar
+                        : "No se pudo imprimir en:" + SALTO + usar + SALTO + SALTO + err,
+                    "Agente de impresion - " + MARCA);
+            };
+            menu.Items.Add(probar);
+
+            menu.Items.Add(new System.Windows.Forms.ToolStripSeparator());
 
             var abrirConfig = new System.Windows.Forms.ToolStripMenuItem("Abrir configuracion");
             abrirConfig.Click += delegate(object s, EventArgs e)
