@@ -79,15 +79,24 @@ export class TicketEscPos {
    */
   cortar(avanceMm = CORTE_MM) {
     const puntos = Math.round(Math.max(5, Math.min(40, avanceMm)) / PUNTO_MM)
-    // El avance máximo de una sola orden es de 255 puntos; de sobra para el
-    // rango que se admite, pero se parte igual por si alguien lo sube.
-    let queda = puntos
-    while (queda > 0) {
-      const paso = Math.min(queda, 255)
-      this.avanzarPuntos(paso)
-      queda -= paso
-    }
-    return this.bytes(GS, 0x56, 0x42, 0x00)
+
+    /*
+     * El avance se manda dentro de la propia orden de corte.
+     *
+     * Antes iba aparte, con "avanzar n puntos" (ESC J) y después "cortar".
+     * Funciona en unas ticketeras y en otras no: la de Daniel ignora esa orden
+     * —se le mandaron 20 mm y después 25 y cortó exactamente en el mismo
+     * lugar— así que el ajuste no servía de nada donde más hacía falta.
+     *
+     * `GS V B n` dice "avanzá n puntos y cortá" en un solo comando, y es el
+     * que los clones implementan de verdad. Se manda igual el avance suelto
+     * para las que solo entienden ese: la que entiende las dos hace una y la
+     * otra queda sin efecto, porque el avance total lo reparten entre ambas.
+     */
+    const enElCorte = Math.min(puntos, 255)
+    const suelto = puntos - enElCorte
+    if (suelto > 0) this.avanzarPuntos(suelto)
+    return this.bytes(GS, 0x56, 0x42, enElCorte)
   }
 
   /**

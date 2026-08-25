@@ -44,7 +44,15 @@ using System.Threading;
 
 class Agente
 {
-    const string VERSION = "2.0";
+    /**
+     * La version se sube en cada entrega.
+     *
+     * Todas las compilaciones decian "2.0", asi que al mirar una computadora
+     * no habia forma de saber si tenia la ultima o una de hace tres horas —ni
+     * en la ventana del agente ni en el ERP—. Se perdio tiempo revisando
+     * maquinas que tenian una version vieja sin que nadie lo notara.
+     */
+    const string VERSION = "2.3";
     const string MARCA = "Promptive";
     /** Salto de linea de Windows, para los mensajes en pantalla. */
     static readonly string SALTO = Environment.NewLine;
@@ -56,6 +64,8 @@ class Agente
     static string urlBase;
     static string token;
     static string impresora;
+    /** La que el ERP indico para esta computadora, si es que indico alguna. */
+    static string impresoraDelErp;
 
     static System.Windows.Forms.NotifyIcon bandeja;
     static int impresos = 0;
@@ -370,6 +380,7 @@ class Agente
                 ultimoContacto = DateTime.Now;
 
                 string impresoraDelServidor = Campo(json, "impresora");
+                impresoraDelErp = impresoraDelServidor;
                 string usar = !string.IsNullOrEmpty(impresora) ? impresora
                             : (!string.IsNullOrEmpty(impresoraDelServidor) ? impresoraDelServidor : AdivinarTicketera());
 
@@ -693,7 +704,20 @@ class Agente
                 if (fallidos > 0) sb.AppendLine("Con problemas: " + fallidos);
                 sb.AppendLine();
                 sb.AppendLine("Sistema: " + urlBase);
-                sb.AppendLine("Impresora: " + (impresora ?? AdivinarTicketera() ?? "(ninguna encontrada)"));
+                /*
+                 * Mostrar la que realmente se va a usar.
+                 *
+                 * Antes esta linea solo miraba la configuracion local y lo que
+                 * adivinaba, ignorando la que se elige desde el ERP. En Caja
+                 * se forzo POS-80-Series y la ventana seguia mostrando
+                 * POS-T80: parecia que el cambio no habia llegado.
+                 */
+                string cual, deDonde;
+                if (!string.IsNullOrEmpty(impresora)) { cual = impresora; deDonde = "elegida en esta computadora"; }
+                else if (!string.IsNullOrEmpty(impresoraDelErp)) { cual = impresoraDelErp; deDonde = "elegida desde el ERP"; }
+                else { cual = AdivinarTicketera(); deDonde = "detectada sola"; }
+                sb.AppendLine("Impresora: " + (cual ?? "(ninguna encontrada)") +
+                              (cual != null ? "   (" + deDonde + ")" : ""));
                 sb.AppendLine("Configuracion: " + RutaConfig());
                 sb.AppendLine();
                 sb.AppendLine("Impresoras de esta computadora:");
