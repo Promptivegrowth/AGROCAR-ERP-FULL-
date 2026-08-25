@@ -71,7 +71,6 @@ export default function PersonaReporteActions({
           type="date"
           value={hasta}
           min={desde}
-          max={hoyStr}
           onChange={(e) => setRango('hasta', e.target.value)}
           className="h-7 text-[11px] px-1.5 border border-gray-400 rounded bg-white text-black"
         />

@@ -71,7 +71,6 @@ export default function EquipoReporteActions({
           type="date"
           value={hasta}
           min={desde}
-          max={hoyStr}
           onChange={(e) => ir(desde, e.target.value)}
           className="h-7 text-[11px] px-1.5 border border-gray-400 rounded bg-white text-black"
         />

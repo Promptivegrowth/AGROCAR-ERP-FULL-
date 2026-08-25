@@ -28,7 +28,7 @@ export default function VentasProductosActions({ desde, hasta }: { desde: string
         <input type="date" value={desde} max={hasta} onChange={(e) => setRango('desde', e.target.value)}
           className="h-7 text-[11px] px-1.5 border border-gray-400 rounded bg-white text-black" />
         <label className="text-gray-300 ml-1">Hasta:</label>
-        <input type="date" value={hasta} min={desde} max={hoyStr} onChange={(e) => setRango('hasta', e.target.value)}
+        <input type="date" value={hasta} min={desde} onChange={(e) => setRango('hasta', e.target.value)}
           className="h-7 text-[11px] px-1.5 border border-gray-400 rounded bg-white text-black" />
       </div>
       <a href={`/api/reportes/ventas-productos/excel?desde=${desde}&hasta=${hasta}`}

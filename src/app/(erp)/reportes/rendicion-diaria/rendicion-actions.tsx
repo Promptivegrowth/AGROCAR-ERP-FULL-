@@ -4,6 +4,14 @@ import { useRouter } from 'next/navigation'
 import { Printer, FileSpreadsheet } from 'lucide-react'
 import { hoyLima } from '@/lib/fechas-pe'
 
+/*
+ * Sin tope de fecha.
+ *
+ * Los comprobantes no llevan la fecha del día en que se emitieron sino la del
+ * despacho del pedido: lo que se factura hoy para repartir mañana sale con la
+ * fecha de mañana. Con el tope en "hoy", ese trabajo quedaba invisible —el
+ * reporte del día mostraba cero y el día donde sí estaba no se podía abrir—.
+ */
 export default function RendicionActions({ fechaActual }: { fechaActual: string }) {
   const router = useRouter()
   return (
@@ -16,7 +24,6 @@ export default function RendicionActions({ fechaActual }: { fechaActual: string 
         // 19:00 hora peruana el navegador ya está en el día siguiente y el
         // calendario dejaba elegir mañana. Daniel lo vio al revés —el día de
         // hoy bloqueado— por el mismo desfase.
-        max={hoyLima()}
         onChange={(e) => router.push(`/reportes/rendicion-diaria?fecha=${e.target.value}`)}
         className="h-8 text-xs px-2 border border-gray-300 rounded-md bg-white"
       />
