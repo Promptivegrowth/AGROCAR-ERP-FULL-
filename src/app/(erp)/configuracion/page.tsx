@@ -402,12 +402,23 @@ export default function ConfiguracionPage() {
           <h1 className="text-2xl font-bold text-gray-900">Configuración del Sistema</h1>
           <p className="text-sm text-gray-500 mt-0.5">Empresa, usuarios, series y parámetros</p>
         </div>
-        <a
-          href="/configuracion/comisiones"
-          className="inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold bg-blue-600 hover:bg-blue-700 text-white rounded-lg shadow-sm"
-        >
-          📊 Comisiones por Familia
-        </a>
+        {/* Las dos pantallas de configuración que viven fuera de las pestañas.
+            La de impresión existía y no estaba enlazada desde ningún lado: se
+            llegaba solo escribiendo la dirección a mano. */}
+        <div className="flex items-center gap-2 flex-wrap">
+          <a
+            href="/configuracion/impresion"
+            className="inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold bg-gray-800 hover:bg-gray-900 text-white rounded-lg shadow-sm"
+          >
+            🧾 Impresión de tickets
+          </a>
+          <a
+            href="/configuracion/comisiones"
+            className="inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold bg-blue-600 hover:bg-blue-700 text-white rounded-lg shadow-sm"
+          >
+            📊 Comisiones por Familia
+          </a>
+        </div>
       </div>
 
       {msg && (
