@@ -52,6 +52,12 @@ SI ALGO NO SALE
   la ticketera esta apagada, sin papel o con la tapa abierta. Al resolverlo,
   el ticket sale solo.
 
+- Otra impresora de la computadora dejo de funcionar:
+  una version anterior del instalador cambiaba el puerto de la ticketera y
+  podia equivocarse de impresora. Ejecutar revisar-impresoras.ps1 (clic
+  derecho > "Ejecutar con PowerShell"): muestra como esta cada una y ofrece
+  devolverla a su puerto. El instalador actual ya no toca ninguna.
+
 - Para ver que paso:
   el agente escribe todo lo que hace en
   %LOCALAPPDATA%\AgrocarERP\agente.log

@@ -412,7 +412,6 @@ public class VentanaInstalacion : Form
                 if (k != null) k.SetValue("AgrocarAgenteImpresion", "\"" + destino + "\"");
             }
 
-            AcomodarTicketera();
 
             // Arranca desde su carpeta definitiva y este proceso se va: si
             // siguiera corriendo el de la descarga, cerrar esa ventana mataría
@@ -454,34 +453,20 @@ public class VentanaInstalacion : Form
     }
 
     /**
-     * Dos arreglos de la ticketera que se hacían a mano.
+     * El instalador ya no toca la configuración de las impresoras.
      *
-     * El driver puede quedar apuntando a un puerto que ya no existe —y ahí
-     * todo trabajo entra en error sin decir por qué— y el margen final del
-     * driver conviene en 15 mm, que es la distancia de la cuchilla al cabezal.
-     * Los dos necesitan permisos de administrador; si no los hay, se sigue
-     * igual: solo afectan a la impresión por el navegador.
+     * Antes intentaba dos arreglos: apuntar la ticketera al puerto USB y
+     * ajustar el margen final del driver. Buscaba a cuál aplicarlos con un
+     * filtro por nombre —"POS" u "80"— y eso resultó peligroso: en una
+     * computadora con una HP Smart Tank 580-590, ese "580" matchea, y el
+     * arreglo le cambiaba el puerto a una impresora A4 que estaba funcionando
+     * perfecta. El cliente se quedó sin poder imprimir sus reportes.
+     *
+     * Un instalador no tiene por qué reconfigurar impresoras ajenas. El
+     * margen del driver solo afecta a la impresión por el navegador, que ya
+     * no se usa, y el puerto es algo que se corrige una vez y a conciencia,
+     * mirando la computadora.
      */
-    void AcomodarTicketera()
-    {
-        try
-        {
-            string ps =
-                "$p = Get-Printer | Where-Object { $_.Name -like '*POS*' -or $_.Name -like '*80*' } | Select-Object -First 1; " +
-                "if ($p) { " +
-                "  $u = Get-PrinterPort | Where-Object { $_.Name -match '^USB\\d+$' } | Select-Object -First 1; " +
-                "  if ($u -and $p.PortName -ne $u.Name) { try { Set-Printer -Name $p.Name -PortName $u.Name } catch {} } " +
-                "  try { Set-PrinterProperty -PrinterName $p.Name -PropertyName 'Config:zjTrailingMargin' -Value 'zj15mm' } catch {} " +
-                "}";
-            var i = new System.Diagnostics.ProcessStartInfo("powershell.exe",
-                "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -Command \"" + ps.Replace("\"", "\\\"") + "\"");
-            i.CreateNoWindow = true;
-            i.UseShellExecute = false;
-            var pr = System.Diagnostics.Process.Start(i);
-            if (pr != null) pr.WaitForExit(15000);
-        }
-        catch { /* son mejoras, no requisitos */ }
-    }
 
     void Aviso(string texto, Color color)
     {
