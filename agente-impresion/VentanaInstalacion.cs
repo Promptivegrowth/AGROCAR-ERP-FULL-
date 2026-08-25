@@ -366,7 +366,18 @@ public class VentanaInstalacion : Form
                 "computadora aparece con un punto verde en menos de un minuto.\r\n\r\n" +
                 "Arranca solo cada vez que se prende la computadora.",
                 TITULO + " · " + MARCA, MessageBoxButtons.OK, MessageBoxIcon.Information);
+
+            /*
+             * Se retira sin vueltas.
+             *
+             * El que trabaja es el que quedo copiado en su carpeta, y ya esta
+             * andando. Si este proceso siguiera vivo, en el Administrador de
+             * tareas aparecerian dos con el mismo nombre —uno de ellos siendo
+             * solo esta ventana— y no hay forma de que quien mira eso sepa
+             * cual es cual.
+             */
             Close();
+            Environment.Exit(0);
         }
         catch (Exception ex)
         {
