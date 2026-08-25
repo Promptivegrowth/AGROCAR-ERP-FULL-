@@ -154,7 +154,12 @@ export default async function HojaRutaSimplePage({ params }: { params: { id: str
               contenido. Total: 100% — distribuido para que "Cliente" tenga
               espacio suficiente para nombres peruanos largos (3-4 palabras). */}
           <colgroup>
-            <col style={{ width: '9%' }} />{/* Pedido */}
+            {/* Pedido sube de 9% a 11%. Los números miden 10 caracteres
+                —P-16688453— y en 9% de un A4 no entran: la columna daba
+                16,7 mm y el número necesita unos 20 mm, así que partía
+                después del guion y cada fila ocupaba dos renglones. El 2%
+                sale de Cliente y Observación, que van sobrados. */}
+            <col style={{ width: '11%' }} />{/* Pedido */}
             <col style={{ width: '5%' }} />{/* Cod.Vend */}
             <col style={{ width: '4%' }} />{/* T.D. */}
             {/* Comprob subió de 11% a 14%: con 11% "B001 00000358" se partía
@@ -166,11 +171,11 @@ export default async function HojaRutaSimplePage({ params }: { params: { id: str
                 cada corte duplica el alto de esa fila. El espacio sale de
                 Observación, que estaba en 18% para anotar a mano y con 10%
                 sigue alcanzando. */}
-            <col style={{ width: '41%' }} />{/* Cliente */}
+            <col style={{ width: '40%' }} />{/* Cliente */}
             {/* Total subió de 9% a 11%: el TOTAL GENERAL se partía en dos */}
             <col style={{ width: '11%' }} />{/* Total */}
             <col style={{ width: '6%' }} />{/* Condic */}
-            <col style={{ width: '10%' }} />{/* Observación */}
+            <col style={{ width: '9%' }} />{/* Observación */}
           </colgroup>
           <thead>
             <tr className="border-b border-gray-400">
@@ -187,7 +192,7 @@ export default async function HojaRutaSimplePage({ params }: { params: { id: str
           <tbody>
             {paradas.map((p: any, i: number) => (
               <tr key={i} className="border-b border-dotted border-gray-200" style={{ lineHeight: 1.1 }}>
-                <td className="px-1 py-0 font-mono text-[8.5pt] text-gray-700">{p.pedido_numero}</td>
+                <td className="nowrap px-1 py-0 font-mono text-[8.5pt] text-gray-700">{p.pedido_numero}</td>
                 <td className="px-1 py-0 font-mono text-[8.5pt] text-gray-700">{String(p.secuencia).padStart(3, '0')}</td>
                 <td className="px-1 py-0 font-mono text-[8.5pt] text-gray-700">{p.tipo_doc}</td>
                 <td className="nowrap px-1 py-0 font-mono text-[8.5pt] text-gray-700">{p.comprobante}</td>
