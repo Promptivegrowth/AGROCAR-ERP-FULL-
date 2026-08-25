@@ -117,18 +117,29 @@ function formatHora(iso: string): string {
 }
 
 // ─── Componente principal ───────────────────────────────────────────────────
+/** Un cobro de un día anterior que todavía no entró a ninguna caja. */
+export interface CobroPendiente {
+  id: string
+  numero: string | null
+  fecha: string
+  total: number
+  cliente: string
+}
+
 export default function CajaClient({
   today,
   sesionInicial,
   cobrosIniciales,
   movimientosIniciales,
   historialInicial,
+  pendientes = [],
 }: {
   today: string
   sesionInicial: CajaSesionData | null
   cobrosIniciales: CobroDia[]
   movimientosIniciales: MovimientoCaja[]
   historialInicial: SesionHistorial[]
+  pendientes?: CobroPendiente[]
 }) {
   const supabase = createClient()
 
@@ -342,6 +353,15 @@ export default function CajaClient({
       { efectivo: 0, yape: 0, plin: 0, transferencia: 0, total: 0, count: 0 }
     )
   }, [sesion, cobros, movimientos])
+
+  // Lo pendiente de días anteriores, para el aviso de arriba
+  const totalPendiente = pendientes.reduce((a, c) => a + c.total, 0)
+  const diasPendientes = (() => {
+    const dias = Array.from(new Set(pendientes.map((c) => c.fecha))).sort()
+    if (dias.length === 0) return ''
+    if (dias.length === 1) return `el ${formatDate(dias[0])}`
+    return `${dias.length} días (${formatDate(dias[0])} al ${formatDate(dias[dias.length - 1])})`
+  })()
 
   // Ingresos del DÍA completo (para KPIs y tab cobros)
   const ingresosDia = useMemo(() => {
@@ -809,6 +829,35 @@ export default function CajaClient({
           </TabsTrigger>
         </TabsList>
 
+        {/* Lo que quedó sin liquidar de días anteriores.
+            Si un día nadie abre caja, esos cobros esperan a la siguiente
+            apertura, que los levanta sola. Antes eso no se veía en ningún
+            lado: la pantalla decía "no hay cobros hoy" y parecía que el día
+            anterior se hubiera perdido. */}
+        {pendientes.length > 0 && (
+          <div className="mb-4 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3">
+            <div className="flex items-start justify-between gap-3 flex-wrap">
+              <div>
+                <p className="text-sm font-bold text-amber-900">
+                  Hay {pendientes.length} cobro{pendientes.length === 1 ? '' : 's'} sin liquidar
+                  {' '}de {diasPendientes} · {formatCurrency(totalPendiente)}
+                </p>
+                <p className="text-xs text-amber-800 mt-0.5">
+                  {sesion
+                    ? 'Ya están cargados en esta caja: aparecen en Movimientos como cobros retroactivos.'
+                    : 'Al abrir caja se cargan solos, no hay que hacer nada más.'}
+                </p>
+              </div>
+              <div className="text-[11px] text-amber-900 text-right">
+                {pendientes.slice(0, 3).map((c) => (
+                  <div key={c.id}>{formatDate(c.fecha)} · {c.cliente} · {formatCurrency(c.total)}</div>
+                ))}
+                {pendientes.length > 3 && <div>y {pendientes.length - 3} más</div>}
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Tab 1: Cobros de hoy */}
         <TabsContent value="cobros" className="mt-4">
           <Card className="border-gray-200 shadow-sm">
@@ -821,6 +870,12 @@ export default function CajaClient({
               {cobros.length === 0 ? (
                 <div className="text-center py-12 text-gray-400 text-sm">
                   No hay cobros registrados hoy
+                  {pendientes.length > 0 && (
+                    <p className="text-amber-700 mt-1">
+                      Pero quedan {pendientes.length} de días anteriores por liquidar,
+                      arriba se ven cuáles.
+                    </p>
+                  )}
                 </div>
               ) : (
                 <>

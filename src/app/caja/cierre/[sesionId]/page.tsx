@@ -32,6 +32,14 @@ export default async function CierreCajaReporte({
 
   if (!sesion) return notFound()
 
+  /**
+   * Los días a los que pertenece el dinero de esta sesión.
+   *
+   * No es lo mismo que la fecha de apertura. Si el sábado nadie abre caja, la
+   * sesión del domingo liquida los cobros del sábado, y el reporte tiene que
+   * decirlo: si no, queda un cierre fechado el domingo con plata que se
+   * levantó el sábado y nadie puede cuadrar el día.
+   */
   const apertura = new Date(sesion.fecha_apertura)
   const cierre = sesion.fecha_cierre ? new Date(sesion.fecha_cierre) : null
 
@@ -63,6 +71,18 @@ export default async function CierreCajaReporte({
     : { data: [] }
 
   const cobros = cobrosRaw ?? []
+
+  // Los días a los que pertenece el dinero, tomados de la fecha de cada cobro
+  const diasDelDinero = (() => {
+    const dias = Array.from(new Set(
+      (cobros as any[]).map((c) => c.fecha).filter(Boolean),
+    )).sort()
+    if (dias.length === 0) return null
+    const legible = (d: string) => new Date(d + 'T12:00:00-05:00')
+      .toLocaleDateString('es-PE', { weekday: 'long', day: '2-digit', month: '2-digit', year: 'numeric' })
+    if (dias.length === 1) return legible(dias[0])
+    return `${legible(dias[0])} al ${legible(dias[dias.length - 1])}`
+  })()
   const egresos = movs.filter((m: any) => m.tipo === 'egreso')
 
   // Totales
@@ -146,6 +166,15 @@ export default async function CierreCajaReporte({
             <div><strong>Cajero:</strong> {(sesion.profiles as any)?.full_name ?? '—'}</div>
             <div><strong>Apertura:</strong> {fmtFecha(apertura)}</div>
             <div><strong>Cierre:</strong> {fmtFecha(cierre)}</div>
+            {/* De qué día es la plata, que no siempre es el día en que se
+                abrió la caja: si un día nadie la abre, la siguiente sesion
+                liquida lo que quedó pendiente. Sin esto, el cierre del sabado
+                hecho el domingo se leia como si fuera del domingo. */}
+            {diasDelDinero && (
+              <div className="col-span-2">
+                <strong>Movimientos de:</strong> {diasDelDinero}
+              </div>
+            )}
           </div>
           <div className="text-right">
             <div><strong>Estado:</strong> <span className="uppercase">{sesion.estado}</span></div>

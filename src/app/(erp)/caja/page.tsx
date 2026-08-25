@@ -70,6 +70,38 @@ async function getCajaData() {
     created_at: c.created_at,
   }))
 
+  /**
+   * 2b) Lo que quedó sin liquidar de días anteriores.
+   *
+   * Si un día nadie abre caja, los cobros de ese día no entran a ninguna
+   * sesión y quedan esperando. Al abrir la siguiente, la apertura los levanta
+   * sola —eso ya funcionaba—, pero la pantalla no lo decía en ningún lado: el
+   * sábado no se abrió caja, el domingo se abrió y el tablero mostraba "no hay
+   * cobros registrados hoy" mientras la sesión traía S/ 5.169,86 del sábado.
+   * Desde afuera parecía que no se podía liquidar el día anterior.
+   */
+  const { data: pendientesRaw } = await (supabase as any)
+    .from('cobros')
+    .select('id, numero, fecha, total, clientes(razon_social), cliente_externo_nombre')
+    .neq('fecha', today)
+    .order('fecha', { ascending: true })
+
+  const { data: yaEnCaja } = await (supabase as any)
+    .from('caja_movimientos')
+    .select('cobro_id')
+    .not('cobro_id', 'is', null)
+
+  const liquidados = new Set(((yaEnCaja ?? []) as any[]).map((m) => m.cobro_id))
+  const cobrosPendientes = ((pendientesRaw ?? []) as any[])
+    .filter((c) => !liquidados.has(c.id) && Number(c.total ?? 0) > 0)
+    .map((c) => ({
+      id: c.id,
+      numero: c.numero ?? null,
+      fecha: c.fecha,
+      total: Number(c.total ?? 0),
+      cliente: c.clientes?.razon_social ?? c.cliente_externo_nombre ?? '—',
+    }))
+
   // 3) Movimientos de la sesión actual (si hay)
   let movimientos: MovimientoCaja[] = []
   if (sesionAbierta?.id) {
@@ -115,6 +147,7 @@ async function getCajaData() {
     today,
     sesionAbierta,
     cobros,
+    cobrosPendientes,
     movimientos,
     historial,
   }
@@ -129,6 +162,7 @@ export default async function CajaPage() {
       cobrosIniciales={data.cobros}
       movimientosIniciales={data.movimientos}
       historialInicial={data.historial}
+      pendientes={data.cobrosPendientes}
     />
   )
 }
