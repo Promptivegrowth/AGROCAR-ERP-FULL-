@@ -46,6 +46,8 @@ class Agente
 {
     const string VERSION = "2.0";
     const string MARCA = "Promptive";
+    /** Salto de linea de Windows, para los mensajes en pantalla. */
+    static readonly string SALTO = Environment.NewLine;
 
     // Cada segundo: suficiente para que el ticket salga apenas se factura, sin
     // castigar al servidor. Si falla la red se va espaciando, ver EsperaActual.
@@ -416,16 +418,59 @@ class Agente
             try { System.Net.ServicePointManager.SecurityProtocol = (SecurityProtocolType)3072; } catch { }
         }
 
+        /*
+         * Uno solo por computadora.
+         *
+         * Dos agentes escuchando la misma cola es peor que ninguno: los dos
+         * levantan el mismo ticket y sale impreso dos veces. Pasa sin querer
+         * —se abre el archivo de la descarga estando ya instalado—, asi que se
+         * bloquea de entrada.
+         *
+         * El candado es por sesion de Windows y no global: en una computadora
+         * compartida, cada usuario es una instalacion distinta.
+         */
+        bool primero;
+        var candado = new Mutex(true, "AgrocarAgenteImpresionPromptive", out primero);
+        if (!primero)
+        {
+            var r = System.Windows.Forms.MessageBox.Show(
+                "El agente de impresion ya esta funcionando en esta computadora." + SALTO + SALTO +
+                "Lo puedes ver con su icono al lado del reloj." + SALTO + SALTO +
+                "Quieres volver a configurarlo con otro codigo?",
+                "Agente de impresion - " + MARCA,
+                System.Windows.Forms.MessageBoxButtons.YesNo,
+                System.Windows.Forms.MessageBoxIcon.Information,
+                System.Windows.Forms.MessageBoxDefaultButton.Button2);
+
+            if (r != System.Windows.Forms.DialogResult.Yes) return;
+
+            // Se cierra el que estaba, para que quede uno solo, y se sigue
+            // como si fuera una instalacion nueva.
+            CerrarOtrasInstancias();
+            try { candado.Dispose(); } catch { }
+            candado = new Mutex(true, "AgrocarAgenteImpresionPromptive", out primero);
+            try { File.Delete(RutaConfig()); } catch { }
+        }
+
         LeerConfig();
 
+        /*
+         * Sin codigo todavia: esta computadora no esta instalada.
+         *
+         * El mismo archivo hace las dos cosas —instalar y despues trabajar—
+         * para que quien lo recibe tenga un solo archivo que abrir.
+         */
         if (string.IsNullOrEmpty(token))
         {
-            System.Windows.Forms.MessageBox.Show(
-                "Falta configurar esta computadora.\r\n\r\n" +
-                "En el ERP: Configuracion > Impresion de tickets > Agregar esta computadora.\r\n" +
-                "Ahi se obtiene el codigo, que va en el archivo:\r\n\r\n" + RutaConfig(),
-                "Agente de impresion - " + MARCA);
-            try { System.Diagnostics.Process.Start("notepad.exe", RutaConfig()); } catch { }
+            System.Windows.Forms.Application.EnableVisualStyles();
+            System.Windows.Forms.Application.SetCompatibleTextRenderingDefault(false);
+            using (var v = new VentanaInstalacion())
+            {
+                System.Windows.Forms.Application.Run(v);
+            }
+            // La instalacion arranca el agente desde su carpeta definitiva y
+            // este proceso se retira: si siguiera vivo el de la descarga,
+            // cerrar esa ventana mataria el agente.
             return;
         }
 
@@ -436,6 +481,22 @@ class Agente
         hilo.Start();
 
         System.Windows.Forms.Application.Run();
+        try { candado.ReleaseMutex(); } catch { }
+    }
+
+    /** Cierra cualquier otro agente de este mismo usuario. */
+    static void CerrarOtrasInstancias()
+    {
+        try
+        {
+            var yo = System.Diagnostics.Process.GetCurrentProcess();
+            foreach (var p in System.Diagnostics.Process.GetProcessesByName(yo.ProcessName))
+            {
+                if (p.Id == yo.Id) continue;
+                try { p.Kill(); p.WaitForExit(4000); } catch { }
+            }
+        }
+        catch { }
     }
 
     static void ActualizarBandeja()
