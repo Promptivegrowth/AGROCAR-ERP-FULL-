@@ -24,6 +24,20 @@ import { Package, Search, Loader2, Calendar } from 'lucide-react'
  * Daniel pidió esto para cuadrar lo que sale del almacén y detectar
  * productos adicionales / devoluciones (estas últimas en el módulo
  * Notas de Crédito por ahora).
+ *
+ * Filtrar por despacho
+ * --------------------
+ * Por fecha esta vista nunca cuadra contra la hoja de ruta que el repartidor
+ * lleva impresa, y no porque una de las dos esté mal: miden cosas distintas.
+ * La hoja de ruta agrupa por VIAJE —lo que sube al camión— y un viaje puede
+ * llevar pedidos de días anteriores que quedaron sin entregar. Esta vista
+ * agrupa por FECHA DEL COMPROBANTE. El 26/08/2026 la diferencia fueron
+ * S/ 503.38: tres pedidos facturados el 25 que salieron con el reparto del 26.
+ *
+ * Por eso se puede elegir un despacho: ahí se ve exactamente lo que subió a
+ * ese camión —los mismos pedidos, el mismo monto, las mismas unidades y
+ * kilos— y cuadra contra el papel. Al elegirlo, el rango de fechas queda de
+ * lado: manda el despacho.
  */
 
 interface ItemRow {
@@ -48,6 +62,16 @@ interface ItemRow {
   subtotal: number
 }
 
+/** Un viaje, como aparece en el selector y en la línea de cuadre. */
+interface Despacho {
+  id: string
+  numero: string
+  fecha_despacho: string
+  total_pedidos: number
+  total_monto: number
+  placa: string
+}
+
 interface ProductoAgg {
   producto_id: string | null
   codigo: string
@@ -68,8 +92,10 @@ export default function MovimientosDiaPage() {
   const [hasta, setHasta] = useState(hoy)
   const [tipoComp, setTipoComp] = useState<string>('todos')
   const [vendedorId, setVendedorId] = useState<string>('todos')
+  const [despachoId, setDespachoId] = useState<string>('todos')
   const [filtroProducto, setFiltroProducto] = useState('')
   const [vendedores, setVendedores] = useState<{ id: string; full_name: string }[]>([])
+  const [despachos, setDespachos] = useState<Despacho[]>([])
   const [items, setItems] = useState<ItemRow[]>([])
   const [loading, setLoading] = useState(false)
   const [openProducto, setOpenProducto] = useState<ProductoAgg | null>(null)
@@ -87,9 +113,56 @@ export default function MovimientosDiaPage() {
     })()
   }, [supabase])
 
+  // Despachos recientes para el filtro. Se acotan a los últimos 60 días
+  // porque el selector se vuelve inmanejable con un año entero y el cuadre
+  // siempre se hace sobre repartos de esta semana o la pasada.
+  useEffect(() => {
+    ;(async () => {
+      const desdeD = new Date(hoy + 'T00:00:00-05:00')
+      desdeD.setDate(desdeD.getDate() - 60)
+      const { data } = await (supabase as any)
+        .from('despachos')
+        .select('id, numero, fecha_despacho, total_pedidos, total_monto, vehiculos(placa)')
+        .gte('fecha_despacho', desdeD.toISOString().slice(0, 10))
+        .order('fecha_despacho', { ascending: false })
+        .order('numero', { ascending: false })
+      setDespachos(((data ?? []) as any[]).map((d) => ({
+        id: d.id,
+        numero: d.numero,
+        fecha_despacho: d.fecha_despacho,
+        total_pedidos: Number(d.total_pedidos ?? 0),
+        total_monto: Number(d.total_monto ?? 0),
+        placa: d.vehiculos?.placa ?? '—',
+      })))
+    })()
+  }, [supabase, hoy])
+
   const loadMovimientos = useCallback(async () => {
     setLoading(true)
     try {
+      /*
+       * Si hay un despacho elegido, primero hay que saber qué pedidos llevaba.
+       * No alcanza con mirar la fecha: un viaje puede cargar pedidos de días
+       * anteriores que quedaron sin entregar, y son justamente esos los que
+       * hacen que el cuadre por fecha no dé.
+       */
+      let pedidosDelDespacho: string[] | null = null
+      if (despachoId !== 'todos') {
+        const { data: di } = await (supabase as any)
+          .from('despachos_items')
+          .select('pedido_id')
+          .eq('despacho_id', despachoId)
+        pedidosDelDespacho = ((di ?? []) as any[])
+          .map((x) => x.pedido_id)
+          .filter(Boolean)
+        // Un despacho sin pedidos no debe caer al filtro por fecha y mostrar
+        // todo el día como si fuera suyo: mejor vacío que un número inventado.
+        if (pedidosDelDespacho.length === 0) {
+          setItems([])
+          return
+        }
+      }
+
       let q = (supabase as any)
         .from('comprobantes_items')
         .select(`
@@ -102,9 +175,15 @@ export default function MovimientosDiaPage() {
             pedidos(vendedor_id, profiles!pedidos_vendedor_id_fkey(full_name))
           )
         `)
-        .gte('comprobantes.fecha_emision', desde)
-        .lte('comprobantes.fecha_emision', hasta)
         .neq('comprobantes.estado', 'anulado')
+
+      if (pedidosDelDespacho) {
+        q = q.in('comprobantes.pedido_id', pedidosDelDespacho)
+      } else {
+        q = q
+          .gte('comprobantes.fecha_emision', desde)
+          .lte('comprobantes.fecha_emision', hasta)
+      }
 
       if (tipoComp !== 'todos') q = q.eq('comprobantes.tipo', tipoComp)
       const { data, error } = await q
@@ -156,7 +235,7 @@ export default function MovimientosDiaPage() {
     } finally {
       setLoading(false)
     }
-  }, [supabase, desde, hasta, tipoComp, vendedorId])
+  }, [supabase, desde, hasta, tipoComp, vendedorId, despachoId])
 
   useEffect(() => { loadMovimientos() }, [loadMovimientos])
 
@@ -199,15 +278,21 @@ export default function MovimientosDiaPage() {
     comprobantes: new Set(items.map((i) => i.comp_id)).size,
   }), [productosAgg, items])
 
-  const setHoyRango = () => { setDesde(hoy); setHasta(hoy) }
+  const despachoSel = useMemo(
+    () => despachos.find((d) => d.id === despachoId) ?? null,
+    [despachos, despachoId],
+  )
+
+  // Elegir una fecha es decir "quiero ver por fecha": suelta el despacho.
+  const setHoyRango = () => { setDespachoId('todos'); setDesde(hoy); setHasta(hoy) }
   const setAyer = () => {
     const d = new Date(hoy + 'T00:00:00-05:00'); d.setDate(d.getDate() - 1)
     const s = d.toISOString().slice(0, 10)
-    setDesde(s); setHasta(s)
+    setDespachoId('todos'); setDesde(s); setHasta(s)
   }
   const setSemana = () => {
     const d = new Date(hoy + 'T00:00:00-05:00'); d.setDate(d.getDate() - 6)
-    setDesde(d.toISOString().slice(0, 10)); setHasta(hoy)
+    setDespachoId('todos'); setDesde(d.toISOString().slice(0, 10)); setHasta(hoy)
   }
 
   return (
@@ -220,7 +305,9 @@ export default function MovimientosDiaPage() {
             Movimientos del día
           </h1>
           <p className="text-sm text-gray-500 mt-0.5">
-            Productos vendidos / despachados — para cuadrar almacén
+            {despachoSel
+              ? `Despacho ${despachoSel.numero} · ${formatDate(despachoSel.fecha_despacho)} · ${despachoSel.placa} — lo que subió a ese camión`
+              : 'Productos vendidos / despachados — para cuadrar almacén'}
           </p>
         </div>
         <div className="text-right bg-black text-white rounded-lg px-4 py-2">
@@ -232,7 +319,21 @@ export default function MovimientosDiaPage() {
       {/* Filtros */}
       <div className="bg-white border border-gray-200 rounded-lg p-3">
         <div className="flex flex-wrap items-end gap-3">
-          <div className="flex gap-1">
+          <div>
+            <Label className="text-[10px] text-gray-500">Despacho (hoja de ruta)</Label>
+            <Select value={despachoId} onValueChange={setDespachoId}>
+              <SelectTrigger className="w-64 h-8 text-xs"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="todos">Por fecha (no por despacho)</SelectItem>
+                {despachos.map((d) => (
+                  <SelectItem key={d.id} value={d.id}>
+                    {d.numero} · {formatDate(d.fecha_despacho)} · {d.placa} · {d.total_pedidos} ped.
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className={`flex gap-1 ${despachoSel ? 'opacity-40 pointer-events-none' : ''}`}>
             <button onClick={setHoyRango}
               className={`px-2 py-1.5 text-xs font-semibold rounded border ${
                 desde === hoy && hasta === hoy ? 'bg-[#FBE600] border-yellow-500' : 'bg-white border-gray-300 hover:bg-gray-50'
@@ -248,11 +349,11 @@ export default function MovimientosDiaPage() {
               7 días
             </button>
           </div>
-          <div>
+          <div className={despachoSel ? 'opacity-40 pointer-events-none' : ''}>
             <Label className="text-[10px] text-gray-500">Desde</Label>
             <Input type="date" value={desde} max={hasta} onChange={(e) => setDesde(e.target.value)} className="w-36 h-8 text-xs" />
           </div>
-          <div>
+          <div className={despachoSel ? 'opacity-40 pointer-events-none' : ''}>
             <Label className="text-[10px] text-gray-500">Hasta</Label>
             <Input type="date" value={hasta} min={desde} max={hoy} onChange={(e) => setHasta(e.target.value)} className="w-36 h-8 text-xs" />
           </div>
@@ -293,6 +394,46 @@ export default function MovimientosDiaPage() {
           {totales.productos} productos · {totales.cantidad.toFixed(2)} unidades · {totales.peso.toFixed(2)} kg ·
           {' '}{totales.comprobantes} comprobantes
         </p>
+
+        {/*
+          El cuadre contra el papel. Se muestra solo con un despacho elegido,
+          que es cuando las dos cifras son comparables: mismo viaje, mismos
+          pedidos. Si la diferencia no es cero hay algo real que mirar —un
+          pedido sin comprobante, uno anulado— y no un desfase de fechas.
+        */}
+        {despachoSel && (
+          <div className="mt-2 border-t border-gray-200 pt-2 flex flex-wrap items-center gap-x-6 gap-y-1 text-[11px]">
+            <span className="font-semibold text-gray-700">
+              Cuadre contra la hoja de ruta {despachoSel.numero}
+            </span>
+            <span className="text-gray-600">
+              Hoja de ruta: <strong>{despachoSel.total_pedidos}</strong> pedidos ·
+              {' '}<strong>{formatCurrency(despachoSel.total_monto)}</strong>
+            </span>
+            <span className="text-gray-600">
+              Facturado: <strong>{totales.comprobantes}</strong> comprobantes ·
+              {' '}<strong>{formatCurrency(totales.total)}</strong>
+            </span>
+            {(() => {
+              // Se compara con un centavo de tolerancia: los subtotales se
+              // redondean por línea y una suma de 138 líneas puede quedar a
+              // medio centavo sin que falte nada.
+              const dif = totales.total - despachoSel.total_monto
+              const cuadra = Math.abs(dif) < 0.01 && !filtroProducto.trim() && tipoComp === 'todos' && vendedorId === 'todos'
+              if (cuadra) {
+                return <span className="px-2 py-0.5 rounded bg-green-100 text-green-800 font-semibold">Cuadra exacto</span>
+              }
+              if (filtroProducto.trim() || tipoComp !== 'todos' || vendedorId !== 'todos') {
+                return <span className="text-gray-500">(hay otros filtros puestos — quitalos para cuadrar el total)</span>
+              }
+              return (
+                <span className="px-2 py-0.5 rounded bg-amber-100 text-amber-900 font-semibold">
+                  Diferencia: {formatCurrency(dif)}
+                </span>
+              )
+            })()}
+          </div>
+        )}
       </div>
 
       {/* Tabla principal */}
@@ -303,7 +444,9 @@ export default function MovimientosDiaPage() {
           </div>
         ) : productosAgg.length === 0 ? (
           <p className="text-center py-12 text-gray-400 text-sm">
-            Sin movimientos en el período seleccionado.
+            {despachoSel
+              ? 'Ese despacho no tiene pedidos facturados.'
+              : 'Sin movimientos en el período seleccionado.'}
           </p>
         ) : (
           <div className="overflow-x-auto max-h-[65vh] overflow-y-auto">
