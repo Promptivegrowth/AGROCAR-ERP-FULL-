@@ -33,7 +33,9 @@ DE AHI EN ADELANTE
 - En Facturacion, "Imprimir en ticketera" manda el ticket y sale en menos de
   un segundo.
 - El lote de tickets sale solo al abrirse la pantalla.
-- Doble clic en el icono del reloj para ver su estado o cerrarlo.
+- Doble clic en el icono del reloj: ahi esta todo. El estado, por que
+  impresora esta saliendo, y los botones para elegir otra, revisar las
+  impresoras de la computadora e imprimir una prueba.
 
 
 SI ALGO NO SALE
@@ -43,7 +45,7 @@ SI ALGO NO SALE
   computadora tenga internet.
 
 - Dice que no encuentra la impresora:
-  clic derecho en el icono del reloj > "Elegir impresora" y marcar cual es.
+  doble clic en el icono del reloj > "Elegir impresora" y marcar cual es.
   El agente la reconoce sola por el nombre, pero hay marcas que no dicen ni
   "POS" ni "80mm" en ningun lado. Ahi mismo esta "Imprimir una prueba" para
   confirmar que quedo bien antes de facturar.
@@ -53,7 +55,7 @@ SI ALGO NO SALE
   el ticket sale solo.
 
 - Otra impresora de la computadora dejo de funcionar:
-  clic derecho en el icono del reloj > "Revisar impresoras de esta PC".
+  doble clic en el icono del reloj > "Revisar impresoras".
   Muestra como esta cada una, marca en rojo las que quedaron apuntando a un
   puerto que no les corresponde y ofrece devolverlas. Una version anterior
   del instalador podia equivocarse de impresora al ajustar la ticketera; la

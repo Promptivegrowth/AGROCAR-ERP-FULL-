@@ -650,6 +650,112 @@ class Agente
         catch { }
     }
 
+    /**
+     * Abre la ventana del agente.
+     *
+     * Con los botones adentro: antes esto era un cartel donde no se podia
+     * tocar nada y todo lo util estaba en el menu del clic derecho, que no es
+     * el primer lugar donde uno mira.
+     */
+    static void MostrarEstado()
+    {
+        string cual, deDonde;
+        if (!string.IsNullOrEmpty(impresora)) { cual = impresora; deDonde = "elegida en esta computadora"; }
+        else if (!string.IsNullOrEmpty(impresoraDelErp)) { cual = impresoraDelErp; deDonde = "elegida desde el ERP"; }
+        else { cual = AdivinarTicketera(); deDonde = "detectada sola"; }
+
+        var datos = new VentanaEstado.Datos();
+        datos.Version = VERSION;
+        datos.Estado = ultimoEstado;
+        datos.UltimoContacto = ultimoContacto == DateTime.MinValue
+            ? "todavia ninguno" : ultimoContacto.ToString("HH:mm:ss");
+        datos.Impresos = impresos;
+        datos.Fallidos = fallidos;
+        datos.Sistema = urlBase;
+        datos.Impresora = cual;
+        datos.DeDonde = deDonde;
+        datos.RutaConfig = RutaConfig();
+
+        using (var v = new VentanaEstado(datos))
+        {
+            v.AlElegirImpresora = delegate { ElegirImpresoraAMano(v); };
+            v.AlRevisarImpresoras = delegate
+            {
+                try { using (var r = new VentanaImpresoras()) r.ShowDialog(v); }
+                catch (Exception ex)
+                {
+                    System.Windows.Forms.MessageBox.Show(v,
+                        "No se pudo abrir la revision." + SALTO + SALTO + ex.Message,
+                        "Agente de impresion - " + MARCA);
+                }
+            };
+            v.AlImprimirPrueba = delegate { ImprimirPrueba(v); };
+            v.ShowDialog();
+        }
+    }
+
+    /** Deja elegir entre las impresoras de la computadora. */
+    static void ElegirImpresoraAMano(System.Windows.Forms.IWin32Window duenio)
+    {
+        var reales = ImpresorasRealesEnCache();
+        if (reales.Count == 0)
+        {
+            System.Windows.Forms.MessageBox.Show(duenio,
+                "Windows no tiene ninguna impresora instalada en esta computadora.",
+                "Agente de impresion - " + MARCA);
+            return;
+        }
+        using (var d = new VentanaElegirPuerto("Ticketera de esta computadora",
+                                               impresora ?? "(se detecta sola)", reales))
+        {
+            d.Text = "Elegir la ticketera";
+            if (d.ShowDialog(duenio) != System.Windows.Forms.DialogResult.OK || d.Elegido == null) return;
+            GuardarImpresora(d.Elegido);
+            ActualizarBandeja();
+            System.Windows.Forms.MessageBox.Show(duenio,
+                "Los tickets van a salir por:" + SALTO + SALTO + d.Elegido,
+                "Agente de impresion - " + MARCA);
+        }
+    }
+
+    /** Saca un ticket corto para confirmar que sale por donde tiene que salir. */
+    static void ImprimirPrueba(System.Windows.Forms.IWin32Window duenio)
+    {
+        string usar = !string.IsNullOrEmpty(impresora) ? impresora
+                    : (!string.IsNullOrEmpty(impresoraDelErp) ? impresoraDelErp : AdivinarTicketera());
+        if (string.IsNullOrEmpty(usar))
+        {
+            System.Windows.Forms.MessageBox.Show(duenio,
+                "No hay ninguna ticketera elegida." + SALTO + SALTO +
+                "Usa el boton \"Elegir impresora\" y marca cual es.",
+                "Agente de impresion - " + MARCA);
+            return;
+        }
+
+        // El salto de linea va como byte y no dentro del texto: el ticket no es
+        // una cadena de Windows sino ordenes para la impresora.
+        var t = new System.Collections.Generic.List<byte>();
+        Action<string> renglon = delegate(string txt)
+        {
+            t.AddRange(Encoding.ASCII.GetBytes(txt));
+            t.Add(0x0a);
+        };
+        t.AddRange(new byte[] { 0x1b, 0x40 });        // reiniciar
+        t.AddRange(new byte[] { 0x1b, 0x61, 0x01 });  // centrar
+        renglon("AGROCAR");
+        renglon("Prueba de impresion");
+        renglon(DateTime.Now.ToString("dd/MM/yyyy HH:mm"));
+        renglon(usar);
+        t.AddRange(new byte[] { 0x1d, 0x56, 0x42, 120 }); // avanzar y cortar
+
+        string err = ImprimirRaw(usar, t.ToArray());
+        System.Windows.Forms.MessageBox.Show(duenio,
+            err == null
+                ? "Salio la prueba por:" + SALTO + SALTO + usar
+                : "No se pudo imprimir en:" + SALTO + usar + SALTO + SALTO + err,
+            "Agente de impresion - " + MARCA);
+    }
+
     static void ActualizarBandeja()
     {
         if (bandeja == null) return;
@@ -691,39 +797,7 @@ class Agente
             menu.Items.Add(new System.Windows.Forms.ToolStripSeparator());
 
             var estado = new System.Windows.Forms.ToolStripMenuItem("Ver estado");
-            estado.Click += delegate(object s, EventArgs e)
-            {
-                var sb = new StringBuilder();
-                sb.AppendLine("Agente de impresion AGROCAR");
-                sb.AppendLine("por " + MARCA + "  -  version " + VERSION);
-                sb.AppendLine();
-                sb.AppendLine("Estado: " + ultimoEstado);
-                sb.AppendLine("Ultimo contacto: " +
-                    (ultimoContacto == DateTime.MinValue ? "todavia ninguno" : ultimoContacto.ToString("HH:mm:ss")));
-                sb.AppendLine("Tickets impresos: " + impresos);
-                if (fallidos > 0) sb.AppendLine("Con problemas: " + fallidos);
-                sb.AppendLine();
-                sb.AppendLine("Sistema: " + urlBase);
-                /*
-                 * Mostrar la que realmente se va a usar.
-                 *
-                 * Antes esta linea solo miraba la configuracion local y lo que
-                 * adivinaba, ignorando la que se elige desde el ERP. En Caja
-                 * se forzo POS-80-Series y la ventana seguia mostrando
-                 * POS-T80: parecia que el cambio no habia llegado.
-                 */
-                string cual, deDonde;
-                if (!string.IsNullOrEmpty(impresora)) { cual = impresora; deDonde = "elegida en esta computadora"; }
-                else if (!string.IsNullOrEmpty(impresoraDelErp)) { cual = impresoraDelErp; deDonde = "elegida desde el ERP"; }
-                else { cual = AdivinarTicketera(); deDonde = "detectada sola"; }
-                sb.AppendLine("Impresora: " + (cual ?? "(ninguna encontrada)") +
-                              (cual != null ? "   (" + deDonde + ")" : ""));
-                sb.AppendLine("Configuracion: " + RutaConfig());
-                sb.AppendLine();
-                sb.AppendLine("Impresoras de esta computadora:");
-                foreach (string n in Impresoras()) sb.AppendLine("  - " + n);
-                System.Windows.Forms.MessageBox.Show(sb.ToString(), "Agente de impresion - " + MARCA);
-            };
+            estado.Click += delegate(object s, EventArgs e) { MostrarEstado(); };
             menu.Items.Add(estado);
 
             /*
@@ -797,41 +871,7 @@ class Agente
             menu.Items.Add(revisar);
 
             var probar = new System.Windows.Forms.ToolStripMenuItem("Imprimir una prueba");
-            probar.Click += delegate(object s, EventArgs e)
-            {
-                string usar = impresora ?? AdivinarTicketera();
-                if (string.IsNullOrEmpty(usar))
-                {
-                    System.Windows.Forms.MessageBox.Show(
-                        "No hay ninguna ticketera elegida." + SALTO + SALTO +
-                        "Usa \"Elegir impresora\" en este mismo menu y marca cual es.",
-                        "Agente de impresion - " + MARCA);
-                    return;
-                }
-                // El salto de linea va como byte y no dentro del texto: el
-                // ticket no es una cadena de Windows sino ordenes para la
-                // impresora.
-                var t = new System.Collections.Generic.List<byte>();
-                Action<string> renglon = delegate(string txt)
-                {
-                    t.AddRange(Encoding.ASCII.GetBytes(txt));
-                    t.Add(0x0a);
-                };
-                t.AddRange(new byte[] { 0x1b, 0x40 });        // reiniciar
-                t.AddRange(new byte[] { 0x1b, 0x61, 0x01 });  // centrar
-                renglon("AGROCAR");
-                renglon("Prueba de impresion");
-                renglon(DateTime.Now.ToString("dd/MM/yyyy HH:mm"));
-                renglon(usar);
-                t.AddRange(new byte[] { 0x1b, 0x4a, 120 });        // avanzar hasta la cuchilla
-                t.AddRange(new byte[] { 0x1d, 0x56, 0x42, 0x00 }); // cortar
-                string err = ImprimirRaw(usar, t.ToArray());
-                System.Windows.Forms.MessageBox.Show(
-                    err == null
-                        ? "Salio la prueba por:" + SALTO + SALTO + usar
-                        : "No se pudo imprimir en:" + SALTO + usar + SALTO + SALTO + err,
-                    "Agente de impresion - " + MARCA);
-            };
+            probar.Click += delegate(object s, EventArgs e) { ImprimirPrueba(null); };
             menu.Items.Add(probar);
 
             menu.Items.Add(new System.Windows.Forms.ToolStripSeparator());
@@ -854,7 +894,7 @@ class Agente
             menu.Items.Add(salir);
 
             bandeja.ContextMenuStrip = menu;
-            bandeja.DoubleClick += delegate(object s, EventArgs e) { estado.PerformClick(); };
+            bandeja.DoubleClick += delegate(object s, EventArgs e) { MostrarEstado(); };
         }
         catch { /* sin bandeja el agente igual imprime */ }
     }
