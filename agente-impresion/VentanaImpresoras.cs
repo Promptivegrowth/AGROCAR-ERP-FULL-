@@ -123,12 +123,18 @@ public class VentanaImpresoras : Form
     {
         if (puerto == null || !System.Text.RegularExpressions.Regex.IsMatch(puerto, @"^USB\d+$"))
             return false;
+        /*
+         * Solo por el driver o por ser una impresora compartida de la red.
+         *
+         * Antes tambien se marcaba por la marca —Epson, HP, Canon— y eso da
+         * falsos positivos: una Epson L3150 se conecta por USB perfectamente.
+         * Marcar como rota una que esta bien es peor que no marcarla: invita a
+         * "arreglarla" y romperla de verdad.
+         */
         string d = (driver ?? "").ToLowerInvariant();
-        string n = (nombre ?? "").ToLowerInvariant();
-        if (d.Contains("ipp") || d.Contains("wsd") || d.Contains("network")) return true;
-        foreach (string marca in new[] { "hp ", "hp9", "epson", "canon", "brother", "samsung", "xerox", "smart tank" })
-            if (n.Contains(marca)) return true;
-        return false;
+        string n = (nombre ?? "");
+        if (n.StartsWith("\\\\")) return true;
+        return d.Contains("ipp") || d.Contains("wsd") || d.Contains("network");
     }
 
     List<Fila> Leer()
@@ -151,6 +157,8 @@ public class VentanaImpresoras : Form
                 }
                 filas.Add(f);
             }
+
+            MarcarPuertosCompartidos(filas);
         }
         catch (Exception ex)
         {
@@ -158,6 +166,41 @@ public class VentanaImpresoras : Form
                 "Impresoras - " + MARCA);
         }
         return filas;
+    }
+
+    /**
+     * Dos o mas impresoras en el mismo puerto.
+     *
+     * Este es el rastro que dejo el instalador viejo, y el sintoma real del
+     * problema: en la computadora de caja quedaron tres apuntando a USB001 —la
+     * ticketera POS-T80 y las dos Epson— asi que los tickets salian por la
+     * Epson. Windows acepta el trabajo igual y el agente lo da por impreso.
+     *
+     * Se marcan todas las que comparten, porque desde afuera no hay forma de
+     * saber cual es la que corresponde a ese puerto.
+     */
+    static void MarcarPuertosCompartidos(List<Fila> filas)
+    {
+        // Los puertos que no son un dispositivo: varias impresoras pueden
+        // compartirlos sin que eso sea un problema.
+        var noCuentan = new List<string> { "PORTPROMPT:", "nul:", "SHRFAX:", "" };
+
+        var cuantas = new Dictionary<string, int>();
+        foreach (var f in filas)
+        {
+            string puerto = f.Puerto ?? "";
+            if (noCuentan.Contains(puerto)) continue;
+            cuantas[puerto] = cuantas.ContainsKey(puerto) ? cuantas[puerto] + 1 : 1;
+        }
+
+        foreach (var f in filas)
+        {
+            string puerto = f.Puerto ?? "";
+            if (noCuentan.Contains(puerto)) continue;
+            if (!cuantas.ContainsKey(puerto) || cuantas[puerto] < 2) continue;
+            f.Sospechosa = true;
+            f.Motivo = "comparte puerto con otras " + (cuantas[puerto] - 1);
+        }
     }
 
     static int TrabajosEnCola(string impresora)
