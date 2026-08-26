@@ -706,7 +706,9 @@ class Agente
             return;
         }
         using (var d = new VentanaElegirPuerto("Ticketera de esta computadora",
-                                               impresora ?? "(se detecta sola)", reales))
+                                               impresora ?? "(se detecta sola)", reales,
+                                               "Marca por cual de las impresoras de esta computadora tienen " +
+                                               "que salir los tickets del ERP."))
         {
             d.Text = "Elegir la ticketera";
             if (d.ShowDialog(duenio) != System.Windows.Forms.DialogResult.OK || d.Elegido == null) return;
@@ -751,7 +753,10 @@ class Agente
         string err = ImprimirRaw(usar, t.ToArray());
         System.Windows.Forms.MessageBox.Show(duenio,
             err == null
-                ? "Salio la prueba por:" + SALTO + SALTO + usar
+                ? "La prueba se mando a:" + SALTO + SALTO + usar + SALTO + SALTO +
+                  "Si en unos segundos no sale el papel, la impresora no la esta recibiendo:" + SALTO +
+                  "revisa que este encendida, con papel y la tapa cerrada, y si aun asi no sale," + SALTO +
+                  "el puerto de Windows no llega a ella."
                 : "No se pudo imprimir en:" + SALTO + usar + SALTO + SALTO + err,
             "Agente de impresion - " + MARCA);
     }

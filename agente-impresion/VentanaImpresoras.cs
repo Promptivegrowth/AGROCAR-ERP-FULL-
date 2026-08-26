@@ -362,7 +362,17 @@ public class VentanaElegirPuerto : Form
     public string Elegido;
     ListBox lista;
 
+    /**
+     * Sirve para dos cosas: elegir el puerto de una impresora y elegir cuál de
+     * las impresoras es la ticketera. Son listas distintas, así que el texto
+     * de ayuda lo dice quien abre el cuadro — antes hablaba de puertos aunque
+     * estuviera mostrando impresoras, y eso confundía justo cuando había que
+     * decidir rápido.
+     */
     public VentanaElegirPuerto(string impresora, string actual, List<string> puertos)
+        : this(impresora, actual, puertos, null) { }
+
+    public VentanaElegirPuerto(string impresora, string actual, List<string> puertos, string ayudaTexto)
     {
         Text = "Elegir el puerto";
         FormBorderStyle = FormBorderStyle.FixedDialog;
@@ -378,7 +388,7 @@ public class VentanaElegirPuerto : Form
         Controls.Add(t);
 
         var ayuda = new Label();
-        ayuda.Text = "Las que se conectan por WiFi o red usan un puerto que empieza con WSD- " +
+        ayuda.Text = ayudaTexto ?? "Las que se conectan por WiFi o red usan un puerto que empieza con WSD- " +
                      "o que es una dirección IP.";
         ayuda.Bounds = new Rectangle(16, 54, 408, 34);
         ayuda.ForeColor = Color.FromArgb(107, 114, 128);
@@ -391,7 +401,7 @@ public class VentanaElegirPuerto : Form
         Controls.Add(lista);
 
         var ok = new Button();
-        ok.Text = "Usar este puerto";
+        ok.Text = ayudaTexto == null ? "Usar este puerto" : "Usar esta impresora";
         ok.Bounds = new Rectangle(224, 252, 130, 32);
         ok.DialogResult = DialogResult.OK;
         ok.Click += delegate { Elegido = lista.SelectedItem as string; };
