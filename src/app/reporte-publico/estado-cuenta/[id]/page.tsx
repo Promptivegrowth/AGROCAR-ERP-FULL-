@@ -31,9 +31,16 @@ export default async function EstadoCuentaPublico({ params }: { params: Promise<
       .eq('cobros.cliente_id', id),
   ])
 
+  // Las lineas sin comprobante son saldo a favor: el cliente pago de mas y
+  // todavia no hay boleta contra la cual descontarlo. No entran en el saldo de
+  // ningun comprobante, pero se le muestran, porque es plata suya.
   const aplicadoMap = new Map<string, number>()
+  let aFavor = 0
   ;(cobRes.data ?? []).forEach((a: any) => {
-    if (!a.comprobante_id) return
+    if (!a.comprobante_id) {
+      aFavor += Number(a.monto_aplicado ?? 0)
+      return
+    }
     aplicadoMap.set(a.comprobante_id, (aplicadoMap.get(a.comprobante_id) ?? 0) + Number(a.monto_aplicado ?? 0))
   })
 
@@ -96,6 +103,16 @@ export default async function EstadoCuentaPublico({ params }: { params: Promise<
         </div>
 
         {/* Saldo total destacado */}
+        {aFavor > 0.01 && (
+          <div className="rounded-lg p-4 mb-4 border-2 bg-emerald-50 border-emerald-300 text-center">
+            <p className="text-xs font-bold uppercase text-emerald-800">Saldo a favor</p>
+            <p className="text-3xl font-bold mt-1 text-emerald-700">{formatCurrency(aFavor)}</p>
+            <p className="text-[11px] text-emerald-700 mt-1">
+              Pagaste por adelantado. Se descuenta solo de tu proxima compra.
+            </p>
+          </div>
+        )}
+
         <div className={`rounded-lg p-4 mb-4 border-2 ${saldoTotal > 0 ? 'bg-red-50 border-red-300' : 'bg-green-50 border-green-300'} text-center`}>
           <p className={`text-xs font-bold uppercase ${saldoTotal > 0 ? 'text-red-700' : 'text-green-700'}`}>
             {saldoTotal > 0 ? 'Saldo Pendiente' : '✓ Cuenta al día'}

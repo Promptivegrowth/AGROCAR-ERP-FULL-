@@ -41,9 +41,22 @@ async function getData(clienteId: string) {
   const aplicaciones: any[] = cobRes.data ?? []
 
   // Calcular saldo por comprobante (total - aplicado)
+  //
+  // Las líneas sin comprobante son saldo a favor del cliente: pagó de más y
+  // todavía no hay factura contra la cual descontarlo. No entran acá —cada
+  // comprobante se salda con lo que se le aplicó a él— pero tampoco se tiran:
+  // se muestran aparte, porque son plata que el cliente ya puso.
+  //
+  // Antes se descartaban sin más y el reporte reclamaba deuda ya cobrada. Hoy
+  // el anticipo se aplica solo al emitirse el comprobante (migración 101), así
+  // que lo que queda acá es un saldo a favor genuino, sin factura que lo use.
   const aplicadoMap = new Map<string, number>()
+  let saldoAFavor = 0
   aplicaciones.forEach((a: any) => {
-    if (!a.comprobante_id) return
+    if (!a.comprobante_id) {
+      saldoAFavor += Number(a.monto_aplicado ?? 0)
+      return
+    }
     aplicadoMap.set(a.comprobante_id, (aplicadoMap.get(a.comprobante_id) ?? 0) + Number(a.monto_aplicado ?? 0))
   })
 
@@ -70,8 +83,9 @@ async function getData(clienteId: string) {
   const pendientes = detalles.filter((d) => d.saldo > 0.01)
   const totales = {
     facturado: detalles.reduce((a, d) => a + d.total, 0),
-    abonado: detalles.reduce((a, d) => a + d.abonado, 0),
+    abonado: detalles.reduce((a, d) => a + d.abonado, 0) + saldoAFavor,
     saldo: detalles.reduce((a, d) => a + d.saldo, 0),
+    a_favor: saldoAFavor,
     vencido: pendientes.filter((d) => d.dias_vencidos > 0).reduce((a, d) => a + d.saldo, 0),
     por_vencer: pendientes.filter((d) => d.dias_vencidos <= 0).reduce((a, d) => a + d.saldo, 0),
   }
@@ -120,6 +134,7 @@ export default async function CobranzasClientePage({ params }: { params: Promise
             clienteNombre={cliente.razon_social}
             clienteTelefono={cliente.telefono ?? null}
             saldo={totales.saldo}
+            aFavor={totales.a_favor}
           />
         </div>
 
@@ -191,6 +206,23 @@ export default async function CobranzasClientePage({ params }: { params: Promise
               </p>
             </div>
           </div>
+
+          {/*
+            Saldo a favor. Solo aparece cuando existe, y va antes del saldo
+            pendiente porque es lo primero que hay que saber al llamar al
+            cliente: no se le reclama nada, se le debe.
+          */}
+          {totales.a_favor > 0.01 && (
+            <div className="rounded-lg p-4 border-2 bg-emerald-50 border-emerald-300 flex items-center justify-between">
+              <div>
+                <p className="text-xs font-bold uppercase text-emerald-800">Saldo a favor del cliente</p>
+                <p className="text-[10px] mt-0.5 text-emerald-700">
+                  Pagó por adelantado · se descuenta solo de la próxima boleta
+                </p>
+              </div>
+              <p className="text-3xl font-bold text-emerald-700">{formatCurrency(totales.a_favor)}</p>
+            </div>
+          )}
 
           {/* Saldo total destacado */}
           <div className={`rounded-lg p-4 border-2 ${totales.saldo > 0 ? 'bg-red-50 border-red-300' : 'bg-green-50 border-green-300'} flex items-center justify-between`}>

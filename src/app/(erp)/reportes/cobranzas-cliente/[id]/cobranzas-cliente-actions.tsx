@@ -5,12 +5,13 @@ import { construirLinkWhatsapp, esTelefonoPeruanoValido } from '@/lib/whatsapp'
 import { formatCurrency } from '@/lib/utils'
 
 export default function CobranzasClienteActions({
-  clienteId, clienteNombre, clienteTelefono, saldo,
+  clienteId, clienteNombre, clienteTelefono, saldo, aFavor = 0,
 }: {
   clienteId: string
   clienteNombre: string
   clienteTelefono: string | null
   saldo: number
+  aFavor?: number
 }) {
   const telOk = esTelefonoPeruanoValido(clienteTelefono ?? '')
   const baseUrl = typeof window !== 'undefined' ? window.location.origin : ''
@@ -22,8 +23,11 @@ export default function CobranzasClienteActions({
       `Si ya realizaste tu pago, por favor envíanos el comprobante. ¡Gracias!\n` +
       `— AGROCAR S.R.L.`
     : `Hola ${clienteNombre}, te compartimos tu estado de cuenta con AGROCAR.\n` +
-      `✓ Cuenta al día — sin saldo pendiente.\n\n` +
-      `Detalle: ${reporteUrl}\n\n` +
+      `✓ Cuenta al día — sin saldo pendiente.\n` +
+      // Si pago por adelantado conviene que lo sepa: evita el reclamo de
+      // "yo ya te pague" cuando llegue la proxima boleta con el descuento.
+      (aFavor > 0.01 ? `Tienes S/ ${aFavor.toFixed(2)} a favor para tu proxima compra.\n` : '') +
+      `\nDetalle: ${reporteUrl}\n\n` +
       `¡Gracias por tu confianza!\n— AGROCAR S.R.L.`
   const waLink = telOk ? construirLinkWhatsapp(clienteTelefono!, mensaje) : null
 
