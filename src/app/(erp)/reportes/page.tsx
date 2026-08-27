@@ -184,6 +184,14 @@ export default function ReportesPage() {
         </div>
         <div className="flex flex-wrap gap-2">
           <a
+            href="/reportes/cobros"
+            target="_blank" rel="noopener noreferrer"
+            className="inline-flex items-center gap-2 px-3 py-2 text-xs font-semibold bg-emerald-100 text-emerald-900 border border-emerald-300 rounded-md hover:bg-emerald-200"
+            title="Cobranzas recibidas: quien pago, cuanto y por que medio, entre dos fechas"
+          >
+            Cobranzas recibidas
+          </a>
+          <a
             href="/reportes/rendicion-diaria"
             target="_blank" rel="noopener noreferrer"
             className="inline-flex items-center gap-2 px-3 py-2 text-xs font-semibold bg-amber-100 text-amber-900 border border-amber-300 rounded-md hover:bg-amber-200"
@@ -345,6 +353,22 @@ export default function ReportesPage() {
 
         {/* COBRANZAS */}
         <TabsContent value="cobranzas" className="mt-4 space-y-3">
+          {/* La otra mitad de la cobranza: no lo que falta cobrar, sino lo
+              que ya entro. Luigi lo pidio para verificar como pago cada
+              cliente en un rango de fechas. */}
+          <div className="bg-gradient-to-r from-emerald-50 to-cyan-50 border border-emerald-200 rounded-lg p-3 flex items-center justify-between gap-3 flex-wrap">
+            <div>
+              <p className="text-sm font-semibold text-emerald-900">Cobranzas recibidas por cliente</p>
+              <p className="text-xs text-emerald-700">
+                Que entro entre dos fechas: quien pago, cuanto, por que medio (efectivo, Yape, Plin, transferencia),
+                con numero de operacion y contra que comprobantes se aplico.
+              </p>
+            </div>
+            <a href="/reportes/cobros" className="text-xs px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded-md">
+              Ver cobranzas recibidas &rarr;
+            </a>
+          </div>
+
           {/* Botón rápido al reporte por vendedor (cuando hay filtro) */}
           {filterVendedor !== 'todos' && (
             <div className="bg-orange-50 border border-orange-200 rounded-lg p-3 flex items-center justify-between flex-wrap gap-2">
@@ -462,22 +486,6 @@ export default function ReportesPage() {
         {/* COMISIONES */}
         <TabsContent value="comisiones" className="mt-4 space-y-3">
           {/* Banner cumplimiento de cuotas */}
-          {/* La otra mitad de la cobranza: no lo que falta cobrar, sino lo
-              que ya entro. Luigi lo pidio para verificar como pago cada
-              cliente en un rango de fechas. */}
-          <div className="bg-gradient-to-r from-emerald-50 to-cyan-50 border border-emerald-200 rounded-lg p-3 flex items-center justify-between gap-3 flex-wrap">
-            <div>
-              <p className="text-sm font-semibold text-emerald-900">Cobranzas recibidas por cliente</p>
-              <p className="text-xs text-emerald-700">
-                Que entro entre dos fechas: quien pago, cuanto, por que medio (efectivo, Yape, Plin, transferencia),
-                con numero de operacion y contra que comprobantes se aplico.
-              </p>
-            </div>
-            <a href="/reportes/cobros" className="text-xs px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded-md">
-              Ver cobranzas recibidas &rarr;
-            </a>
-          </div>
-
           <div className="bg-gradient-to-r from-red-50 to-amber-50 border border-red-200 rounded-lg p-3 flex items-center justify-between gap-3 flex-wrap">
             <div>
               <p className="text-sm font-semibold text-red-900">💰 Cuentas por cobrar de todos los vendedores</p>
