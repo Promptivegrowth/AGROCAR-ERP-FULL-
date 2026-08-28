@@ -119,8 +119,23 @@ export function construirInvoice(
     const factor = 1 + pctIgv / 100
 
     const valorUnitario = precioConIgv / factor
-    const valorVenta = Math.round(cantidad * valorUnitario * 100) / 100
-    const igvLinea = Math.round(valorVenta * (pctIgv / 100) * 100) / 100
+
+    /*
+     * El redondeo arranca por lo que paga el cliente, no por el valor de venta.
+     *
+     * Al revés —redondear el valor de venta y después sacarle el IGV— la línea
+     * puede terminar un céntimo por debajo: 25 x 14.24 da 356.00 en el ticket,
+     * pero 25 x (14.24/1.18) = 301.69 y 301.69 + 18% = 355.99. Con ocho líneas
+     * así, el comprobante electrónico y el papel dejan de coincidir, y ese es
+     * el número que el cliente tiene en la mano.
+     *
+     * Partiendo del monto con IGV, la línea suma exacto lo que se cobró y el
+     * IGV absorbe el céntimo. La diferencia contra el 18% teórico queda dentro
+     * de la tolerancia de redondeo que SUNAT admite por línea.
+     */
+    const montoConIgv = Math.round(cantidad * precioConIgv * 100) / 100
+    const valorVenta = Math.round((montoConIgv / factor) * 100) / 100
+    const igvLinea = Math.round((montoConIgv - valorVenta) * 100) / 100
 
     gravado += valorVenta
     igvTotal += igvLinea

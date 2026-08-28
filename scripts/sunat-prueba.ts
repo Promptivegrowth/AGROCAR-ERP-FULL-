@@ -102,7 +102,7 @@ async function main() {
   console.log('\n3. UBL 2.1')
   console.log(`   calculado:  gravado ${totales.gravado}  + igv ${totales.igv}  = ${totales.total}`)
   console.log(`   en la base: gravado ${c.subtotal}  + igv ${c.igv}  = ${c.total}`)
-  const cuadra = Math.abs(totales.total - Number(c.total)) < 0.01
+  const cuadra = Math.abs(totales.total - Number(c.total)) < 0.005
   console.log(`   ${cuadra ? '   cuadra con el ERP' : '   *** NO CUADRA — revisar antes de seguir ***'}`)
 
   // ── 4. La firma ──────────────────────────────────────────────────────────
