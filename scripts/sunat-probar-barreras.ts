@@ -90,13 +90,51 @@ async function main() {
     console.log(`  Restaurado a "${(fin as { valor: string } | null)?.valor}".`)
   }
 
+  // ── La fecha de corte: sin ella, produccion no declara nada ──────────────
+  console.log('\n  FECHA DE CORTE DE LOS HISTÓRICOS\n')
+  const { data: corteOriginal } = await supabase
+    .from('configuracion').select('valor').eq('clave', 'sunat_sincronizar_desde').maybeSingle()
+  const corteAntes = (corteOriginal as { valor: string } | null)?.valor ?? ''
+
+  process.env.SUNAT_USUARIO_SOL = 'USERFAC4'
+  process.env.SUNAT_CLAVE_SOL = 'clave-de-prueba-no-real'
+  let corteBien = 0
+  try {
+    await supabase.from('configuracion').update({ valor: 'produccion' }).eq('clave', 'sunat_modo')
+
+    await supabase.from('configuracion').update({ valor: '' }).eq('clave', 'sunat_sincronizar_desde')
+    const sinFecha = await configuracionSunat()
+    const okSinFecha = sinFecha.sincronizarDesde === null
+    if (okSinFecha) corteBien++
+    console.log(`  ${okSinFecha ? 'OK  ' : 'MAL '} Sin fecha configurada, no hay corte y no se declara nada`)
+    console.log(`       "${sinFecha.razon}"`)
+
+    await supabase.from('configuracion').update({ valor: '2026-09-01' }).eq('clave', 'sunat_sincronizar_desde')
+    const conFecha = await configuracionSunat()
+    const okConFecha = conFecha.sincronizarDesde === '2026-09-01'
+    if (okConFecha) corteBien++
+    console.log(`  ${okConFecha ? 'OK  ' : 'MAL '} Con fecha, el corte queda en ${conFecha.sincronizarDesde}`)
+    console.log(`       "${conFecha.razon}"`)
+
+    await supabase.from('configuracion').update({ valor: 'el lunes' }).eq('clave', 'sunat_sincronizar_desde')
+    const basura = await configuracionSunat()
+    const okBasura = basura.sincronizarDesde === null
+    if (okBasura) corteBien++
+    console.log(`  ${okBasura ? 'OK  ' : 'MAL '} Una fecha mal escrita no habilita nada`)
+  } finally {
+    await supabase.from('configuracion').update({ valor: corteAntes }).eq('clave', 'sunat_sincronizar_desde')
+    await supabase.from('configuracion').update({ valor: modoOriginal }).eq('clave', 'sunat_modo')
+    console.log(`\n  Restaurado: modo "${modoOriginal}", corte "${corteAntes || '(vacío)'}".\n`)
+  }
+  bien += corteBien
+
   // Y la última: un certificado vencido no debe poder firmar nada.
   process.env.SUNAT_CERT_PASSWORD = 'clave-incorrecta'
   let rechazoClaveMala = false
   try { await configuracionSunat() } catch { rechazoClaveMala = true }
   console.log(`  ${rechazoClaveMala ? 'OK  ' : 'MAL '} Con la contraseña del certificado equivocada, no arranca`)
 
-  console.log(`\n  ${bien + (rechazoClaveMala ? 1 : 0)} de ${CASOS.length + 1} comprobaciones pasaron.\n`)
+  console.log(`\n  ${bien + (rechazoClaveMala ? 1 : 0)} de ${CASOS.length + 4} comprobaciones pasaron.\n`)
 }
 
 main().catch((e) => { console.error('\nFALLÓ:', e.message, '\n'); process.exit(1) })

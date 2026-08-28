@@ -85,6 +85,33 @@ export async function POST(req: Request) {
   if (!['factura', 'boleta'].includes(c.tipo)) {
     return NextResponse.json({ error: `Los documentos de tipo "${c.tipo}" no se declaran a SUNAT` }, { status: 400 })
   }
+  /*
+   * La fecha de corte. Los 409 comprobantes que el ERP emitió antes de
+   * conectarse a SUNAT no se declaran: la sincronización arranca el día que el
+   * sistema entra en línea.
+   *
+   * El corte lo hace el servidor y no la pantalla, porque el accidente que hay
+   * que evitar es justamente el de la pantalla: un filtro mal puesto, un
+   * "seleccionar todo", y salen cuatrocientos comprobantes fuera de plazo que
+   * después hay que anular de a uno.
+   *
+   * En beta no aplica: ahí nada queda declarado y conviene poder probar con
+   * cualquier comprobante.
+   */
+  if (conf.modo === 'produccion') {
+    if (!conf.sincronizarDesde) {
+      return NextResponse.json({
+        error: 'No hay fecha de inicio de sincronización configurada. Hasta fijarla, no se declara ningún comprobante.',
+      }, { status: 409 })
+    }
+    if (c.fecha_emision < conf.sincronizarDesde) {
+      return NextResponse.json({
+        error: `${c.serie}-${c.numero} es del ${c.fecha_emision}, anterior al inicio de la sincronización `
+          + `(${conf.sincronizarDesde}). Los comprobantes históricos no se declaran.`,
+      }, { status: 409 })
+    }
+  }
+
   // Reenviar algo ya aceptado en producción devolvería 4000 y no aporta nada.
   if (c.enviado_sunat && c.sunat_modo === 'produccion' && conf.modo === 'produccion') {
     return NextResponse.json({
@@ -199,6 +226,7 @@ export async function GET() {
       modo: conf.modo,
       razon: conf.razon,
       envio_automatico: conf.envioAutomatico,
+      sincronizar_desde: conf.sincronizarDesde,
       certificado: {
         titular: conf.certificado.titular,
         vence: conf.certificado.vence.toISOString().slice(0, 10),

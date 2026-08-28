@@ -6,6 +6,7 @@ import AutoPrint from './auto-print'
 import AyudaTicketera from '@/components/erp/ayuda-ticketera'
 import BotonTicketera from '@/components/erp/boton-ticketera'
 import { qrDataUri } from '@/lib/qr'
+import { contenidoQr } from '@/lib/sunat/qr'
 
 /**
  * Lado del QR en pantalla, en pixeles.
@@ -88,7 +89,7 @@ export default async function ImprimirLotePage({
   const { data: comprobantes } = await supabase
     .from('comprobantes')
     .select(`
-      id, tipo, serie, numero, fecha_emision, fecha_despacho, subtotal, igv, total, moneda, estado, pedido_id, created_at,
+      id, tipo, serie, numero, fecha_emision, fecha_despacho, subtotal, igv, total, moneda, estado, pedido_id, created_at, sunat_xml,
       cliente_externo_nombre, cliente_externo_doc, editado, editado_at,
       clientes(id, razon_social, ruc, dni, direccion, telefono),
       profiles!comprobantes_facturador_id_fkey(full_name)
@@ -146,10 +147,17 @@ export default async function ImprimirLotePage({
    */
   const qrPorComprobante = new Map<string, string>()
   await Promise.all(lista.map(async (comp: any) => {
-    const cli: any = comp.clientes
-    const doc = cli?.ruc ?? cli?.dni ?? comp.cliente_externo_doc ?? '—'
-    const contenido = `AGROCAR|20519883296|${comp.tipo}|${comp.serie}-${pad(comp.numero, 6)}|` +
-      `${Number(comp.total ?? 0).toFixed(2)}|${comp.fecha_emision}|${doc}`
+    const contenido = contenidoQr({
+      rucEmisor: EMPRESA.ruc,
+      tipo: comp.tipo,
+      serie: comp.serie,
+      numero: String(comp.numero),
+      igv: Number(comp.igv ?? 0),
+      total: Number(comp.total ?? 0),
+      fechaEmision: comp.fecha_emision,
+      cliente: comp.clientes ?? null,
+      xmlFirmado: comp.sunat_xml,
+    })
     qrPorComprobante.set(comp.id, await qrDataUri(contenido, 480))
   }))
 

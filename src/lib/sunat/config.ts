@@ -26,6 +26,11 @@ export interface ConfiguracionSunat {
   clave: string
   certificado: Certificado
   envioAutomatico: boolean
+  /**
+   * Desde qué fecha se declaran comprobantes. Lo anterior nunca se envía a
+   * producción, por más que alguien lo pida. Vacío: no se declara ninguno.
+   */
+  sincronizarDesde: string | null
   /** Por qué quedó en este modo. Se muestra en pantalla para que nadie dude. */
   razon: string
 }
@@ -66,7 +71,7 @@ export async function configuracionSunat(): Promise<ConfiguracionSunat> {
   const { data } = await (supabase as any)
     .from('configuracion')
     .select('clave, valor')
-    .in('clave', ['sunat_modo', 'sunat_envio_automatico'])
+    .in('clave', ['sunat_modo', 'sunat_envio_automatico', 'sunat_sincronizar_desde'])
 
   const conf: Record<string, string> = {}
   ;((data ?? []) as { clave: string; valor: string }[]).forEach((c) => { conf[c.clave] = c.valor })
@@ -78,6 +83,9 @@ export async function configuracionSunat(): Promise<ConfiguracionSunat> {
 
   const certificado = leerCertificado()
   const envioAutomatico = conf.sunat_envio_automatico === 'true'
+  const sincronizarDesde = /^\d{4}-\d{2}-\d{2}$/.test(conf.sunat_sincronizar_desde ?? '')
+    ? conf.sunat_sincronizar_desde
+    : null
 
   if (quiereProduccion && hayCredenciales) {
     return {
@@ -87,7 +95,10 @@ export async function configuracionSunat(): Promise<ConfiguracionSunat> {
       clave: claveSol!,
       certificado,
       envioAutomatico,
-      razon: 'Modo producción: los comprobantes quedan declarados ante SUNAT.',
+      sincronizarDesde,
+      razon: sincronizarDesde
+        ? `Modo producción desde el ${sincronizarDesde}: lo emitido antes no se declara.`
+        : 'Modo producción sin fecha de inicio: no se puede declarar nada hasta fijarla.',
     }
   }
 
@@ -97,6 +108,7 @@ export async function configuracionSunat(): Promise<ConfiguracionSunat> {
     clave: BETA.clave,
     certificado,
     envioAutomatico,
+    sincronizarDesde,
     razon: quiereProduccion
       ? 'Se pidió producción pero faltan las credenciales SOL en el servidor. Se envía a beta: nada queda declarado.'
       : 'Modo pruebas: nada de lo que se envía queda declarado ante SUNAT.',

@@ -7,6 +7,7 @@ import PrintButton from './print-button'
 import AyudaTicketera from '@/components/erp/ayuda-ticketera'
 import BotonTicketera from '@/components/erp/boton-ticketera'
 import { qrDataUri } from '@/lib/qr'
+import { contenidoQr } from '@/lib/sunat/qr'
 
 /**
  * Lado del QR en pantalla, en pixeles.
@@ -85,7 +86,7 @@ export default async function ComprobantePage({
   const { data: comp } = await (supabase as any)
     .from('comprobantes')
     .select(`
-      id, tipo, serie, numero, fecha_emision, fecha_despacho, subtotal, igv, total, moneda, estado, pedido_id, created_at,
+      id, tipo, serie, numero, fecha_emision, fecha_despacho, subtotal, igv, total, moneda, estado, pedido_id, created_at, sunat_xml,
       cliente_externo_nombre, cliente_externo_doc,
       clientes(id, razon_social, ruc, dni, direccion, telefono),
       profiles!comprobantes_facturador_id_fkey(full_name)
@@ -195,7 +196,23 @@ export default async function ComprobantePage({
   const totalLetras = numeroALetras(totalNum)
   const monedaLabel = comp.moneda === 'USD' ? 'DOLARES AMERICANOS' : 'SOLES'
 
-  const qrData = `AGROCAR|20519883296|${comp.tipo}|${correlativo}|${totalNum.toFixed(2)}|${comp.fecha_emision}|${docCliente.valor}`
+  /*
+   * El QR lleva lo que SUNAT define, en su orden y separado por barras. El
+   * ultimo campo -el valor resumen- es el digest de la firma, asi que solo
+   * aparece cuando el comprobante ya fue firmado. La norma permite dejarlo
+   * fuera del QR, de modo que un comprobante sin firmar se imprime igual.
+   */
+  const qrData = contenidoQr({
+    rucEmisor: EMPRESA.ruc,
+    tipo: comp.tipo,
+    serie: comp.serie,
+    numero: String(comp.numero),
+    igv: Number(comp.igv ?? 0),
+    total: totalNum,
+    fechaEmision: comp.fecha_emision,
+    cliente: cliente ?? null,
+    xmlFirmado: (comp as { sunat_xml?: string | null }).sunat_xml,
+  })
   // QR generado en el servidor, sin depender de una web externa
   const qrUrl = await qrDataUri(qrData, 480)
 
