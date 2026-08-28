@@ -27,6 +27,19 @@ const ESTADO_SUNAT: Record<string, { label: string; className: string }> = {
   anulado: { label: 'Anulado', className: 'bg-gray-100 text-gray-500' },
 }
 
+/**
+ * La fecha con la que se emite: la del despacho, salvo que sea futura.
+ *
+ * SUNAT no acepta comprobantes fechados adelante. Cuando el despacho esta
+ * programado para mas adelante, se emite con la fecha de hoy, que es cuando
+ * realmente se esta emitiendo.
+ */
+function fechaEmisionValida(fechaDespacho?: string | null): string {
+  const hoy = hoyLima()
+  if (!fechaDespacho) return hoy
+  return fechaDespacho > hoy ? hoy : fechaDespacho
+}
+
 export default function FacturacionPage() {
   const supabase = createClient()
 
@@ -649,7 +662,18 @@ export default function FacturacionPage() {
       // SUNAT acepta como fecha de emisión la fecha real de entrega de bienes.
       // Daniel pidió que si el despacho es el día siguiente, la factura salga
       // con esa fecha (no la de creación del comprobante).
-      p_fecha_emision: pedido.fecha_despacho || hoyLima(),
+      /*
+       * La fecha de emision se toma del despacho, pero nunca puede pasar de hoy.
+       *
+       * Un pedido programado para dentro de unos dias hacia nacer el
+       * comprobante con esa fecha, y SUNAT rechaza cualquier comprobante
+       * fechado en el futuro. Paso de verdad: B002-00000154 se emitio el 23/08
+       * con fecha 31/08, y B002-00000343 el 27/08 con fecha 29/08.
+       *
+       * La fecha de despacho no se pierde: viaja aparte, en la columna
+       * fecha_despacho del propio comprobante.
+       */
+      p_fecha_emision: fechaEmisionValida(pedido.fecha_despacho),
       p_subtotal: subtotalCalc,
       p_igv: igvCalc,
       p_total: pedTotal > 0 ? pedTotal : subtotalCalc + igvCalc,
@@ -736,7 +760,18 @@ export default function FacturacionPage() {
       // SUNAT acepta como fecha de emisión la fecha real de entrega de bienes.
       // Daniel pidió que si el despacho es el día siguiente, la factura salga
       // con esa fecha (no la de creación del comprobante).
-      p_fecha_emision: pedidoSeleccionado.fecha_despacho || hoyLima(),
+      /*
+       * La fecha de emision se toma del despacho, pero nunca puede pasar de hoy.
+       *
+       * Un pedido programado para dentro de unos dias hacia nacer el
+       * comprobante con esa fecha, y SUNAT rechaza cualquier comprobante
+       * fechado en el futuro. Paso de verdad: B002-00000154 se emitio el 23/08
+       * con fecha 31/08, y B002-00000343 el 27/08 con fecha 29/08.
+       *
+       * La fecha de despacho no se pierde: viaja aparte, en la columna
+       * fecha_despacho del propio comprobante.
+       */
+      p_fecha_emision: fechaEmisionValida(pedidoSeleccionado.fecha_despacho),
       p_subtotal: subtotalCalc,
       p_igv: igvCalc,
       p_total: pedTotal > 0 ? pedTotal : subtotalCalc + igvCalc,

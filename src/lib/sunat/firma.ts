@@ -150,9 +150,22 @@ export interface RespuestaSunat {
  * producción es el usuario secundario SOL creado en el portal, con el permiso
  * de facturación electrónica.
  */
+/**
+ * Códigos HTTP que valen la pena reintentar.
+ *
+ * El 401 no es una credencial mal puesta: el servicio de SUNAT lo devuelve
+ * cuando lo apuran, y beta avisa en su propia documentación que no admite
+ * envíos masivos ni simultáneos. Un 401 aislado en medio de una tanda que
+ * funciona es eso, no una clave equivocada. Los 5xx y los tiempos agotados
+ * son de la misma familia: el comprobante está bien, el servicio no contestó.
+ */
+const REINTENTABLES = [401, 429, 500, 502, 503, 504]
+
+const esperar = (ms: number) => new Promise((r) => setTimeout(r, ms))
+
 export async function enviarASunat(
-  { modo = 'beta', usuario, clave, nombreArchivo, zip }:
-  { modo?: ModoSunat; usuario: string; clave: string; nombreArchivo: string; zip: Buffer },
+  { modo = 'beta', usuario, clave, nombreArchivo, zip, intentos = 3 }:
+  { modo?: ModoSunat; usuario: string; clave: string; nombreArchivo: string; zip: Buffer; intentos?: number },
 ): Promise<RespuestaSunat> {
   const url = ENDPOINTS[modo]
   if (!url) throw new Error(`Modo desconocido: ${modo}`)
@@ -175,13 +188,31 @@ export async function enviarASunat(
   </soapenv:Body>
 </soapenv:Envelope>`
 
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'text/xml; charset=utf-8', SOAPAction: '' },
-    body: sobre,
-  })
+  let res: Response | null = null
+  let texto = ''
+  let ultimoFallo = ''
 
-  const texto = await res.text()
+  for (let intento = 1; intento <= intentos; intento++) {
+    try {
+      res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/xml; charset=utf-8', SOAPAction: '' },
+        body: sobre,
+      })
+      texto = await res.text()
+      if (!REINTENTABLES.includes(res.status)) break
+      ultimoFallo = `HTTP ${res.status}`
+    } catch (e) {
+      ultimoFallo = e instanceof Error ? e.message : String(e)
+    }
+    // Espera creciente: 1s, 2s, 4s. Sin apurar a un servicio que ya avisó
+    // que no quiere ser apurado.
+    if (intento < intentos) await esperar(1000 * 2 ** (intento - 1))
+  }
+
+  if (!res) {
+    return { ok: false, tipo: 'sin_respuesta', codigo: null, mensaje: ultimoFallo || 'No hubo respuesta' }
+  }
 
   // SUNAT contesta con un Fault cuando algo falla antes de procesar el
   // comprobante: mal usuario, ZIP corrupto, nombre de archivo que no coincide
@@ -201,7 +232,8 @@ export async function enviarASunat(
   if (!b64) {
     return {
       ok: false, tipo: 'sin_respuesta',
-      codigo: null, mensaje: `HTTP ${res.status}`,
+      codigo: null,
+      mensaje: `HTTP ${res.status}${REINTENTABLES.includes(res.status) ? ` tras ${intentos} intentos` : ''}`,
       crudo: texto.slice(0, 4000),
     }
   }
