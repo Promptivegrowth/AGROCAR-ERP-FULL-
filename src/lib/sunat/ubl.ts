@@ -191,6 +191,29 @@ export function construirInvoice(
    * fraccionar, asi que va una sola cuota por el total.
    */
   const formaPago = comprobante.forma_pago || 'contado'
+
+  /*
+   * Una cuota que vence el mismo dia en que se emite no es credito, y SUNAT lo
+   * dice con el codigo 3267: "Fecha del pago unico o de las cuotas no puede
+   * ser menor o igual a la fecha de emision".
+   *
+   * Antes, al no venir vencimiento se usaba la fecha de emision y el
+   * comprobante rebotaba. Ahora se corta acá: quien llama tiene que traer un
+   * vencimiento real -sale de los dias de credito del cliente- o declarar la
+   * venta al contado, que es lo que es cuando no hay plazo pactado. Inventar
+   * una fecha seria declararle a SUNAT algo que no se acordo con el cliente.
+   */
+  if (formaPago === 'credito') {
+    const vence = comprobante.fecha_vencimiento
+    if (!vence || vence <= comprobante.fecha_emision) {
+      throw new Error(
+        `${id}: una venta al credito necesita una fecha de vencimiento posterior a la de emision `
+        + `(${comprobante.fecha_emision}). Si el cliente no tiene dias de credito pactados, `
+        + `la venta es al contado.`,
+      )
+    }
+  }
+
   const bloquePago = formaPago === 'credito'
     ? `
   <cac:PaymentTerms>
@@ -202,7 +225,7 @@ export function construirInvoice(
     <cbc:ID>FormaPago</cbc:ID>
     <cbc:PaymentMeansID>Cuota001</cbc:PaymentMeansID>
     <cbc:Amount currencyID="${moneda}">${n2(total)}</cbc:Amount>
-    <cbc:PaymentDueDate>${esc(comprobante.fecha_vencimiento || comprobante.fecha_emision)}</cbc:PaymentDueDate>
+    <cbc:PaymentDueDate>${esc(comprobante.fecha_vencimiento)}</cbc:PaymentDueDate>
   </cac:PaymentTerms>`
     : `
   <cac:PaymentTerms>
