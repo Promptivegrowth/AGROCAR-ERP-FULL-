@@ -259,3 +259,119 @@ export async function enviarASunat(
     cdrZipBase64: b64[1],
   }
 }
+
+/**
+ * Envía un resumen o una comunicación de baja.
+ *
+ * A diferencia de `sendBill`, este servicio no contesta con el resultado: toma
+ * el documento, devuelve un ticket y lo procesa por su cuenta. Hay que volver
+ * a preguntar con `consultarTicket`, normalmente unos segundos después.
+ */
+export async function enviarResumen(
+  { modo = 'beta', usuario, clave, nombreArchivo, zip, intentos = 3 }:
+  { modo?: ModoSunat; usuario: string; clave: string; nombreArchivo: string; zip: Buffer; intentos?: number },
+): Promise<{ ok: boolean; ticket: string | null; mensaje: string | null; crudo?: string }> {
+  const url = ENDPOINTS[modo]
+  const sobre = `<?xml version="1.0" encoding="UTF-8"?>
+<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:ser="http://service.sunat.gob.pe" xmlns:wsse="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd">
+  <soapenv:Header>
+    <wsse:Security>
+      <wsse:UsernameToken>
+        <wsse:Username>${usuario}</wsse:Username>
+        <wsse:Password>${clave}</wsse:Password>
+      </wsse:UsernameToken>
+    </wsse:Security>
+  </soapenv:Header>
+  <soapenv:Body>
+    <ser:sendSummary>
+      <fileName>${nombreArchivo}.zip</fileName>
+      <contentFile>${zip.toString('base64')}</contentFile>
+    </ser:sendSummary>
+  </soapenv:Body>
+</soapenv:Envelope>`
+
+  let texto = ''
+  for (let intento = 1; intento <= intentos; intento++) {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/xml; charset=utf-8', SOAPAction: '' },
+      body: sobre,
+    })
+    texto = await res.text()
+    if (!REINTENTABLES.includes(res.status)) break
+    if (intento < intentos) await esperar(1000 * 2 ** (intento - 1))
+  }
+
+  const fault = texto.match(/<faultstring>([\s\S]*?)<\/faultstring>/)
+  if (fault) return { ok: false, ticket: null, mensaje: fault[1].trim(), crudo: texto }
+
+  const ticket = texto.match(/<ticket>([\s\S]*?)<\/ticket>/)?.[1]?.trim() ?? null
+  return { ok: !!ticket, ticket, mensaje: ticket ? null : 'SUNAT no devolvió ticket', crudo: ticket ? undefined : texto.slice(0, 2000) }
+}
+
+/**
+ * Pregunta por el resultado de un ticket.
+ *
+ * El código 98 significa "todavía lo estoy procesando" y hay que volver a
+ * preguntar; el 99 es rechazo; el 0 es aceptado y viene con su CDR.
+ */
+export async function consultarTicket(
+  { modo = 'beta', usuario, clave, ticket }:
+  { modo?: ModoSunat; usuario: string; clave: string; ticket: string },
+): Promise<RespuestaSunat & { enProceso: boolean }> {
+  const url = ENDPOINTS[modo]
+  const sobre = `<?xml version="1.0" encoding="UTF-8"?>
+<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:ser="http://service.sunat.gob.pe" xmlns:wsse="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd">
+  <soapenv:Header>
+    <wsse:Security>
+      <wsse:UsernameToken>
+        <wsse:Username>${usuario}</wsse:Username>
+        <wsse:Password>${clave}</wsse:Password>
+      </wsse:UsernameToken>
+    </wsse:Security>
+  </soapenv:Header>
+  <soapenv:Body>
+    <ser:getStatus><ticket>${ticket}</ticket></ser:getStatus>
+  </soapenv:Body>
+</soapenv:Envelope>`
+
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'text/xml; charset=utf-8', SOAPAction: '' },
+    body: sobre,
+  })
+  const texto = await res.text()
+
+  const fault = texto.match(/<faultstring>([\s\S]*?)<\/faultstring>/)
+  if (fault) {
+    return { ok: false, tipo: 'fault', codigo: null, mensaje: fault[1].trim(), enProceso: false, crudo: texto }
+  }
+
+  const estado = texto.match(/<statusCode>([\s\S]*?)<\/statusCode>/)?.[1]?.trim() ?? null
+  const mensaje = texto.match(/<statusMessage>([\s\S]*?)<\/statusMessage>/)?.[1]?.trim() ?? null
+  if (estado === '98') {
+    return { ok: false, tipo: 'sin_respuesta', codigo: estado, mensaje: 'En proceso', enProceso: true }
+  }
+
+  const b64 = texto.match(/<content>([\s\S]*?)<\/content>/)
+  if (!b64) {
+    return { ok: estado === '0', tipo: 'sin_respuesta', codigo: estado, mensaje, enProceso: false, crudo: texto.slice(0, 2000) }
+  }
+
+  const cdrZip = await JSZip.loadAsync(Buffer.from(b64[1], 'base64'))
+  const nombre = Object.keys(cdrZip.files).find((f) => f.endsWith('.xml'))
+  const cdrXml = nombre ? await cdrZip.file(nombre)!.async('string') : ''
+  const codigo = cdrXml.match(/<cbc:ResponseCode>([\s\S]*?)<\/cbc:ResponseCode>/)?.[1]?.trim() ?? estado
+  const desc = cdrXml.match(/<cbc:Description>([\s\S]*?)<\/cbc:Description>/)?.[1]?.trim() ?? mensaje
+
+  return {
+    ok: codigo === '0',
+    tipo: 'cdr',
+    codigo,
+    mensaje: desc,
+    observaciones: Array.from(cdrXml.matchAll(/<cbc:Note>([\s\S]*?)<\/cbc:Note>/g)).map((m) => m[1].trim()),
+    cdrXml,
+    cdrZipBase64: b64[1],
+    enProceso: false,
+  }
+}
