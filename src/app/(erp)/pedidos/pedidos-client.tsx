@@ -69,6 +69,10 @@ export default function PedidosClient({ pedidosIniciales, desde, hasta }: {
   const [editMode, setEditMode] = useState(false)
   const [saving, setSaving] = useState(false)
   const [editItems, setEditItems] = useState<Record<string, { cantidad: string; precio: string }>>({})
+  // La fecha de despacho se edita aparte de los productos: es un solo dato y
+  // se guarda solo, sin esperar a "guardar todos los cambios".
+  const [fechaDespachoDraft, setFechaDespachoDraft] = useState('')
+  const [guardandoFecha, setGuardandoFecha] = useState(false)
   // Form para agregar producto
   const [productoSearch, setProductoSearch] = useState('')
   const debouncedProductoSearch = useDebounce(productoSearch, 250)
@@ -109,6 +113,7 @@ export default function PedidosClient({ pedidosIniciales, desde, hasta }: {
 
   const openDetail = async (p: any) => {
     setSelected(p)
+    setFechaDespachoDraft(p.fecha_despacho ?? '')
     setDetailOpen(true)
     setLoadingItems(true)
     setComprobanteId(null)
@@ -150,6 +155,7 @@ export default function PedidosClient({ pedidosIniciales, desde, hasta }: {
     if (ped) {
       const p: any = ped
       setSelected({ ...selected, ...p })
+      setFechaDespachoDraft(p.fecha_despacho ?? '')
       setPedidos((prev) => prev.map((x) => x.id === p.id ? { ...x, ...p } : x))
     }
     setEditItems({})
@@ -260,6 +266,40 @@ export default function PedidosClient({ pedidosIniciales, desde, hasta }: {
       return
     }
     toast.success('Item actualizado')
+    await recargarPedidoActual()
+  }
+
+  /**
+   * Cambiar la fecha de despacho.
+   *
+   * Lo pidio Daniel: en modo edicion se podian cambiar productos, cantidades y
+   * precios, pero la fecha de despacho era texto. Y es un dato que cambia
+   * seguido -el cliente pide para el lunes y despues avisa que mejor el
+   * miercoles-; hasta ahora la unica salida era borrar el pedido y volver a
+   * cargarlo.
+   *
+   * Las reglas las pone el servidor, no esta pantalla: no se puede despues de
+   * facturar ni si el pedido ya entro a una hoja de ruta.
+   */
+  const guardarFechaDespacho = async () => {
+    if (!selected || !fechaDespachoDraft) return
+    if (fechaDespachoDraft === selected.fecha_despacho) return
+
+    setGuardandoFecha(true)
+    const { data, error } = await (supabase.rpc as any)('cambiar_fecha_despacho_pedido', {
+      p_pedido_id: selected.id,
+      p_fecha_despacho: fechaDespachoDraft,
+    })
+    setGuardandoFecha(false)
+
+    if (error) {
+      toast.error('No se pudo cambiar la fecha', { description: error.message, duration: 8000 })
+      setFechaDespachoDraft(selected.fecha_despacho ?? '')
+      return
+    }
+    toast.success('Fecha de despacho actualizada', {
+      description: data?.anterior ? `De ${formatDate(data.anterior)} a ${formatDate(data.nueva)}` : undefined,
+    })
     await recargarPedidoActual()
   }
 
@@ -634,7 +674,34 @@ export default function PedidosClient({ pedidosIniciales, desde, hasta }: {
                 <div className="grid grid-cols-2 gap-3 text-sm">
                   <InfoRow icon={User} label="Vendedor" value={selected.profiles?.full_name ?? '—'} />
                   <InfoRow icon={Calendar} label="Fecha pedido" value={formatDate(selected.fecha_pedido)} />
-                  <InfoRow icon={Truck} label="Fecha despacho" value={selected.fecha_despacho ? formatDate(selected.fecha_despacho) : '—'} />
+                  {editMode ? (
+                    <div className="flex items-start gap-2">
+                      <Truck className="w-4 h-4 mt-2 shrink-0 text-gray-400" />
+                      <div className="min-w-0 flex-1">
+                        <p className="text-[10px] uppercase tracking-wide text-gray-500">Fecha despacho</p>
+                        <div className="flex items-center gap-1.5">
+                          <Input
+                            type="date"
+                            value={fechaDespachoDraft}
+                            onChange={(e) => setFechaDespachoDraft(e.target.value)}
+                            className="h-8 w-36 text-xs"
+                          />
+                          {fechaDespachoDraft !== (selected.fecha_despacho ?? '') && (
+                            <Button
+                              size="sm"
+                              onClick={guardarFechaDespacho}
+                              disabled={guardandoFecha || !fechaDespachoDraft}
+                              className="h-8 bg-[#FBE600] text-black hover:bg-[#E5D100] text-xs font-semibold"
+                            >
+                              {guardandoFecha ? 'Guardando…' : 'Guardar fecha'}
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <InfoRow icon={Truck} label="Fecha despacho" value={selected.fecha_despacho ? formatDate(selected.fecha_despacho) : '—'} />
+                  )}
                   <InfoRow icon={MapPin} label="Zona" value={selected.clientes?.zonas?.nombre ?? '—'} />
                 </div>
 
