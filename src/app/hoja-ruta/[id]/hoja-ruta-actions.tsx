@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { Printer, MessageCircle, List, Package2 } from 'lucide-react'
+import { Printer, MessageCircle, List, Package2, Receipt } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { usePathname } from 'next/navigation'
 
@@ -23,6 +23,17 @@ export default function HojaRutaActions({ telefono, numero }: { telefono: string
       <Link href={`/hoja-ruta/${despachoId}/simple`}>
         <Button variant="outline" className="gap-2 text-gray-700">
           <List className="w-4 h-4" /> Versión simple
+        </Button>
+      </Link>
+      {/*
+        Lo pidio Daniel, escrito a mano sobre una hoja de ruta: "agregar switch
+        para poder imprimir solo de este carro". En un reparto salen entre 70 y
+        100 comprobantes; separarlos despues en pilas por camion es media hora
+        de trabajo manual.
+      */}
+      <Link href={`/comprobante/imprimir-lote?despacho=${despachoId}`} target="_blank">
+        <Button variant="outline" className="gap-2 text-emerald-700 border-emerald-300 hover:bg-emerald-50">
+          <Receipt className="w-4 h-4" /> Comprobantes de este carro
         </Button>
       </Link>
       <Link href={`/hoja-ruta/${despachoId}/almacen`}>

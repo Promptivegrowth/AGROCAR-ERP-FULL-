@@ -69,21 +69,62 @@ function fmtNum(n: number) {
 export default async function ImprimirLotePage({
   searchParams,
 }: {
-  searchParams: Promise<{ ids?: string; formato?: string }>
+  searchParams: Promise<{ ids?: string; formato?: string; despacho?: string }>
 }) {
-  const { ids, formato } = await searchParams
-  const idsArr = (ids ?? '').split(',').map((s) => s.trim()).filter(Boolean)
+  const { ids, formato, despacho } = await searchParams
   const esA4 = formato !== 'ticket' // por defecto A4 para impresión por rangos
+
+  const supabase = createAdminClient()
+
+  /*
+   * Se puede pedir por lista de comprobantes o por carro.
+   *
+   * Lo segundo lo pidió Daniel, y lo escribió a mano sobre una hoja de ruta:
+   * "agregar switch para poder imprimir solo de este carro". En un reparto
+   * salen entre 70 y 100 comprobantes; imprimirlos todos juntos y después
+   * separarlos en pilas por camión es media hora de trabajo manual.
+   *
+   * Los identificadores no viajan por la dirección cuando es por carro: cien
+   * comprobantes son casi cuatro mil caracteres de URL, cerca del límite que
+   * algunos navegadores y servidores cortan sin avisar. Con el despacho viaja
+   * un solo identificador y la lista se arma acá.
+   */
+  let idsArr = (ids ?? '').split(',').map((s) => s.trim()).filter(Boolean)
+  let tituloCarro: string | null = null
+
+  if (despacho) {
+    const { data: d } = await supabase
+      .from('despachos')
+      .select('numero, fecha_despacho, total_pedidos, vehiculos(placa), despachos_items(pedido_id)')
+      .eq('id', despacho)
+      .maybeSingle()
+
+    if (d) {
+      const dd = d as any
+      const pedidoIds = (dd.despachos_items ?? []).map((x: any) => x.pedido_id).filter(Boolean)
+      if (pedidoIds.length > 0) {
+        const { data: comps } = await supabase
+          .from('comprobantes')
+          .select('id')
+          .in('pedido_id', pedidoIds)
+          .neq('estado', 'anulado')
+        idsArr = ((comps ?? []) as { id: string }[]).map((c) => c.id)
+      }
+      tituloCarro = `${dd.vehiculos?.placa ?? 'Carro'} · ${dd.numero}`
+    }
+  }
 
   if (idsArr.length === 0) {
     return (
-      <div className="min-h-dvh flex items-center justify-center text-gray-500">
-        <p>No se especificaron comprobantes para imprimir.</p>
+      <div className="min-h-dvh flex items-center justify-center px-6 text-center text-gray-500">
+        <p>
+          {despacho
+            ? 'Ese despacho todavía no tiene comprobantes emitidos.'
+            : 'No se especificaron comprobantes para imprimir.'}
+        </p>
       </div>
     )
   }
-
-  const supabase = createAdminClient()
 
   // Batch query de comprobantes con cliente y facturador
   const { data: comprobantes } = await supabase
@@ -216,10 +257,34 @@ export default async function ImprimirLotePage({
         <div className="max-w-4xl mx-auto flex items-center justify-between gap-3">
           <div>
             <h1 className="text-sm font-semibold text-gray-900">
-              Impresión por lote — {lista.length} comprobante{lista.length === 1 ? '' : 's'}
+              {tituloCarro
+                ? `Comprobantes de ${tituloCarro} — ${lista.length}`
+                : `Impresión por lote — ${lista.length} comprobante${lista.length === 1 ? '' : 's'}`}
             </h1>
+            {/*
+              El formato solo se podía cambiar editando la dirección a mano.
+              Estos dos enlaces conservan lo que se está imprimiendo —la lista
+              o el carro— y solo cambian el papel.
+            */}
             <p className="text-xs text-gray-500">
-              Formato: {esA4 ? 'A4 SUNAT' : 'Ticket 80mm'} · El diálogo de impresión se abre automáticamente.
+              Formato:{' '}
+              {(['a4', 'ticket'] as const).map((f, i) => {
+                const activo = (f === 'a4') === esA4
+                const base = despacho ? `despacho=${despacho}` : `ids=${idsArr.join(',')}`
+                return (
+                  <span key={f}>
+                    {i > 0 && <span className="mx-1 text-gray-300">·</span>}
+                    {activo ? (
+                      <strong className="text-gray-900">{f === 'a4' ? 'A4 SUNAT' : 'Ticket 80mm'}</strong>
+                    ) : (
+                      <a href={`?${base}&formato=${f}`} className="text-blue-700 underline hover:text-blue-900">
+                        {f === 'a4' ? 'A4 SUNAT' : 'Ticket 80mm'}
+                      </a>
+                    )}
+                  </span>
+                )
+              })}
+              {' '}· El diálogo de impresión se abre automáticamente.
               {!esA4 && <><br /><AyudaTicketera /></>}
               {!esA4 && (
                 <div className="mt-2">
