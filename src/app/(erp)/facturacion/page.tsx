@@ -40,6 +40,34 @@ function fechaEmisionValida(fechaDespacho?: string | null): string {
   return fechaDespacho > hoy ? hoy : fechaDespacho
 }
 
+import {
+  useEstadoSunat, BannerSunat, ChipSunat, BotonDeclarar,
+} from './sunat-acciones'
+
+/**
+ * Firma el comprobante recien emitido.
+ *
+ * Firmar es local y no habla con SUNAT: produce el XML con valor legal y el
+ * digest que el QR del ticket necesita en su ultimo campo. Como el ticket se
+ * imprime en el momento de la venta -mucho antes de declarar el comprobante-,
+ * sin este paso el QR saldria incompleto en cada impresion.
+ *
+ * Nunca interrumpe la emision. El comprobante ya existe y el pedido ya quedo
+ * facturado; si la firma falla, el ticket sale con el QR sin el valor resumen
+ * -la norma lo permite- y se vuelve a firmar despues.
+ */
+async function firmarComprobante(comprobanteId: string): Promise<void> {
+  try {
+    await fetch('/api/sunat/firmar', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ comprobante_id: comprobanteId }),
+    })
+  } catch {
+    // Sin red o sin certificado cargado: se firma en otro momento.
+  }
+}
+
 export default function FacturacionPage() {
   const supabase = createClient()
 
@@ -48,6 +76,9 @@ export default function FacturacionPage() {
   const [userRole, setUserRole] = useState<string | null>(null)
   // Impresión por rangos
   const [seleccionados, setSeleccionados] = useState<Set<string>>(new Set())
+  // Contra que servicio esta hablando el sistema: lo deciden el servidor y la
+  // configuracion, nunca esta pantalla.
+  const estadoSunat = useEstadoSunat()
   const [filtroDesde, setFiltroDesde] = useState<string>('')
   const [filtroHasta, setFiltroHasta] = useState<string>('')
   const [filtroTipo, setFiltroTipo] = useState<'todos' | 'factura' | 'boleta' | 'nota_pedido_interna'>('todos')
@@ -136,6 +167,7 @@ export default function FacturacionPage() {
         .from('comprobantes')
         .select(`
           id, serie, numero, tipo, fecha_emision, created_at, total, estado, editado, editado_at, enviado_sunat,
+      sunat_estado, sunat_codigo, sunat_mensaje, sunat_modo,
           cliente_externo_nombre, cliente_externo_doc,
           clientes(razon_social, ruc, dni),
           pedidos(numero, profiles!pedidos_vendedor_id_fkey(full_name))
@@ -682,6 +714,8 @@ export default function FacturacionPage() {
     if (rpcError) throw new Error(rpcError.message)
     if (!result?.id) throw new Error('La emisión no devolvió un comprobante válido.')
 
+    await firmarComprobante(result.id as string)
+
     return { id: result.id, label: `${serieReal}-${numero}` }
   }
 
@@ -785,6 +819,7 @@ export default function FacturacionPage() {
     }
     setFacturarDialog(false)
     const compInsertado = { id: result.id as string }
+    await firmarComprobante(compInsertado.id)
 
     const label = `${serieReal}-${numero}`
     const totalFmt = (pedTotal > 0 ? pedTotal : subtotalCalc + igvCalc).toLocaleString('es-PE', { style: 'currency', currency: 'PEN' })
@@ -1051,6 +1086,11 @@ export default function FacturacionPage() {
             <CardContent className="p-0">
               {/* Barra de filtros + acciones por lote */}
               <div className="px-4 pb-3 border-b border-gray-100 space-y-2">
+                {/* Contra qué servicio de SUNAT está hablando el sistema. Va
+                    arriba de todo porque la peor confusión posible es creer
+                    que se declaró algo que no se declaró, o al revés. */}
+                <BannerSunat estado={estadoSunat} />
+
                 {/* Búsqueda libre prominente */}
                 <div className="relative">
                   <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
@@ -1164,7 +1204,7 @@ export default function FacturacionPage() {
                             title={`Marcar los ${comprobantesFiltrados.length} comprobantes que se están viendo`}
                           />
                         </th>
-                        {['Serie-Número', 'Tipo', 'Cliente', 'Vendedor', 'Fecha', 'Total', 'Estado', 'Acciones'].map((h) => (
+                        {['Serie-Número', 'Tipo', 'Cliente', 'Vendedor', 'Fecha', 'Total', 'Estado', 'SUNAT', 'Acciones'].map((h) => (
                           <th key={h} className="text-left py-3 px-4 text-xs font-semibold text-gray-500 uppercase tracking-wide">
                             {h}
                           </th>
@@ -1222,6 +1262,14 @@ export default function FacturacionPage() {
                                 {estadoCfg.label}
                               </span>
                             </td>
+                            {/* Estado ante SUNAT: es distinto del estado del
+                                comprobante en el ERP. Uno puede estar emitido
+                                y todavia sin declarar. */}
+                            <td className="py-3 px-4">
+                              {c.estado === 'anulado'
+                                ? <span className="text-[11px] text-gray-400">—</span>
+                                : <ChipSunat comp={c as any} />}
+                            </td>
                             <td className="py-3 px-4">
                               <div className="flex items-center gap-1">
                                 <Link
@@ -1233,6 +1281,9 @@ export default function FacturacionPage() {
                                   <Eye className="w-3.5 h-3.5" />
                                   Ver
                                 </Link>
+                                {c.estado !== 'anulado' && (
+                                  <BotonDeclarar comp={c as any} estado={estadoSunat} onListo={loadData} />
+                                )}
                                 {puedeEditar && !c.enviado_sunat && c.estado !== 'anulado' && (
                                   <>
                                     <button
