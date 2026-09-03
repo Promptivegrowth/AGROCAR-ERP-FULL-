@@ -33,6 +33,18 @@ interface PedidoConTotal extends Pedido {
 const MINIMO_PEDIDO = 30
 const DESCUENTO_MAX_SIN_AUTH = 2.5
 
+/**
+ * Como se llama cada tipo de comprobante en pantalla.
+ *
+ * Antes el nombre salia de un ternario que solo distinguia factura, asi que
+ * un cliente marcado como documento interno se mostraba como "Boleta".
+ */
+const ETIQUETA_COMPROBANTE: Record<string, string> = {
+  factura: 'Factura',
+  boleta: 'Boleta',
+  nota_pedido_interna: 'Doc. interno',
+}
+
 export default function PedidosPage() {
   const [tab, setTab] = useState<Tab>('nuevo')
   const [userId, setUserId] = useState<string | null>(null)
@@ -69,6 +81,8 @@ export default function PedidosPage() {
    * cobro queda pegado a esa venta y no a las facturas viejas del cliente.
    */
   const [ventaDirecta, setVentaDirecta] = useState(false)
+  // Lo que el repartidor eligio a mano. Vacio = lo que diga la ficha del cliente.
+  const [tipoElegido, setTipoElegido] = useState<string>('')
   const [pagoEfectivo, setPagoEfectivo] = useState('')
   const [pagoYape, setPagoYape] = useState('')
   const [pagoPlin, setPagoPlin] = useState('')
@@ -253,6 +267,7 @@ export default function PedidosPage() {
 
   async function seleccionarCliente(cliente: Cliente) {
     setClienteSeleccionado(cliente)
+    setTipoElegido('')
     setClienteSearch(cliente.razon_social)
     setShowClienteDropdown(false)
     setSeleccionados([])
@@ -399,13 +414,37 @@ export default function PedidosPage() {
   const pagoRecibido = num(pagoEfectivo) + pagoElectronico
   const vuelto = Math.max(0, Math.round((pagoRecibido - totalFinal) * 100) / 100)
   /**
-   * Factura solo con RUC.
+   * Que comprobante se emite en una venta directa.
    *
-   * SUNAT no admite factura sin RUC del comprador; con DNI corresponde
-   * boleta. Se decide por el dato del cliente y no se deja elegir, para que
-   * en la calle no salga un comprobante mal emitido.
+   * Antes esto miraba solo el RUC: con RUC factura, sin RUC boleta. Ignoraba
+   * por completo el comprobante asignado al cliente, asi que a ROBERT LUIS
+   * GUTIERREZ RIVERA -que esta configurado como documento interno- le salieron
+   * boletas el 2 y el 3 de setiembre. Peor: la pantalla le mostraba al
+   * repartidor "Emite: Boleta" aunque su ficha dijera otra cosa.
+   *
+   * Ahora manda la preferencia del cliente, con un limite que no es opinable:
+   * SUNAT no admite factura sin RUC del comprador. Si un cliente sin RUC
+   * quedo marcado como factura, se emite boleta.
+   *
+   * El repartidor puede cambiarlo entre las opciones validas para ese cliente
+   * -Daniel lo pidio asi en la reunion-, pero lo predefinido es siempre lo que
+   * dice la ficha, que es lo que el esperaba que pasara.
    */
-  const tipoComprobante = (clienteSeleccionado as any)?.ruc ? 'factura' : 'boleta'
+  const conRuc = !!(clienteSeleccionado as any)?.ruc
+  const preferido = (clienteSeleccionado as any)?.tipo_comprobante_preferido as string | undefined
+
+  const tiposPosibles: string[] = conRuc
+    ? ['factura', 'boleta', 'nota_pedido_interna']
+    : ['boleta', 'nota_pedido_interna']
+
+  const tipoPorFicha = preferido && tiposPosibles.includes(preferido)
+    ? preferido
+    : (conRuc ? 'factura' : 'boleta')
+
+  // Si el repartidor eligio algo, manda su eleccion; si no, la ficha.
+  const tipoComprobante = tipoElegido && tiposPosibles.includes(tipoElegido)
+    ? tipoElegido
+    : tipoPorFicha
   const subtotalBruto = subtotalConIgv
   const requiereAutorizacion = descuentoPct > DESCUENTO_MAX_SIN_AUTH
   const pedidoMinimo = totalFinal >= MINIMO_PEDIDO || seleccionados.length === 0
@@ -901,7 +940,7 @@ export default function PedidosPage() {
                       <div className="text-xs text-green-700 mt-0.5">{clienteSeleccionado.direccion}</div>
                     )}
                     <div className="mt-2 inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-700 border border-blue-200">
-                      Emite: {(clienteSeleccionado as any).tipo_comprobante_preferido === 'factura' ? 'Factura' : 'Boleta'}
+                      Emite: {ETIQUETA_COMPROBANTE[(clienteSeleccionado as any).tipo_comprobante_preferido as string] ?? 'Boleta'}
                     </div>
                     {deudaCliente > 0 && (
                       <div className="mt-2 flex items-center gap-1.5 text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-1.5">
@@ -1374,14 +1413,45 @@ ${typeof window !== 'undefined' ? window.location.origin : ''}/comprobante/${ven
                       </div>
                     )}
 
-                    <div className="flex items-center justify-between text-xs bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
-                      <span className="text-gray-600">Se emite</span>
-                      <span className="font-semibold text-gray-900 uppercase">
-                        {tipoComprobante}
-                        {tipoComprobante === 'boleta' && (
-                          <span className="ml-1 font-normal text-gray-500 normal-case">(el cliente no tiene RUC)</span>
-                        )}
-                      </span>
+                    {/*
+                      Se emite lo que dice la ficha del cliente, y el repartidor
+                      puede cambiarlo entre lo que corresponde a ese cliente. La
+                      factura no aparece si no hay RUC: SUNAT no la admite.
+                    */}
+                    <div className="bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
+                      <div className="flex items-center justify-between text-xs mb-1.5">
+                        <span className="text-gray-600">Se emite</span>
+                        {tipoComprobante === tipoPorFicha
+                          ? <span className="text-gray-400">segun la ficha del cliente</span>
+                          : <button
+                              type="button"
+                              onClick={() => setTipoElegido('')}
+                              className="text-blue-600 underline"
+                            >
+                              volver a {ETIQUETA_COMPROBANTE[tipoPorFicha]}
+                            </button>}
+                      </div>
+                      <div className="grid grid-cols-3 gap-1.5">
+                        {tiposPosibles.map((t) => (
+                          <button
+                            key={t}
+                            type="button"
+                            onClick={() => setTipoElegido(t)}
+                            className={`rounded-lg border px-2 py-2 text-xs font-semibold transition-colors ${
+                              tipoComprobante === t
+                                ? 'border-green-600 bg-green-600 text-white'
+                                : 'border-gray-300 bg-white text-gray-700'
+                            }`}
+                          >
+                            {ETIQUETA_COMPROBANTE[t]}
+                          </button>
+                        ))}
+                      </div>
+                      {!conRuc && (
+                        <p className="mt-1.5 text-[11px] text-gray-500">
+                          Sin RUC no se puede emitir factura.
+                        </p>
+                      )}
                     </div>
 
                     {([
@@ -1460,7 +1530,7 @@ ${typeof window !== 'undefined' ? window.location.origin : ''}/comprobante/${ven
               ) : (
                 <>
                   <ShoppingCart className="w-5 h-5" />
-                  {ventaDirecta ? `Cobrar y emitir ${tipoComprobante}` : 'Enviar Pedido'}
+                  {ventaDirecta ? `Cobrar y emitir ${ETIQUETA_COMPROBANTE[tipoComprobante] ?? tipoComprobante}` : 'Enviar Pedido'}
                 </>
               )}
             </Button>

@@ -46,6 +46,8 @@ interface ItemRow {
   comp_numero: number
   comp_tipo: string
   comp_fecha: string
+  /** El dia en que la mercaderia sale del almacen: por este se agrupa. */
+  comp_fecha_despacho: string | null
   comp_created_at: string
   cliente_nombre: string
   cliente_doc: string
@@ -169,7 +171,7 @@ export default function MovimientosDiaPage() {
           cantidad, precio_unitario, subtotal, descripcion, producto_id,
           productos(id, codigo, nombre, descripcion, peso_kg, familias(nombre)),
           comprobantes!inner(
-            id, serie, numero, tipo, fecha_emision, created_at, estado,
+            id, serie, numero, tipo, fecha_emision, fecha_despacho, created_at, estado,
             clientes(razon_social, ruc, dni),
             cliente_externo_nombre,
             pedidos(vendedor_id, profiles!pedidos_vendedor_id_fkey(full_name))
@@ -180,9 +182,26 @@ export default function MovimientosDiaPage() {
       if (pedidosDelDespacho) {
         q = q.in('comprobantes.pedido_id', pedidosDelDespacho)
       } else {
+        /*
+         * Se agrupa por la fecha de DESPACHO, no por la de emision.
+         *
+         * AGROCAR factura hoy lo que reparte manana: se deja todo impreso la
+         * noche anterior. El consolidado tiene que contar esa mercaderia el dia
+         * que sale del almacen, que es lo que el almacenero esta cuadrando.
+         *
+         * Antes se agrupaba por fecha de emision y coincidia de casualidad,
+         * porque la emision copiaba la fecha de despacho del pedido. Eso dejo
+         * de pasar cuando la emision se acoto a hoy -SUNAT rechaza comprobantes
+         * fechados adelante-, y entonces los 55 comprobantes emitidos el 2 de
+         * setiembre para repartir el 3 desaparecieron del consolidado del 3.
+         *
+         * Las dos fechas son correctas y cada una sirve para algo distinto: la
+         * de emision es la legal, la de despacho es la operativa. Este reporte
+         * es operativo.
+         */
         q = q
-          .gte('comprobantes.fecha_emision', desde)
-          .lte('comprobantes.fecha_emision', hasta)
+          .gte('comprobantes.fecha_despacho', desde)
+          .lte('comprobantes.fecha_despacho', hasta)
       }
 
       if (tipoComp !== 'todos') q = q.eq('comprobantes.tipo', tipoComp)
@@ -203,6 +222,7 @@ export default function MovimientosDiaPage() {
           comp_numero: it.comprobantes.numero,
           comp_tipo: it.comprobantes.tipo,
           comp_fecha: it.comprobantes.fecha_emision,
+          comp_fecha_despacho: it.comprobantes.fecha_despacho,
           comp_created_at: it.comprobantes.created_at,
           cliente_nombre: it.comprobantes.clientes?.razon_social ?? it.comprobantes.cliente_externo_nombre ?? 'Consumidor final',
           cliente_doc: it.comprobantes.clientes?.ruc ?? it.comprobantes.clientes?.dni ?? '',
@@ -307,7 +327,7 @@ export default function MovimientosDiaPage() {
           <p className="text-sm text-gray-500 mt-0.5">
             {despachoSel
               ? `Despacho ${despachoSel.numero} · ${formatDate(despachoSel.fecha_despacho)} · ${despachoSel.placa} — lo que subió a ese camión`
-              : 'Productos vendidos / despachados — para cuadrar almacén'}
+              : 'Lo que sale del almacén, por día de despacho — para cuadrar'}
           </p>
         </div>
         <div className="text-right bg-black text-white rounded-lg px-4 py-2">
@@ -350,11 +370,11 @@ export default function MovimientosDiaPage() {
             </button>
           </div>
           <div className={despachoSel ? 'opacity-40 pointer-events-none' : ''}>
-            <Label className="text-[10px] text-gray-500">Desde</Label>
+            <Label className="text-[10px] text-gray-500">Desde (despacho)</Label>
             <Input type="date" value={desde} max={hasta} onChange={(e) => setDesde(e.target.value)} className="w-36 h-8 text-xs" />
           </div>
           <div className={despachoSel ? 'opacity-40 pointer-events-none' : ''}>
-            <Label className="text-[10px] text-gray-500">Hasta</Label>
+            <Label className="text-[10px] text-gray-500">Hasta (despacho)</Label>
             <Input type="date" value={hasta} min={desde} max={hoy} onChange={(e) => setHasta(e.target.value)} className="w-36 h-8 text-xs" />
           </div>
           <div>

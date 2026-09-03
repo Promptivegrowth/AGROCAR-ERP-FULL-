@@ -26,6 +26,10 @@ interface Fila {
   doc: string
   telefono: string | null
   primera: boolean
+  /** Ultima linea de ese cliente: debajo va lo que debe en total. */
+  ultima: boolean
+  /** Lo que debe el cliente sumando todas sus lineas. */
+  totalCliente: number
   comprobante: string
   emision: string
   vence: string | null
@@ -115,6 +119,8 @@ async function getData(vendedorId: string) {
         doc: g.cl.ruc ?? g.cl.dni ?? '—',
         telefono: g.cl.telefono,
         primera: i === 0,
+        ultima: i === g.docs.length - 1,
+        totalCliente: g.saldo,
         ...d,
       })
     })
@@ -222,7 +228,7 @@ export default async function CobranzasVendedorSimplePage({ params }: { params: 
             </tr>
           </thead>
           <tbody>
-            {filas.map((f, i) => (
+            {filas.flatMap((f, i) => [
               <tr
                 key={i}
                 /* La línea llena separa clientes; entre boletas del mismo
@@ -247,8 +253,28 @@ export default async function CobranzasVendedorSimplePage({ params }: { params: 
                 <td className="nowrap px-1 py-0 text-[8.5pt] text-right text-gray-600">{f.abonado > 0.01 ? soles(f.abonado) : '—'}</td>
                 <td className="nowrap px-1 py-0 text-[8.5pt] text-right font-semibold">{soles(f.saldo)}</td>
                 <td className="px-1 py-0 text-[8.5pt] text-gray-600 border-b border-dotted border-gray-400"></td>
-              </tr>
-            ))}
+              </tr>,
+              /*
+                Lo que debe el cliente, sumando sus comprobantes.
+                Daniel lo pidio: en la version premium sale y en esta no, y es
+                el numero que le dice al cliente por telefono. Con dos boletas
+                -698.50 y 680.00- lo que importa es el 1,378.50, no cada linea
+                suelta.
+                Solo aparece cuando el cliente tiene mas de un comprobante: con
+                uno solo, el total ya esta en la columna Saldo.
+              */
+              f.ultima && filas.filter((x) => x.doc === f.doc).length > 1 ? (
+                <tr key={`${i}-total`}>
+                  <td colSpan={8} className="px-1 py-0 text-right text-[8pt] font-semibold text-gray-700">
+                    Debe {f.cliente.split(' ').slice(0, 2).join(' ')}:
+                  </td>
+                  <td className="nowrap px-1 py-0 text-right text-[9pt] font-bold border-t border-gray-500">
+                    {soles(f.totalCliente)}
+                  </td>
+                  <td></td>
+                </tr>
+              ) : null,
+            ])}
           </tbody>
           <tfoot>
             <tr className="border-t-2 border-black">
