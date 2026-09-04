@@ -1,11 +1,26 @@
 // Service Worker — AGROCAR ERP
-// Versión cache (subir al cambiar para invalidar caches viejos)
 //
 // v2: la v1 nunca se subió, así que los caches viejos jamás se limpiaban y las
 // pantallas seguían sirviéndose de una versión anterior aunque el sistema ya
 // estuviera actualizado. Pasó con la impresión de tickets: el ERP desplegado
 // tenía el cambio y la PWA seguía abriendo el diálogo viejo.
-const CACHE_VERSION = 'agrocar-v2'
+//
+// v3: volvió a pasar. Se desplegó el selector de comprobante en la venta
+// directa y el repartidor seguía viendo la pantalla anterior, con boleta fija.
+// Subir la versión no alcanzaba: el problema era la estrategia.
+//
+// Las pantallas se servían con "stale-while-revalidate" —primero la copia
+// guardada, la nueva en segundo plano—, así que después de cada despliegue
+// hacía falta abrir la aplicación DOS veces para ver el cambio. En un ERP eso
+// no sirve: quien lo usa no sabe que está mirando algo viejo, y encima el HTML
+// guardado apunta a piezas de código que ya no existen, que es de donde salen
+// los errores de carga.
+//
+// Ahora las pantallas van a la red primero, con tres segundos de paciencia. Si
+// hay señal, siempre se ve lo último. Si no la hay —el repartidor en la
+// calle—, se sirve la copia guardada igual que antes. Se cambia la pregunta de
+// "¿tengo algo guardado?" a "¿tengo señal?".
+const CACHE_VERSION = 'agrocar-v3'
 const STATIC_CACHE = `${CACHE_VERSION}-static`
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`
 const PAGES_CACHE = `${CACHE_VERSION}-pages`
@@ -128,25 +143,36 @@ self.addEventListener('fetch', (event) => {
     return
   }
 
-  // Para páginas HTML → STALE-WHILE-REVALIDATE
-  // Sirve el cache rápido y actualiza en background. Si no hay red ni cache,
-  // muestra una página offline simple.
+  // Para páginas HTML → RED PRIMERO, con la copia guardada como respaldo.
+  //
+  // Los tres segundos son el equilibrio: suficiente para una conexión de
+  // mercado y poco para que alguien crea que la aplicación se colgó. Pasado
+  // ese tiempo se sirve lo guardado, que es mejor que una pantalla en blanco.
   if (isHTMLPage(request)) {
     event.respondWith(
       caches.open(PAGES_CACHE).then(async (cache) => {
         const cached = await cache.match(request)
-        const fetchPromise = fetch(request).then((response) => {
+
+        const desdeLaRed = fetch(request).then((response) => {
           if (response.ok) cache.put(request, response.clone())
           return response
         }).catch(() => null)
-        // Si hay cache, devuelve rápido y actualiza en background
+
+        const conPaciencia = cached
+          ? Promise.race([
+              desdeLaRed,
+              new Promise((resolve) => setTimeout(() => resolve(null), 3000)),
+            ])
+          : desdeLaRed
+
+        const fresh = await conPaciencia
+        if (fresh) return fresh
         if (cached) {
-          event.waitUntil(fetchPromise)
+          // Se sirve lo guardado, pero se sigue bajando lo nuevo para la
+          // próxima vez.
+          event.waitUntil(desdeLaRed)
           return cached
         }
-        // No hay cache: espera la red. Si falla, página offline.
-        const fresh = await fetchPromise
-        if (fresh) return fresh
         return new Response(
           `<!doctype html><html lang="es"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
