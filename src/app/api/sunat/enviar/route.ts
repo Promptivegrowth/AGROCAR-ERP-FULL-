@@ -233,9 +233,19 @@ export async function GET() {
       },
     })
   } catch (e) {
+    /*
+     * Que SUNAT no este configurado no es una falla del servidor: es un estado
+     * valido y esperable -por ejemplo antes de cargar el certificado-. Se
+     * responde 200 con el motivo, y la pantalla muestra su cartel de aviso.
+     * Devolver 500 llenaba la consola de errores rojos y hacia parecer que algo
+     * se habia roto.
+     */
     return NextResponse.json({
       modo: null,
+      razon: '',
+      envio_automatico: false,
+      sincronizar_desde: null,
       error: e instanceof Error ? e.message : 'No se pudo leer la configuración',
-    }, { status: 500 })
+    })
   }
 }
