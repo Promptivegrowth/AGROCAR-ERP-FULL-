@@ -1092,7 +1092,7 @@ export default function PedidosPage() {
                     ventaHecha.telefono as string,
                     `Hola ${ventaHecha.cliente}, gracias por su compra.
 ` +
-                    `${ventaHecha.tipo === 'factura' ? 'Factura' : 'Boleta'} ${ventaHecha.serie}-${ventaHecha.numero}
+                    `${ETIQUETA_COMPROBANTE[ventaHecha.tipo] ?? 'Comprobante'} ${ventaHecha.serie}-${ventaHecha.numero}
 ` +
                     `Total: S/ ${ventaHecha.total.toFixed(2)}
 

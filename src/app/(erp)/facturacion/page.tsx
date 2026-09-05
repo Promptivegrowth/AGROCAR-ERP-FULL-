@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState, useCallback } from 'react'
-import { FileText, Loader2, CheckCircle, AlertCircle, DollarSign, Receipt, Eye, ExternalLink, Search } from 'lucide-react'
+import { FileText, Loader2, CheckCircle, AlertCircle, DollarSign, Receipt, Eye, ExternalLink, Search, CalendarClock } from 'lucide-react'
 import Link from 'next/link'
 import VentaDirectaDialog from './venta-directa-dialog'
 import NotaCreditoDialog from './nota-credito-dialog'
@@ -25,6 +25,21 @@ const ESTADO_SUNAT: Record<string, { label: string; className: string }> = {
   aceptado: { label: 'Aceptado', className: 'bg-green-100 text-green-700' },
   rechazado: { label: 'Rechazado', className: 'bg-red-100 text-red-700' },
   anulado: { label: 'Anulado', className: 'bg-gray-100 text-gray-500' },
+}
+
+/**
+ * Como se llama cada tipo de comprobante en pantalla.
+ *
+ * La lista mostraba el nombre interno tal cual -"nota_pedido_interna"- y en
+ * otras pantallas un ternario que solo distinguia factura, con lo que un
+ * documento interno se leia como "Boleta". Daniel llego a creer que el sistema
+ * seguia emitiendo boletas cuando en realidad emitia bien y el cartel mentia.
+ */
+const NOMBRE_COMPROBANTE: Record<string, string> = {
+  factura: 'Factura',
+  boleta: 'Boleta',
+  nota_pedido_interna: 'Doc. interno',
+  nota_credito: 'Nota de crédito',
 }
 
 /**
@@ -166,7 +181,7 @@ export default function FacturacionPage() {
       supabase
         .from('comprobantes')
         .select(`
-          id, serie, numero, tipo, fecha_emision, created_at, total, estado, editado, editado_at, enviado_sunat,
+          id, serie, numero, tipo, fecha_emision, fecha_despacho, created_at, total, estado, editado, editado_at, enviado_sunat,
       sunat_estado, sunat_codigo, sunat_mensaje, sunat_modo,
           cliente_externo_nombre, cliente_externo_doc,
           clientes(razon_social, ruc, dni),
@@ -224,6 +239,9 @@ export default function FacturacionPage() {
   }, [supabase])
 
   const puedeEditar = userRole === 'administrador' || userRole === 'gerente' || userRole === 'facturador'
+  // Corregir la fecha de salida de un comprobante ya emitido es una
+  // correccion administrativa, no una tarea de facturacion.
+  const puedeCorregirFecha = userRole === 'administrador' || userRole === 'gerente'
 
   // Filtrar comprobantes según rango de fechas + tipo
   const comprobantesFiltrados = comprobantes.filter((c: any) => {
@@ -653,6 +671,62 @@ export default function FacturacionPage() {
   }
 
   // Determinar tipo de comprobante de un pedido (regla SUNAT + preferencia del cliente)
+  /**
+   * Corregir la fecha de despacho de un comprobante ya emitido.
+   *
+   * Daniel lo pidio con un caso concreto: un preventista cargo dos pedidos con
+   * fecha del mismo dia en vez del dia siguiente, se facturaron asi y recien
+   * se repartieron al otro dia. Como Movimientos del dia agrupa por fecha de
+   * despacho, esa mercaderia quedaba contada el dia equivocado y no habia
+   * forma de arreglarlo salvo anular y rehacer.
+   *
+   * Se corrige el dato operativo -cuando sale la mercaderia-. La fecha de
+   * EMISION no se toca: es la legal, la que esta impresa y la que va a SUNAT.
+   *
+   * Las reglas las pone el servidor: solo administrador o gerente, solo si el
+   * comprobante no fue declarado, y siempre con una explicacion que queda en
+   * la bitacora.
+   */
+  const corregirFechaDespacho = async (c: any) => {
+    const actual = c.fecha_despacho ?? c.fecha_emision
+    const nueva = window.prompt(
+      `Corregir la fecha de despacho de ${c.serie}-${c.numero}\n\n`
+      + `Es el dia en que sale la mercaderia, no la fecha del comprobante.\n`
+      + `La fecha de emision (${formatDate(c.fecha_emision)}) no cambia.\n\n`
+      + `Formato: AAAA-MM-DD`,
+      actual,
+    )
+    if (!nueva || nueva === actual) return
+
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(nueva)) {
+      toast.error('Fecha invalida', { description: 'Tiene que ser AAAA-MM-DD, por ejemplo 2026-09-05.' })
+      return
+    }
+
+    const motivo = window.prompt('¿Por que se corrige? Queda registrado.', '')
+    if (!motivo || motivo.trim().length < 5) {
+      toast.error('Falta la explicacion', { description: 'Escribi al menos cinco caracteres.' })
+      return
+    }
+
+    setSaving(true)
+    const { data, error } = await (supabase.rpc as any)('corregir_fecha_despacho_comprobante', {
+      p_comprobante_id: c.id,
+      p_fecha_despacho: nueva,
+      p_motivo: motivo.trim(),
+    })
+    setSaving(false)
+
+    if (error) {
+      toast.error('No se pudo corregir', { description: error.message, duration: 9000 })
+      return
+    }
+    toast.success(`${data?.comprobante ?? ''} corregido`, {
+      description: `Sale el ${formatDate(data?.nueva)} en vez del ${formatDate(data?.anterior)}.`,
+    })
+    loadData()
+  }
+
   const tipoPedido = (pedido: any): 'factura' | 'boleta' | 'nota_pedido_interna' => {
     const cli = pedido.clientes ?? {}
     const t = cli.tipo_comprobante_preferido ?? tipoComprobanteSugerido(cli)
@@ -1243,7 +1317,7 @@ export default function FacturacionPage() {
                                 </span>
                               )}
                             </td>
-                            <td className="py-3 px-4 capitalize text-xs text-gray-600">{c.tipo}</td>
+                            <td className="py-3 px-4 text-xs text-gray-600">{NOMBRE_COMPROBANTE[c.tipo] ?? c.tipo}</td>
                             <td className="py-3 px-4 text-gray-800">
                               <div className="truncate max-w-[220px]">
                                 {(c.clientes as any)?.razon_social ?? (c as any).cliente_externo_nombre ?? '—'}
@@ -1283,6 +1357,20 @@ export default function FacturacionPage() {
                                 </Link>
                                 {c.estado !== 'anulado' && (
                                   <BotonDeclarar comp={c as any} estado={estadoSunat} onListo={loadData} />
+                                )}
+                                {/* Corregir cuando sale la mercaderia. Solo
+                                    administracion y solo si no se declaro. */}
+                                {puedeCorregirFecha && c.estado !== 'anulado' && !c.enviado_sunat && (
+                                  <button
+                                    type="button"
+                                    onClick={() => corregirFechaDespacho(c)}
+                                    disabled={saving}
+                                    title="Corregir el dia en que sale la mercaderia (no cambia la fecha del comprobante)"
+                                    className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-blue-700 hover:text-blue-900 hover:bg-blue-50 rounded transition-colors disabled:opacity-50"
+                                  >
+                                    <CalendarClock className="w-3.5 h-3.5" />
+                                    Fecha salida
+                                  </button>
                                 )}
                                 {puedeEditar && !c.enviado_sunat && c.estado !== 'anulado' && (
                                   <>
