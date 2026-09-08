@@ -507,6 +507,18 @@ export default async function ComprobantePage({
             <span>F. Emisión: {fechaEmision}</span>
             <span>Cond: {condicion}</span>
           </div>
+          {/*
+            La fecha de despacho se calculaba desde siempre pero no se
+            imprimía: quedaba como variable muerta. La impresión por lote sí la
+            muestra, así que el mismo comprobante decía una cosa u otra según
+            por dónde se imprimiera.
+
+            Importa que esté: AGROCAR factura la noche anterior al reparto, así
+            que la emisión y la entrega caen en días distintos. Sin esta línea,
+            el papel solo dice cuándo se emitió y parece que la mercadería
+            salió ese mismo día.
+          */}
+          {fechaDespacho && <div>F. Despacho: {fechaDespacho}</div>}
           <div>{docCliente.label}: {docCliente.valor}{clienteTelefono && clienteTelefono !== '—' ? ` · Tel: ${clienteTelefono}` : ''}</div>
           <div>Cliente: {clienteNombre}</div>
           {clienteDireccion && clienteDireccion !== '—' && (
