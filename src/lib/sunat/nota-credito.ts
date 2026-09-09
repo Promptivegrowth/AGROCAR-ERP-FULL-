@@ -13,6 +13,7 @@
  */
 
 import { montoEnLetras } from './letras'
+import { correlativoSunat } from './ubl'
 import type { ItemUbl, EmisorUbl, ClienteUbl, ResultadoUbl } from './ubl'
 
 const esc = (s: unknown): string => String(s ?? '')
@@ -78,7 +79,8 @@ export function construirNotaCredito(
     throw new Error(`El documento afectado "${nota.documento_afectado}" no tiene la forma SERIE-NUMERO`)
   }
 
-  const id = `${nota.serie}-${nota.numero}`
+  // Con sus ocho digitos: ver `correlativoSunat`.
+  const id = `${nota.serie}-${correlativoSunat(nota.numero)}`
   const moneda = nota.moneda || 'PEN'
   const doc = docCliente(nota.cliente)
 

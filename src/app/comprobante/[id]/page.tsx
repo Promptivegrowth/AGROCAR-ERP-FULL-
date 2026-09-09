@@ -518,7 +518,11 @@ export default async function ComprobantePage({
             el papel solo dice cuándo se emitió y parece que la mercadería
             salió ese mismo día.
           */}
-          {fechaDespacho && <div>F. Despacho: {fechaDespacho}</div>}
+          {/* La fecha de despacho es la de emision: se imprime solo si por
+              alguna razon quedaron distintas, para no repetir el mismo dato. */}
+          {fechaDespacho && fechaDespacho !== comp.fecha_emision && (
+            <div>F. Despacho: {fechaDespacho}</div>
+          )}
           <div>{docCliente.label}: {docCliente.valor}{clienteTelefono && clienteTelefono !== '—' ? ` · Tel: ${clienteTelefono}` : ''}</div>
           <div>Cliente: {clienteNombre}</div>
           {clienteDireccion && clienteDireccion !== '—' && (

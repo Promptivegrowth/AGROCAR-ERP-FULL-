@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useMemo } from 'react'
 import { FileText, Loader2, CheckCircle, AlertCircle, DollarSign, Receipt, Eye, ExternalLink, Search, CalendarClock } from 'lucide-react'
 import Link from 'next/link'
 import VentaDirectaDialog from './venta-directa-dialog'
@@ -43,16 +43,80 @@ const NOMBRE_COMPROBANTE: Record<string, string> = {
 }
 
 /**
- * La fecha con la que se emite: la del despacho, salvo que sea futura.
+ * Lo que la pantalla necesita de cada comprobante.
  *
- * SUNAT no acepta comprobantes fechados adelante. Cuando el despacho esta
- * programado para mas adelante, se emite con la fecha de hoy, que es cuando
- * realmente se esta emitiendo.
+ * Vive en una constante porque hay dos consultas que lo piden -la del periodo
+ * y la busqueda en todo el historial- y tienen que devolver exactamente la
+ * misma forma: la tabla es una sola.
  */
-function fechaEmisionValida(fechaDespacho?: string | null): string {
+const COLUMNAS_COMPROBANTE = `
+  id, serie, numero, tipo, fecha_emision, fecha_despacho, created_at, total, estado,
+  editado, editado_at, enviado_sunat,
+  sunat_estado, sunat_codigo, sunat_mensaje, sunat_modo,
+  cliente_externo_nombre, cliente_externo_doc,
+  clientes(razon_social, ruc, dni),
+  pedidos(numero, profiles!pedidos_vendedor_id_fkey(full_name))
+`
+
+const MESES_ES = [
+  'enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio',
+  'julio', 'agosto', 'setiembre', 'octubre', 'noviembre', 'diciembre',
+]
+
+/** "2026-09" -> "setiembre 2026". */
+function nombrePeriodo(periodo: string): string {
+  const [anio, mes] = periodo.split('-')
+  return `${MESES_ES[Number(mes) - 1]} ${anio}`
+}
+
+/** El ultimo dia del mes, para cerrar el rango de la consulta. */
+function finDePeriodo(periodo: string): string {
+  const [anio, mes] = periodo.split('-').map(Number)
+  return new Date(Date.UTC(anio, mes, 0)).toISOString().slice(0, 10)
+}
+
+/**
+ * Cuantos dias puede adelantarse la impresion al reparto.
+ *
+ * El caso real es el sabado facturando lo que sale el lunes: dos dias. Siete
+ * deja lugar a un feriado largo de por medio y sigue estando lejos de una
+ * fecha puesta por error. Un pedido programado para dentro de un mes no se
+ * factura hoy: se factura cuando le toque.
+ */
+const MAX_DIAS_ANTICIPO = 7
+
+/**
+ * La fecha con la que se emite el comprobante: la del reparto.
+ *
+ * El Reglamento de Comprobantes de Pago (art. 5) manda emitir en el momento en
+ * que se entrega el bien. La mercaderia sale el dia del despacho, asi que esa
+ * es la fecha de emision que corresponde -aunque el papel se imprima antes-.
+ *
+ * Y el papel se imprime antes por obligacion, no por comodidad: el camion sale
+ * 3:30 de la manana y a esa hora no hay nadie en la oficina para imprimir. Todo
+ * queda impreso la noche anterior, y sale con la fecha del dia en que se
+ * reparte.
+ *
+ * Que el comprobante lleve una fecha que todavia no llego no es problema
+ * mientras no se envie: el XML no guarda en ninguna parte cuando se genero ni
+ * cuando se firmo -solo IssueDate-, asi que el dia del reparto SUNAT recibe un
+ * documento fechado ese mismo dia. Lo que SUNAT si rechaza (codigo 2329, "la
+ * fecha de emision se encuentra fuera del limite permitido") es recibir hoy
+ * algo fechado manana; de que eso no pase se encarga /api/sunat/enviar, que no
+ * declara nada antes de su fecha.
+ *
+ * A cambio, el plazo de envio -3 dias calendario desde el dia siguiente a la
+ * emision, RS 003-2023- empieza a correr el dia del reparto y no dos dias
+ * antes.
+ */
+function fechaEmisionComprobante(fechaDespacho?: string | null): string {
   const hoy = hoyLima()
   if (!fechaDespacho) return hoy
-  return fechaDespacho > hoy ? hoy : fechaDespacho
+  if (fechaDespacho <= hoy) return fechaDespacho
+
+  const tope = new Date(`${hoy}T12:00:00Z`)
+  tope.setUTCDate(tope.getUTCDate() + MAX_DIAS_ANTICIPO)
+  return fechaDespacho <= tope.toISOString().slice(0, 10) ? fechaDespacho : hoy
 }
 
 import {
@@ -100,6 +164,29 @@ export default function FacturacionPage() {
   // Búsqueda libre: número/serie de comprobante, número de pedido, RUC/DNI,
   // nombre del cliente o nombre del vendedor — para ubicar facturas rápido.
   const [filtroBusqueda, setFiltroBusqueda] = useState<string>('')
+
+  /*
+   * El periodo que se esta mirando, y el corte de lo que se trae del servidor.
+   *
+   * Antes la pantalla pedia TODOS los comprobantes de una, con un tope de 1000.
+   * Con 35 por dia ese tope se cruzaba en septiembre, y al cruzarlo los
+   * comprobantes mas viejos desaparecian de la pantalla sin ningun aviso: la
+   * consulta simplemente devolvia los primeros mil.
+   *
+   * Ahora se trae un mes por vez. Daniel lo pidio asi -"que se guarden por
+   * periodo mes a mes, y si se requiere ver algun documento pasado que se
+   * ubique segun el mes que le corresponde"- y de paso la pantalla deja de
+   * crecer para siempre: en enero pesa lo mismo que hoy.
+   */
+  const [periodo, setPeriodo] = useState<string>(() => hoyLima().slice(0, 7))
+  const [periodoMasViejo, setPeriodoMasViejo] = useState<string | null>(null)
+
+  /*
+   * Buscar en todo el historial, para cuando no se sabe de que mes es.
+   * Reemplaza lo cargado por los resultados hasta que se vuelva al periodo.
+   */
+  const [busquedaGlobal, setBusquedaGlobal] = useState(false)
+  const [buscandoGlobal, setBuscandoGlobal] = useState(false)
   // Edición controlada
   const [editarOpen, setEditarOpen] = useState(false)
   const [editComp, setEditComp] = useState<any>(null)
@@ -167,6 +254,7 @@ export default function FacturacionPage() {
 
   const loadData = useCallback(async () => {
     setLoading(true)
+    setBusquedaGlobal(false)
 
     const [{ data: pedidos }, { data: comp }, { data: tc }] = await Promise.all([
       (supabase as any)
@@ -180,18 +268,18 @@ export default function FacturacionPage() {
         .order('created_at', { ascending: true }),
       supabase
         .from('comprobantes')
-        .select(`
-          id, serie, numero, tipo, fecha_emision, fecha_despacho, created_at, total, estado, editado, editado_at, enviado_sunat,
-      sunat_estado, sunat_codigo, sunat_mensaje, sunat_modo,
-          cliente_externo_nombre, cliente_externo_doc,
-          clientes(razon_social, ruc, dni),
-          pedidos(numero, profiles!pedidos_vendedor_id_fkey(full_name))
-        `)
+        .select(COLUMNAS_COMPROBANTE)
+        // Un mes por vez. El corte lo hace el servidor: traer todo y filtrar
+        // despues es lo que hacia que se perdieran los viejos contra el tope.
+        .gte('fecha_emision', `${periodo}-01`)
+        .lte('fecha_emision', finDePeriodo(periodo))
         // Pedido de Daniel: agrupado por serie y en orden correlativo — las
         // boletas juntas y las facturas juntas, no mezcladas por fecha.
         .order('serie', { ascending: true })
         .order('numero', { ascending: false })
-        .limit(1000),
+        // Holgado a proposito: un mes ronda los 1100 comprobantes y el tope
+        // tiene que quedar lejos, no al lado.
+        .limit(5000),
       // TC más reciente disponible (si hoy no hay, usa el último día hábil)
       supabase
         .from('tipo_cambio')
@@ -211,20 +299,44 @@ export default function FacturacionPage() {
       setTipoCambioFecha(null)
     }
     setLoading(false)
-  }, [])
+  }, [periodo])
 
   useEffect(() => { loadData() }, [loadData])
+
+  /*
+   * Desde que mes hay comprobantes. Se pregunta una sola vez y con una sola
+   * fila: alcanza para armar la lista de periodos sin traerse el historial.
+   */
+  useEffect(() => {
+    let vivo = true
+    ;(async () => {
+      const { data } = await (supabase as any)
+        .from('comprobantes')
+        .select('fecha_emision')
+        .order('fecha_emision', { ascending: true })
+        .limit(1)
+        .maybeSingle()
+      if (vivo && data?.fecha_emision) {
+        setPeriodoMasViejo(String(data.fecha_emision).slice(0, 7))
+      }
+    })()
+    return () => { vivo = false }
+  }, [supabase])
 
   // Refresco en tiempo real: cuando un vendedor crea un pedido o se emite/edita
   // un comprobante, la página se actualiza sola sin recargar.
   useEffect(() => {
     const channel = supabase
       .channel('facturacion-realtime')
-      .on('postgres_changes' as any, { event: '*', schema: 'public', table: 'pedidos' }, () => loadData())
-      .on('postgres_changes' as any, { event: '*', schema: 'public', table: 'comprobantes' }, () => loadData())
+      // Mientras se esta mirando el resultado de una busqueda en todo el
+      // historial, un refresco automatico lo borraria de la pantalla.
+      .on('postgres_changes' as any, { event: '*', schema: 'public', table: 'pedidos' },
+        () => { if (!busquedaGlobal) loadData() })
+      .on('postgres_changes' as any, { event: '*', schema: 'public', table: 'comprobantes' },
+        () => { if (!busquedaGlobal) loadData() })
       .subscribe()
     return () => { void supabase.removeChannel(channel) }
-  }, [supabase, loadData])
+  }, [supabase, loadData, busquedaGlobal])
 
   // Cargar rol del usuario para gating de edición (solo admin/gerente/facturador editan)
   useEffect(() => {
@@ -237,6 +349,94 @@ export default function FacturacionPage() {
     })()
     return () => { active = false }
   }, [supabase])
+
+  /*
+   * Los meses que se pueden elegir: desde el primer comprobante hasta hoy, el
+   * mas reciente arriba. Se arman con dos fechas, sin consultar el historial.
+   */
+  const periodosDisponibles = useMemo(() => {
+    const actual = hoyLima().slice(0, 7)
+    const lista: string[] = []
+    let [anio, mes] = (periodoMasViejo ?? actual).split('-').map(Number)
+    const [anioTope, mesTope] = actual.split('-').map(Number)
+    while (anio < anioTope || (anio === anioTope && mes <= mesTope)) {
+      lista.push(`${anio}-${String(mes).padStart(2, '0')}`)
+      mes += 1
+      if (mes > 12) { mes = 1; anio += 1 }
+    }
+    // Por las dudas: si alguien mira un periodo fuera del rango, que igual este.
+    if (!lista.includes(periodo)) lista.push(periodo)
+    return lista.reverse()
+  }, [periodoMasViejo, periodo])
+
+  /**
+   * Buscar un comprobante en todo el historial, sin saber de que mes es.
+   *
+   * El selector de periodo cubre el caso normal -Daniel pidio poder ir al mes
+   * que corresponde-, pero cuando alguien tiene el numero en la mano y no la
+   * fecha, recorrer mes por mes es incomodo. Esto pregunta al servidor por
+   * todos los periodos a la vez.
+   *
+   * Son dos consultas porque el nombre del cliente vive en otra tabla y no se
+   * puede combinar en un solo "o" con las columnas del comprobante. Se juntan
+   * los resultados y se sacan los repetidos.
+   */
+  const buscarEnTodoElHistorial = async () => {
+    const q = filtroBusqueda.trim()
+    if (q.length < 2) return
+    setBuscandoGlobal(true)
+
+    /*
+     * Un numero completo se busca exacto; lo demas, por parecido.
+     *
+     * Si alguien escribe "B002-00000013" quiere ESE comprobante. Buscandolo por
+     * parecido salian dieciocho, porque "13" tambien esta adentro de "00000130"
+     * y de "00000131". Cuando la busqueda tiene forma de serie y numero se
+     * consulta por igualdad y se termina el ruido.
+     */
+    const completo = q.match(/^([A-Za-z]\d{3})\s*-\s*(\d+)$/)
+    let condiciones: string
+    if (completo) {
+      const [, serie, numero] = completo
+      const sinCeros = numero.replace(/^0+/, '') || '0'
+      const numeros = Array.from(new Set([numero, sinCeros, sinCeros.padStart(8, '0')]))
+      condiciones = `and(serie.eq.${serie.toUpperCase()},or(${
+        numeros.map((n) => `numero.eq.${n}`).join(',')}))`
+    } else {
+      // "123" tiene que encontrar al que esta guardado como "00000123", y al reves.
+      const sinCeros = q.replace(/^0+/, '')
+      const variantes = Array.from(new Set(
+        [q, sinCeros, sinCeros.padStart(8, '0')].filter((v) => v.length > 0)))
+      condiciones = [
+        ...variantes.map((v) => `numero.ilike.*${v}*`),
+        `serie.ilike.*${q}*`,
+        `cliente_externo_nombre.ilike.*${q}*`,
+        `cliente_externo_doc.ilike.*${q}*`,
+      ].join(',')
+    }
+
+    const [porComprobante, porCliente] = await Promise.all([
+      (supabase as any).from('comprobantes').select(COLUMNAS_COMPROBANTE)
+        .or(condiciones)
+        .order('fecha_emision', { ascending: false }).limit(300),
+      (supabase as any).from('comprobantes')
+        .select(COLUMNAS_COMPROBANTE.replace('clientes(', 'clientes!inner('))
+        .or(`razon_social.ilike.*${q}*,ruc.ilike.*${q}*,dni.ilike.*${q}*`,
+          { referencedTable: 'clientes' })
+        .order('fecha_emision', { ascending: false }).limit(300),
+    ])
+
+    const porId = new Map<string, any>()
+    for (const c of [...(porComprobante.data ?? []), ...(porCliente.data ?? [])]) {
+      porId.set(c.id, c)
+    }
+    const encontrados = Array.from(porId.values())
+      .sort((a, b) => String(b.fecha_emision).localeCompare(String(a.fecha_emision)))
+
+    setComprobantes(encontrados)
+    setBusquedaGlobal(true)
+    setBuscandoGlobal(false)
+  }
 
   const puedeEditar = userRole === 'administrador' || userRole === 'gerente' || userRole === 'facturador'
   // Corregir la fecha de salida de un comprobante ya emitido es una
@@ -371,7 +571,18 @@ export default function FacturacionPage() {
       toast.error('No se pudo eliminar la línea', { description: error.message })
       return
     }
-    toast.success('Línea eliminada', { description: 'Totales recalculados' })
+    /*
+     * Volver a firmar: el XML guardado -y el resumen que viaja en el QR- se
+     * calcularon sobre los importes viejos. El envio reconstruye el XML desde
+     * la base, asi que lo declarado sale bien igual; lo que queda desfasado es
+     * el papel que ya se imprimio. Por eso se firma de nuevo y se avisa.
+     */
+    await firmarComprobante(editComp.id)
+
+    toast.success('Línea eliminada', {
+      description: 'Totales recalculados. Hay que reimprimir el comprobante: cambió el importe.',
+      duration: 10000,
+    })
     // Refrescar items y comprobante
     const { data: items } = await (supabase as any)
       .from('comprobantes_items')
@@ -639,7 +850,9 @@ export default function FacturacionPage() {
         // editComp.editado se setea al eliminar — usamos eso como pista.
         if (editComp?.editado) {
           toast.success('Comprobante actualizado', {
-            description: 'Los cambios (eliminaciones de líneas) ya se aplicaron y los totales se recalcularon.',
+            description: 'Los cambios ya se aplicaron y los totales se recalcularon. '
+              + 'Hay que reimprimir el comprobante.',
+            duration: 10000,
           })
           setEditarOpen(false)
           loadData()
@@ -647,8 +860,14 @@ export default function FacturacionPage() {
           toast.info('Sin cambios', { description: 'No modificaste ningún campo.' })
         }
       } else {
+        // Igual que al eliminar una linea: cambio el importe, cambia la firma,
+        // y el papel impreso queda viejo.
+        await firmarComprobante(editComp.id)
+
         toast.success(`Comprobante actualizado`, {
-          description: `${cambios} línea${cambios === 1 ? '' : 's'} modificada${cambios === 1 ? '' : 's'}. Los totales se recalcularon.`,
+          description: `${cambios} línea${cambios === 1 ? '' : 's'} modificada${cambios === 1 ? '' : 's'}. `
+            + 'Hay que reimprimirlo: cambió el importe.',
+          duration: 10000,
         })
         setEditarOpen(false)
         loadData()
@@ -690,9 +909,11 @@ export default function FacturacionPage() {
   const corregirFechaDespacho = async (c: any) => {
     const actual = c.fecha_despacho ?? c.fecha_emision
     const nueva = window.prompt(
-      `Corregir la fecha de despacho de ${c.serie}-${c.numero}\n\n`
-      + `Es el dia en que sale la mercaderia, no la fecha del comprobante.\n`
-      + `La fecha de emision (${formatDate(c.fecha_emision)}) no cambia.\n\n`
+      `Corregir la fecha de ${c.serie}-${c.numero}\n\n`
+      + `Es el dia en que sale la mercaderia, y es tambien la fecha de\n`
+      + `emision del comprobante: son la misma.\n\n`
+      + `Al cambiarla se vuelve a firmar y HAY QUE REIMPRIMIRLO,\n`
+      + `porque cambia el QR.\n\n`
       + `Formato: AAAA-MM-DD`,
       actual,
     )
@@ -721,8 +942,18 @@ export default function FacturacionPage() {
       toast.error('No se pudo corregir', { description: error.message, duration: 9000 })
       return
     }
+    /*
+     * Volver a firmar. El QR lleva el resumen de la firma, la firma se calcula
+     * sobre un XML que incluye la fecha, y la fecha acaba de cambiar: el XML
+     * guardado quedo viejo. Sin esto, el dia del envio se declararia una cosa
+     * y el papel impreso diria otra.
+     */
+    await firmarComprobante(c.id)
+
     toast.success(`${data?.comprobante ?? ''} corregido`, {
-      description: `Sale el ${formatDate(data?.nueva)} en vez del ${formatDate(data?.anterior)}.`,
+      description: `Ahora es del ${formatDate(data?.nueva)}, antes ${formatDate(data?.anterior)}. `
+        + 'Hay que reimprimirlo: cambio el QR.',
+      duration: 12000,
     })
     loadData()
   }
@@ -765,21 +996,9 @@ export default function FacturacionPage() {
       p_tipo: tipo,
       p_serie: serieReal,
       p_numero: numero,
-      // SUNAT acepta como fecha de emisión la fecha real de entrega de bienes.
-      // Daniel pidió que si el despacho es el día siguiente, la factura salga
-      // con esa fecha (no la de creación del comprobante).
-      /*
-       * La fecha de emision se toma del despacho, pero nunca puede pasar de hoy.
-       *
-       * Un pedido programado para dentro de unos dias hacia nacer el
-       * comprobante con esa fecha, y SUNAT rechaza cualquier comprobante
-       * fechado en el futuro. Paso de verdad: B002-00000154 se emitio el 23/08
-       * con fecha 31/08, y B002-00000343 el 27/08 con fecha 29/08.
-       *
-       * La fecha de despacho no se pierde: viaja aparte, en la columna
-       * fecha_despacho del propio comprobante.
-       */
-      p_fecha_emision: fechaEmisionValida(pedido.fecha_despacho),
+      // La fecha de emision es la del reparto: es el dia en que se entrega la
+      // mercaderia y el que manda el art. 5 del Reglamento de Comprobantes.
+      p_fecha_emision: fechaEmisionComprobante(pedido.fecha_despacho),
       p_subtotal: subtotalCalc,
       p_igv: igvCalc,
       p_total: pedTotal > 0 ? pedTotal : subtotalCalc + igvCalc,
@@ -865,21 +1084,9 @@ export default function FacturacionPage() {
       p_tipo: tipoComprobante,
       p_serie: serieReal,
       p_numero: numero,
-      // SUNAT acepta como fecha de emisión la fecha real de entrega de bienes.
-      // Daniel pidió que si el despacho es el día siguiente, la factura salga
-      // con esa fecha (no la de creación del comprobante).
-      /*
-       * La fecha de emision se toma del despacho, pero nunca puede pasar de hoy.
-       *
-       * Un pedido programado para dentro de unos dias hacia nacer el
-       * comprobante con esa fecha, y SUNAT rechaza cualquier comprobante
-       * fechado en el futuro. Paso de verdad: B002-00000154 se emitio el 23/08
-       * con fecha 31/08, y B002-00000343 el 27/08 con fecha 29/08.
-       *
-       * La fecha de despacho no se pierde: viaja aparte, en la columna
-       * fecha_despacho del propio comprobante.
-       */
-      p_fecha_emision: fechaEmisionValida(pedidoSeleccionado.fecha_despacho),
+      // La fecha de emision es la del reparto: es el dia en que se entrega la
+      // mercaderia y el que manda el art. 5 del Reglamento de Comprobantes.
+      p_fecha_emision: fechaEmisionComprobante(pedidoSeleccionado.fecha_despacho),
       p_subtotal: subtotalCalc,
       p_igv: igvCalc,
       p_total: pedTotal > 0 ? pedTotal : subtotalCalc + igvCalc,
@@ -1188,6 +1395,20 @@ export default function FacturacionPage() {
                 </div>
                 <div className="flex flex-wrap items-end gap-2">
                   <div>
+                    <Label className="text-[10px] uppercase tracking-wide text-gray-500">Periodo</Label>
+                    <select
+                      value={periodo}
+                      onChange={(e) => setPeriodo(e.target.value)}
+                      disabled={buscandoGlobal}
+                      className="h-8 text-xs px-2 border border-gray-300 rounded-md bg-white font-medium capitalize w-40"
+                      title="Los comprobantes se guardan por mes. Elegí el periodo que querés ver."
+                    >
+                      {periodosDisponibles.map((per) => (
+                        <option key={per} value={per}>{nombrePeriodo(per)}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
                     <Label className="text-[10px] uppercase tracking-wide text-gray-500">Desde</Label>
                     <Input type="date" value={filtroDesde} onChange={(e) => setFiltroDesde(e.target.value)} className="h-8 text-xs w-36" />
                   </div>
@@ -1253,13 +1474,58 @@ export default function FacturacionPage() {
                 </div>
               </div>
 
+              {/* Que se esta mirando. Con un mes por vez hay que decirlo:
+                  si no, "no aparece" se confunde con "no existe". */}
+              {!loading && (
+                busquedaGlobal ? (
+                  <div data-franja="historial" className="flex flex-wrap items-center gap-2 px-1 pb-2 text-xs text-blue-800">
+                    <span className="font-medium">
+                      Todo el historial · {comprobantes.length} coincidencia{comprobantes.length === 1 ? '' : 's'}
+                      {filtroBusqueda ? ` para «${filtroBusqueda.trim()}»` : ''}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => loadData()}
+                      className="underline underline-offset-2 hover:text-blue-950"
+                    >
+                      Volver a {nombrePeriodo(periodo)}
+                    </button>
+                  </div>
+                ) : (
+                  <div data-franja="periodo" className="flex flex-wrap items-center gap-2 px-1 pb-2 text-xs text-gray-500">
+                    <span className="capitalize font-medium text-gray-700">{nombrePeriodo(periodo)}</span>
+                    <span>·</span>
+                    <span>
+                      {comprobantes.length} comprobante{comprobantes.length === 1 ? '' : 's'} en el periodo
+                      {comprobantesFiltrados.length !== comprobantes.length
+                        ? ` · ${comprobantesFiltrados.length} coincide${comprobantesFiltrados.length === 1 ? '' : 'n'} con los filtros`
+                        : ''}
+                    </span>
+                    {filtroBusqueda.trim().length >= 2 && (
+                      <button
+                        type="button"
+                        onClick={buscarEnTodoElHistorial}
+                        disabled={buscandoGlobal}
+                        className="underline underline-offset-2 text-blue-700 hover:text-blue-900 disabled:opacity-50"
+                      >
+                        {buscandoGlobal
+                          ? 'Buscando…'
+                          : `Buscar «${filtroBusqueda.trim()}» en todos los periodos`}
+                      </button>
+                    )}
+                  </div>
+                )
+              )}
+
               {loading ? (
                 <div className="flex items-center justify-center py-16">
                   <Loader2 className="w-6 h-6 text-green-600 animate-spin" />
                 </div>
               ) : comprobantesFiltrados.length === 0 ? (
                 <div className="text-center py-16 text-gray-400 text-sm">
-                  {comprobantes.length === 0 ? 'No hay comprobantes emitidos' : 'Ningún comprobante coincide con los filtros'}
+                  {comprobantes.length === 0
+                    ? `No hay comprobantes en ${nombrePeriodo(periodo)}`
+                    : 'Ningún comprobante coincide con los filtros'}
                 </div>
               ) : (
                 <div className="overflow-x-auto">
@@ -1358,14 +1624,15 @@ export default function FacturacionPage() {
                                 {c.estado !== 'anulado' && (
                                   <BotonDeclarar comp={c as any} estado={estadoSunat} onListo={loadData} />
                                 )}
-                                {/* Corregir cuando sale la mercaderia. Solo
+                                {/* Corregir la fecha del comprobante: la de
+                                    salida y la de emision son la misma. Solo
                                     administracion y solo si no se declaro. */}
                                 {puedeCorregirFecha && c.estado !== 'anulado' && !c.enviado_sunat && (
                                   <button
                                     type="button"
                                     onClick={() => corregirFechaDespacho(c)}
                                     disabled={saving}
-                                    title="Corregir el dia en que sale la mercaderia (no cambia la fecha del comprobante)"
+                                    title="Corregir la fecha: mueve la salida y la emision juntas, y obliga a reimprimir"
                                     className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-blue-700 hover:text-blue-900 hover:bg-blue-50 rounded transition-colors disabled:opacity-50"
                                   >
                                     <CalendarClock className="w-3.5 h-3.5" />

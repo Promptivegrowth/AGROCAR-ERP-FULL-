@@ -32,7 +32,13 @@ export async function updateSession(request: NextRequest) {
   // Public paths that don't require auth
   // `/api/impresion` va acá porque el agente de impresión no tiene sesión: se
 // identifica con el token de su equipo, que solo da acceso a su propia cola.
-const publicPaths = ["/login", "/auth/callback", "/boleta", "/comprobante", "/guia-remision", "/api/consulta", "/api/geocode", "/api/ubigeo", "/api/tipo-cambio", "/api/impresion"];
+//
+// `/api/sunat/enviar-programados` es lo mismo con el cron de Vercel, que
+// tampoco tiene sesión: se identifica con CRON_SECRET y sin ese secreto no
+// hace nada. Tiene que estar acá o el cron termina redirigido a /login y el
+// envío automático no corre nunca -sin ruido, que es lo peor-. Va la ruta
+// completa a propósito: `/api/sunat` a secas dejaría abierto el envío manual.
+const publicPaths = ["/login", "/auth/callback", "/boleta", "/comprobante", "/guia-remision", "/api/consulta", "/api/geocode", "/api/ubigeo", "/api/tipo-cambio", "/api/impresion", "/api/sunat/enviar-programados"];
   if (publicPaths.some((p) => pathname.startsWith(p))) {
     return supabaseResponse;
   }

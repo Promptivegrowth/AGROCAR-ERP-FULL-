@@ -86,6 +86,16 @@ export interface ResultadoUbl {
   totales: { gravado: number; igv: number; total: number }
 }
 
+/**
+ * El correlativo como lo quiere SUNAT: ocho digitos, con ceros adelante.
+ *
+ * No inventa numeros ni recorta: si ya viene con ocho o mas, se deja como esta.
+ */
+export function correlativoSunat(numero: string | number): string {
+  const limpio = String(numero).trim()
+  return limpio.length >= 8 ? limpio : limpio.padStart(8, '0')
+}
+
 export function construirInvoice(
   { comprobante, emisor, items }: { comprobante: ComprobanteUbl; emisor: EmisorUbl; items: ItemUbl[] },
 ): ResultadoUbl {
@@ -105,7 +115,17 @@ export function construirInvoice(
    */
   const tipoOperacion = comprobante.tipo_operacion || '0101'
 
-  const id = `${comprobante.serie}-${comprobante.numero}`
+  /*
+   * SUNAT exige el correlativo con su relleno: `F001-00000123`, no `F001-123`.
+   * Si llega corto lo rechaza con el codigo 1001, "el dato SERIE-CORRELATIVO no
+   * cumple con el formato de acuerdo al tipo de comprobante".
+   *
+   * Se rellena aca, en el ultimo lugar antes de armar el XML, porque este es el
+   * unico punto por el que pasan todos los comprobantes. Guardarlo bien en la
+   * base es lo primero -de eso se encarga cada funcion que emite-, pero un
+   * documento mal numerado no tiene que poder salir por ningun camino.
+   */
+  const id = `${comprobante.serie}-${correlativoSunat(comprobante.numero)}`
   const moneda = comprobante.moneda || 'PEN'
   const doc = docCliente(comprobante.cliente)
 
