@@ -183,21 +183,22 @@ export default function MovimientosDiaPage() {
         q = q.in('comprobantes.pedido_id', pedidosDelDespacho)
       } else {
         /*
-         * Se agrupa por la fecha de DESPACHO, no por la de emision.
+         * Se agrupa por la fecha de DESPACHO.
          *
-         * AGROCAR factura hoy lo que reparte manana: se deja todo impreso la
-         * noche anterior. El consolidado tiene que contar esa mercaderia el dia
-         * que sale del almacen, que es lo que el almacenero esta cuadrando.
+         * AGROCAR imprime la noche anterior lo que reparte al dia siguiente: el
+         * camion sale 3:30 de la manana y a esa hora no hay nadie en la oficina.
+         * El consolidado tiene que contar esa mercaderia el dia que sale del
+         * almacen, que es lo que el almacenero esta cuadrando.
          *
-         * Antes se agrupaba por fecha de emision y coincidia de casualidad,
-         * porque la emision copiaba la fecha de despacho del pedido. Eso dejo
-         * de pasar cuando la emision se acoto a hoy -SUNAT rechaza comprobantes
-         * fechados adelante-, y entonces los 55 comprobantes emitidos el 2 de
-         * setiembre para repartir el 3 desaparecieron del consolidado del 3.
+         * Desde la migracion 108 la fecha de emision es la del reparto, asi que
+         * las dos coinciden. Se sigue leyendo `fecha_despacho` a proposito: es
+         * la fecha operativa, y este reporte es operativo. Si algun dia vuelven
+         * a separarse -un comprobante corregido, una entrega que se movio-, el
+         * consolidado tiene que seguir el movimiento de la mercaderia y no el
+         * papel.
          *
-         * Las dos fechas son correctas y cada una sirve para algo distinto: la
-         * de emision es la legal, la de despacho es la operativa. Este reporte
-         * es operativo.
+         * No hay tope hacia adelante. El reparto de manana ya esta facturado
+         * esta noche, y el almacen necesita verlo para prepararlo.
          */
         q = q
           .gte('comprobantes.fecha_despacho', desde)
@@ -310,6 +311,22 @@ export default function MovimientosDiaPage() {
     const s = d.toISOString().slice(0, 10)
     setDespachoId('todos'); setDesde(s); setHasta(s)
   }
+  /*
+   * Manana.
+   *
+   * Lo pidio Daniel: una vez facturado el reparto del dia siguiente, el almacen
+   * necesita poder verlo para preparar la mercaderia. Desde que el comprobante
+   * lleva la fecha del reparto, esos movimientos ya existen la noche anterior.
+   */
+  const setManana = () => {
+    const d = new Date(hoy + 'T00:00:00-05:00'); d.setDate(d.getDate() + 1)
+    const s = d.toISOString().slice(0, 10)
+    setDespachoId('todos'); setDesde(s); setHasta(s)
+  }
+  const manana = (() => {
+    const d = new Date(hoy + 'T00:00:00-05:00'); d.setDate(d.getDate() + 1)
+    return d.toISOString().slice(0, 10)
+  })()
   const setSemana = () => {
     const d = new Date(hoy + 'T00:00:00-05:00'); d.setDate(d.getDate() - 6)
     setDespachoId('todos'); setDesde(d.toISOString().slice(0, 10)); setHasta(hoy)
@@ -364,6 +381,13 @@ export default function MovimientosDiaPage() {
               className="px-2 py-1.5 text-xs font-semibold rounded border bg-white border-gray-300 hover:bg-gray-50">
               Ayer
             </button>
+            <button onClick={setManana}
+              className={`px-2 py-1.5 text-xs font-semibold rounded border ${
+                desde === manana && hasta === manana ? 'bg-[#FBE600] border-yellow-500' : 'bg-white border-gray-300 hover:bg-gray-50'
+              }`}
+              title="Lo que sale manana, de lo que ya se facturo">
+              Mañana
+            </button>
             <button onClick={setSemana}
               className="px-2 py-1.5 text-xs font-semibold rounded border bg-white border-gray-300 hover:bg-gray-50">
               7 días
@@ -375,7 +399,10 @@ export default function MovimientosDiaPage() {
           </div>
           <div className={despachoSel ? 'opacity-40 pointer-events-none' : ''}>
             <Label className="text-[10px] text-gray-500">Hasta (despacho)</Label>
-            <Input type="date" value={hasta} min={desde} max={hoy} onChange={(e) => setHasta(e.target.value)} className="w-36 h-8 text-xs" />
+            {/* Sin tope hacia adelante. El almacen tiene que poder mirar el
+                reparto de manana en cuanto esta facturado, y los comprobantes
+                llevan la fecha del dia en que sale la mercaderia. */}
+            <Input type="date" value={hasta} min={desde} onChange={(e) => setHasta(e.target.value)} className="w-36 h-8 text-xs" />
           </div>
           <div>
             <Label className="text-[10px] text-gray-500">Tipo Comp.</Label>
