@@ -16,7 +16,6 @@ import VehiculoCard from './components/vehiculo-card'
 import PedidoDetalleModal from './components/pedido-detalle-modal'
 import { ordenarPorCercania, agruparPorZona, colorDeString, distanciaKm } from './lib/geo-utils'
 import type { PedidoListo, VehiculoDisponible, AsignacionState, OrdenEntrega } from './lib/types'
-import { hoyLima } from '@/lib/fechas-pe'
 
 type Props = {
   pedidosIniciales: PedidoListo[]
@@ -390,7 +389,6 @@ export default function DespachoClient({ pedidosIniciales, vehiculos, almacen, p
     }
     const pedidosVeh = ids.map((id) => pedidosById.get(id)).filter(Boolean) as PedidoListo[]
     const pesoTotal = pedidosVeh.reduce((a, p) => a + p.peso_kg, 0)
-    const montoTotal = pedidosVeh.reduce((a, p) => a + p.total, 0)
 
     // Calcular orden de entrega optimizado
     const paradas = ordenarPorCercania(
@@ -406,42 +404,29 @@ export default function DespachoClient({ pedidosIniciales, vehiculos, almacen, p
 
     setConsolidandoVehiculo(vehiculoId)
     try {
-      // 1. Crear despacho
-      const fecha = hoyLima()
-      const numero = `D-${fecha.replace(/-/g, '')}-${String(Date.now()).slice(-4)}`
-      const { data: despacho, error: e1 } = await (supabase as any)
-        .from('despachos')
-        .insert({
-          numero,
-          vehiculo_id: vehiculoId,
-          fecha_despacho: fecha,
-          estado: 'preparacion',
-          total_pedidos: pedidosVeh.length,
-          total_monto: montoTotal,
-          peso_total_kg: pesoTotal,
-          orden_entrega: ordenEntrega,
-          hoja_ruta_emitida_at: new Date().toISOString(),
-          repartidor_id: repartidorPorVehiculo[vehiculoId] || null,
-        })
-        .select('id, numero')
-        .single()
+      /*
+       * Una sola llamada, que hace todo en una transaccion.
+       *
+       * Antes eran tres escrituras sueltas desde aca -crear el despacho, crear
+       * sus items, marcar los pedidos- y ninguna volvia a mirar si los pedidos
+       * seguian disponibles. Esta lista vive en el navegador: una vez
+       * consolidados pasan a 'despachado' y la pantalla no se entera, asi que
+       * apretar de nuevo consolidaba lo mismo otra vez. Paso el 16/09 -dos
+       * despachos identicos con seis minutos de diferencia- y antes el 29/08,
+       * donde los mismos 22 pedidos se cargaron tres veces.
+       *
+       * La funcion comprueba contra la base, no contra lo que creemos, y si
+       * alguno ya no esta disponible no crea nada y dice cuales son.
+       */
+      const { data: despacho, error: e1 } = await (supabase.rpc as any)('consolidar_despacho', {
+        p_vehiculo_id: vehiculoId,
+        p_pedido_ids: pedidosVeh.map((p) => p.id),
+        p_repartidor_id: repartidorPorVehiculo[vehiculoId] || null,
+        p_orden_entrega: ordenEntrega,
+        p_peso_total_kg: pesoTotal,
+      })
       if (e1) throw e1
-
-      // 2. Crear items del despacho
-      const itemsInsert = pedidosVeh.map((p) => ({
-        despacho_id: despacho.id,
-        pedido_id: p.id,
-        estado: 'pendiente',
-      }))
-      const { error: e2 } = await (supabase as any).from('despachos_items').insert(itemsInsert)
-      if (e2) throw e2
-
-      // 3. Marcar pedidos como despachados
-      const { error: e3 } = await (supabase as any)
-        .from('pedidos')
-        .update({ estado: 'despachado', updated_at: new Date().toISOString() })
-        .in('id', pedidosVeh.map((p) => p.id))
-      if (e3) throw e3
+      if (!despacho?.id) throw new Error('La consolidación no devolvió un despacho')
 
       toast.success('Hoja de ruta emitida', {
         description: `Despacho ${despacho.numero} creado con ${pedidosVeh.length} paradas.`,
