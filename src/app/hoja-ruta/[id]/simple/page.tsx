@@ -2,6 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { notFound } from 'next/navigation'
 import HojaRutaSimpleActions from './hoja-ruta-simple-actions'
 import { EMPRESA, SLOGAN_FONT_STACK } from '@/lib/empresa'
+import { formatDate } from '@/lib/utils'
 
 export const dynamic = 'force-dynamic'
 
@@ -13,7 +14,8 @@ async function getData(id: string) {
     .select(`
       id, numero, fecha_despacho, estado, total_pedidos, total_monto, peso_total_kg,
       orden_entrega, hoja_ruta_emitida_at,
-      vehiculos(placa, descripcion)
+      vehiculos(placa, descripcion),
+      repartidor:profiles!despachos_repartidor_id_fkey(full_name)
     `)
     .eq('id', id)
     .maybeSingle()
@@ -75,15 +77,14 @@ export default async function HojaRutaSimplePage({ params }: { params: { id: str
 
   const { despacho, paradas } = data
   const v = despacho.vehiculos as any
+  // Puede venir sin asignar: hay despachos armados antes de que el selector
+  // de repartidor existiera, y otros donde simplemente no se eligio.
+  const repartidor = ((despacho as any).repartidor?.full_name ?? '').trim() || null
   const totalGeneral = paradas.reduce((a: number, p: any) => a + p.total, 0)
 
   // Las fechas se interpretan en timezone de Lima (UTC-5) — el servidor está en UTC.
   // Para fecha_despacho que viene como YYYY-MM-DD, agregamos T12:00:00 para evitar
   // que se desplace al día anterior al convertir a Date.
-  const fechaDoc = new Date(despacho.fecha_despacho + 'T12:00:00').toLocaleDateString('es-PE', {
-    weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
-    timeZone: 'America/Lima',
-  })
   const horaDoc = new Date(despacho.hoja_ruta_emitida_at ?? Date.now()).toLocaleTimeString('es-PE', {
     hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false,
     timeZone: 'America/Lima',
@@ -91,7 +92,12 @@ export default async function HojaRutaSimplePage({ params }: { params: { id: str
 
   return (
     <div className="min-h-screen bg-gray-50 print:bg-white">
-      <style>{`
+      {/* Como HTML crudo y no como texto: React compara el contenido de un
+          <style> al hidratar, no le coincide, y termina reemplazando el
+          documento entero -"The server HTML was replaced with client
+          content"-. En una hoja que se imprime eso es justo lo que no
+          conviene. */}
+      <style dangerouslySetInnerHTML={{ __html: `
         @media print {
           /* IMPRESIÓN IDÉNTICA A LA PANTALLA — usar todo el ancho A4 sin
              reducir fuentes ni reflujo de columnas. La pantalla ya está
@@ -112,7 +118,7 @@ export default async function HojaRutaSimplePage({ params }: { params: { id: str
           .simple-table .nowrap { white-space: nowrap !important; }
           tr { break-inside: avoid; }
         }
-      `}</style>
+      ` }} />
 
       {/* Acciones (no se imprimen) */}
       <div className="no-print sticky top-0 z-10 bg-white border-b border-gray-200 px-4 py-2.5">
@@ -136,13 +142,20 @@ export default async function HojaRutaSimplePage({ params }: { params: { id: str
           <span className="font-bold text-[10pt] whitespace-nowrap">{EMPRESA.razon_social}</span>
           <h1 className="text-[12pt] font-bold text-gray-900 underline">REPARTO/ENTREGA DE PEDIDOS</h1>
           <span className="text-[8pt] text-gray-600 whitespace-nowrap">
-            {new Date(despacho.fecha_despacho).toLocaleDateString('es-PE')} · {horaDoc}
+            {/* Con `new Date('2026-09-16')` la fecha se lee como medianoche UTC
+                y en Lima cae el dia anterior: la hoja de un reparto del 16
+                salia fechada el 15. `formatDate` ya resuelve eso, y es lo que
+                usa el resto del sistema. */}
+            {formatDate(despacho.fecha_despacho)} · {horaDoc}
           </span>
         </div>
 
         {/* Metadatos */}
         <div className="flex items-center gap-4 py-1.5 text-[11px] text-gray-700 border-b border-gray-200">
           <span><strong>Vehículo:</strong> {v?.placa ?? '—'} {v?.descripcion ? `· ${v.descripcion}` : ''}</span>
+          {/* El repartidor lo venían escribiendo a mano en cada hoja. Cuando el
+              despacho se armó sin asignarlo, se deja la raya para eso. */}
+          <span><strong>Repartidor:</strong> {repartidor ?? '________________'}</span>
           <span><strong>Despacho:</strong> <span className="font-mono">{despacho.numero}</span></span>
           <span><strong>Paradas:</strong> {despacho.total_pedidos}</span>
           <span className="ml-auto font-bold">Total: S/ {Number(despacho.total_monto ?? 0).toFixed(2)}</span>
@@ -212,13 +225,16 @@ export default async function HojaRutaSimplePage({ params }: { params: { id: str
           </tfoot>
         </table>
 
-        <div className="flex justify-between mt-6 pt-4 border-t border-gray-300">
+        <div className="flex items-end justify-between mt-6 pt-4 border-t border-gray-300">
           <div className="text-center">
             <div className="border-t border-black pt-1 px-10">
               <p className="text-[9pt]">Firma del Chofer</p>
             </div>
           </div>
           <div className="text-center">
+            {repartidor && (
+              <p className="text-[9pt] font-semibold mb-1">{repartidor}</p>
+            )}
             <div className="border-t border-black pt-1 px-10">
               <p className="text-[9pt]">Firma del Repartidor</p>
             </div>
