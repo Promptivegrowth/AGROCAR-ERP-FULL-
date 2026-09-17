@@ -9,6 +9,7 @@ import { Label } from '@/components/ui/label'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { formatCurrency } from '@/lib/utils'
+import { useIgv } from '@/lib/igv'
 
 interface Props {
   open: boolean
@@ -47,6 +48,9 @@ const MOTIVOS_SUNAT = [
 ]
 
 export default function NotaCreditoDialog({ open, onOpenChange, comprobanteId, onCreated }: Props) {
+  // La tasa de IGV sale de la configuracion, no del codigo. Hasta que llega
+  // vale 18, que es la de siempre.
+  const igvPct = useIgv()
   const supabase = createClient()
   const [comp, setComp] = useState<Comp | null>(null)
   const [items, setItems] = useState<Item[]>([])
@@ -105,7 +109,8 @@ export default function NotaCreditoDialog({ open, onOpenChange, comprobanteId, o
     })
 
   const subtotal = itemsPayload.reduce((a, i) => a + i.subtotal, 0)
-  const igv = Math.round(subtotal * 0.18 * 100) / 100
+  // Solo para mostrar: al emitir, la tasa la pone `igv_vigente()` en la base.
+  const igv = Math.round(subtotal * (igvPct / 100) * 100) / 100
   const total = subtotal + igv
 
   const emitir = async () => {

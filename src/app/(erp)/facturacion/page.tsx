@@ -9,6 +9,7 @@ import { toast } from 'sonner'
 import { createClient } from '@/lib/supabase/client'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { hoyLima, fechaLima } from '@/lib/fechas-pe'
+import { useIgv, factorIgv } from '@/lib/igv'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -250,6 +251,9 @@ export default function FacturacionPage() {
   const [comprobanteEmitidoId, setComprobanteEmitidoId] = useState<string | null>(null)
   const [comprobanteEmitidoLabel, setComprobanteEmitidoLabel] = useState<string>('')
   const [emisionLoteActiva, setEmisionLoteActiva] = useState<string | null>(null)
+  // La tasa de IGV, de la configuracion. Manda la base al emitir; esto es
+  // para que lo que se muestra coincida con lo que se va a guardar.
+  const igvPct = useIgv()
   const [progresoLote, setProgresoLote] = useState<{ actual: number; total: number; exitosos: number; fallos: number } | null>(null)
 
   const loadData = useCallback(async () => {
@@ -984,7 +988,8 @@ export default function FacturacionPage() {
     const pedIgv = Number(pedido.igv ?? 0)
     const pedTotal = Number(pedido.total ?? 0)
     const incluirIgv = pedido.incluir_igv !== false
-    const igvCalc = pedIgv > 0 ? pedIgv : (incluirIgv ? pedTotal * 0.18 / 1.18 : 0)
+    const igvCalc = pedIgv > 0 ? pedIgv
+      : (incluirIgv ? pedTotal - pedTotal / factorIgv(igvPct) : 0)
     const subtotalCalc = pedIgv > 0 ? pedSubtotal : (incluirIgv ? pedTotal - igvCalc : pedTotal)
 
     // 3) Usuario actual (para facturador_id)
@@ -1074,7 +1079,8 @@ export default function FacturacionPage() {
     const pedTotal = Number(pedidoSeleccionado.total ?? 0)
     const incluirIgv = pedidoSeleccionado.incluir_igv !== false
     // Si el pedido no tiene igv pero incluir_igv=true, calcular a partir del total (legacy)
-    const igvCalc = pedIgv > 0 ? pedIgv : (incluirIgv ? pedTotal * 0.18 / 1.18 : 0)
+    const igvCalc = pedIgv > 0 ? pedIgv
+      : (incluirIgv ? pedTotal - pedTotal / factorIgv(igvPct) : 0)
     const subtotalCalc = pedIgv > 0 ? pedSubtotal : (incluirIgv ? pedTotal - igvCalc : pedTotal)
 
     // Usar RPC atómica: cabecera + items + cambio estado en una transacción

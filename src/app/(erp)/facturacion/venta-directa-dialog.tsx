@@ -13,7 +13,8 @@ import { Label } from '@/components/ui/label'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 
-const IGV_RATE = 0.18
+import { useIgv, factorIgv } from '@/lib/igv'
+
 
 interface Cliente {
   id: string
@@ -58,6 +59,9 @@ interface Props {
 }
 
 export default function VentaDirectaDialog({ open, onOpenChange, onCreated }: Props) {
+  // La tasa de IGV sale de la configuracion, no del codigo. Hasta que llega
+  // vale 18, que es la de siempre.
+  const igvPct = useIgv()
   const supabase = createClient()
 
   const [loadingData, setLoadingData] = useState(false)
@@ -329,7 +333,7 @@ export default function VentaDirectaDialog({ open, onOpenChange, onCreated }: Pr
 
   // Totales
   const subtotalBruto = carrito.reduce((acc, s) => acc + s.subtotal, 0)
-  const baseImponible = incluirIgv ? subtotalBruto / (1 + IGV_RATE) : subtotalBruto
+  const baseImponible = incluirIgv ? subtotalBruto / factorIgv(igvPct) : subtotalBruto
   const igvMonto = incluirIgv ? subtotalBruto - baseImponible : 0
   const totalFinal = subtotalBruto
 

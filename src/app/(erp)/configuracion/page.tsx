@@ -16,6 +16,7 @@ import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import LeafletMap from '@/components/maps/leaflet-map'
 import { Warehouse, Crosshair } from 'lucide-react'
+import { olvidarIgv } from '@/lib/igv'
 
 const SERIES_INICIALES = [
   { serie: 'F001', tipo: 'factura', descripcion: 'Facturas electrónicas' },
@@ -56,6 +57,18 @@ export default function ConfiguracionPage() {
     zona_ids: [] as string[],
     password: '',
   })
+  /*
+   * El rol de quien esta usando la pantalla.
+   *
+   * La tasa de IGV la ve y la cambia solo gerencia y administracion, que es lo
+   * que pidio Daniel. La base ya lo impide -la politica
+   * `configuracion_write_admin`-, pero mostrar un campo que al guardar va a
+   * fallar no le sirve a nadie.
+   */
+  const [miRol, setMiRol] = useState<string | null>(null)
+  const [igvTexto, setIgvTexto] = useState('18')
+  const [guardandoIgv, setGuardandoIgv] = useState(false)
+
   const [resetPwdDialog, setResetPwdDialog] = useState<any>(null)
   const [resetPwd, setResetPwd] = useState('')
   const [deleteUserDialog, setDeleteUserDialog] = useState<any>(null)
@@ -86,6 +99,16 @@ export default function ConfiguracionPage() {
       sb.from('v_profile_zonas_resumen').select('profile_id, total_zonas, zonas_nombres'),
     ])
     setZonas(zs ?? [])
+    // El campo arranca con lo que hay guardado, no con un 18 fijo.
+    setIgvTexto(String((p ?? []).find((c: any) => c.clave === 'igv_porcentaje')?.valor ?? '18'))
+
+    // Quien esta mirando, y la tasa vigente.
+    const { data: { user } } = await supabase.auth.getUser()
+    if (user) {
+      const { data: perfil } = await (supabase as any)
+        .from('profiles').select('role').eq('id', user.id).maybeSingle()
+      setMiRol((perfil as { role?: string } | null)?.role ?? null)
+    }
 
     // Mapear resumen de zonas por usuario
     const zonasResumenMap = new Map<string, { total: number; nombres: string }>()
@@ -237,6 +260,45 @@ export default function ConfiguracionPage() {
     setUserDialog(true)
   }
 
+  /**
+   * Guardar la tasa de IGV.
+   *
+   * No toca los comprobantes ya emitidos: cada linea guarda el porcentaje con
+   * el que se emitio, y esa es la tasa que se declara a SUNAT. El valor nuevo
+   * aplica de aca en adelante.
+   */
+  const guardarIgv = async () => {
+    const n = Number(igvTexto.trim().replace(',', '.'))
+    if (!Number.isFinite(n) || n < 0 || n > 50) {
+      toast.error('Tasa invalida', {
+        description: 'Tiene que ser un numero entre 0 y 50. Hoy en Peru el IGV es 18.',
+      })
+      return
+    }
+    setGuardandoIgv(true)
+    const { error } = await (supabase as any).from('configuracion').upsert(
+      {
+        clave: 'igv_porcentaje',
+        valor: String(n),
+        descripcion: 'Porcentaje de IGV vigente. Lo cambian solo gerencia y administracion.',
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: 'clave' },
+    )
+    setGuardandoIgv(false)
+    if (error) {
+      toast.error('No se pudo guardar el IGV', { description: error.message })
+      return
+    }
+    // Que las demas pantallas dejen de usar la tasa vieja.
+    olvidarIgv()
+    setParametros((prev) => ({ ...prev, igv_porcentaje: String(n) }))
+    toast.success(`IGV actualizado a ${n}%`, {
+      description: 'Aplica a los comprobantes que se emitan de ahora en adelante. Los ya emitidos conservan su tasa.',
+      duration: 10000,
+    })
+  }
+
   const openEditUser = async (user: any) => {
     setEditingUser(user)
     // Cargar zonas asignadas (M:N)
@@ -264,8 +326,21 @@ export default function ConfiguracionPage() {
     setSaving(true)
     try {
       if (editingUser) {
-        // Zona principal: si tiene zonas múltiples, la primera es la principal
-        const zonaPrincipal = userForm.zona_ids[0] ?? userForm.zona_id ?? null
+        /*
+         * Zona principal: si tiene zonas multiples, la primera es la principal.
+         *
+         * Va con `||` y no con `??` a proposito. El formulario guarda "sin
+         * zona" como cadena vacia -`user.zona_id ?? ''`-, y `??` solo atrapa
+         * null y undefined: la cadena vacia pasaba de largo y se enviaba como
+         * uuid. Postgres respondia 400, "invalid input syntax for type uuid",
+         * y no se guardaba nada.
+         *
+         * Le pasaba a cualquier usuario sin zona asignada -repartidores,
+         * almaceneros, contador, caja-, sin importar que campo se estuviera
+         * editando. Se noto cambiando roles porque es lo que se estaba
+         * haciendo.
+         */
+        const zonaPrincipal = userForm.zona_ids[0] || userForm.zona_id || null
         const codigoNorm = userForm.codigo?.trim() || null
         const dniNorm = userForm.dni?.trim() || null
         const { error } = await (supabase.from('profiles') as any).update({
@@ -669,7 +744,45 @@ export default function ConfiguracionPage() {
         </TabsContent>
 
         {/* SERIES */}
-        <TabsContent value="series" className="mt-4">
+        <TabsContent value="series" className="mt-4 space-y-4">
+          {/* La tasa de IGV. Solo gerencia y administracion: lo pidio Daniel y
+              la base ya lo exige, asi que al resto ni se le muestra. */}
+          {(miRol === 'administrador' || miRol === 'gerente') && (
+            <Card className="border-gray-200 shadow-sm">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-base font-semibold text-gray-800">
+                  Impuesto General a las Ventas (IGV)
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="flex flex-wrap items-end gap-3">
+                  <div>
+                    <Label className="text-xs text-gray-500">Tasa vigente (%)</Label>
+                    <Input
+                      type="number" min={0} max={50} step="0.01"
+                      value={igvTexto}
+                      onChange={(e) => setIgvTexto(e.target.value)}
+                      className="mt-1 w-28 font-mono"
+                    />
+                  </div>
+                  <Button
+                    onClick={guardarIgv}
+                    disabled={guardandoIgv || igvTexto.trim() === (parametros.igv_porcentaje ?? '18')}
+                    className="bg-[#FBE600] hover:bg-yellow-400 text-gray-900"
+                  >
+                    {guardandoIgv ? 'Guardando…' : 'Guardar IGV'}
+                  </Button>
+                  <p className="text-[11px] text-gray-500 basis-full leading-relaxed">
+                    En Perú el IGV es <strong>18%</strong> desde 2011. Cambiarlo acá afecta
+                    únicamente a los comprobantes que se emitan de ahora en adelante: los ya
+                    emitidos conservan la tasa con la que salieron, que es la que se declara
+                    a SUNAT.
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
           <Card className="border-gray-200 shadow-sm">
             <CardHeader className="pb-2">
               <CardTitle className="text-base font-semibold text-gray-800">Numeración de Comprobantes</CardTitle>

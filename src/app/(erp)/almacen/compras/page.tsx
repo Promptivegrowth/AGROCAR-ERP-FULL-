@@ -40,7 +40,8 @@ const compraSchema = z.object({
 
 type CompraFormData = z.infer<typeof compraSchema>
 
-const IGV_RATE = 0.18
+import { useIgv, factorIgv } from '@/lib/igv'
+
 const PAGE_SIZE = 15
 
 const ESTADO_CONFIG: Record<string, { label: string; className: string; desc: string }> = {
@@ -62,6 +63,9 @@ type ProductoCatalogo = {
 }
 
 export default function ComprasPage() {
+  // La tasa de IGV sale de la configuracion, no del codigo. Hasta que llega
+  // vale 18, que es la de siempre.
+  const igvPct = useIgv()
   const supabase = createClient()
 
   const [compras, setCompras] = useState<any[]>([])
@@ -136,7 +140,7 @@ export default function ComprasPage() {
     (acc, item) => acc + (Number(item.cantidad) || 0) * (Number(item.precio_unitario) || 0),
     0
   ) ?? 0
-  const subtotal = incluirIgv ? totalConIgv / (1 + IGV_RATE) : totalConIgv
+  const subtotal = incluirIgv ? totalConIgv / factorIgv(igvPct) : totalConIgv
   const igv = incluirIgv ? totalConIgv - subtotal : 0
   const totalCompra = totalConIgv
 
@@ -218,7 +222,7 @@ export default function ComprasPage() {
     const totalConIgvCalc = data.items.reduce(
       (acc, item) => acc + item.cantidad * item.precio_unitario, 0
     )
-    const subtotalCalc = incluirIgv ? totalConIgvCalc / (1 + IGV_RATE) : totalConIgvCalc
+    const subtotalCalc = incluirIgv ? totalConIgvCalc / factorIgv(igvPct) : totalConIgvCalc
     const igvCalc = incluirIgv ? totalConIgvCalc - subtotalCalc : 0
     const totalFinalCalc = totalConIgvCalc
 
@@ -331,7 +335,7 @@ export default function ComprasPage() {
     try {
       // El total (lo que se paga) no cambia al togglar IGV. Solo cambia el desglose.
       const totalActual = Number(detailCompra.total ?? 0)
-      const subtotalNuevo = editForm.incluir_igv ? totalActual / (1 + IGV_RATE) : totalActual
+      const subtotalNuevo = editForm.incluir_igv ? totalActual / factorIgv(igvPct) : totalActual
       const igvNuevo = editForm.incluir_igv ? totalActual - subtotalNuevo : 0
       const totalNuevo = totalActual
 
@@ -504,7 +508,7 @@ export default function ComprasPage() {
           .eq('id', it.id)
         if (error) throw error
       }
-      const subtotalNuevo = detailCompra.incluir_igv ? totalConIgvNuevo / (1 + IGV_RATE) : totalConIgvNuevo
+      const subtotalNuevo = detailCompra.incluir_igv ? totalConIgvNuevo / factorIgv(igvPct) : totalConIgvNuevo
       const igvNuevo = detailCompra.incluir_igv ? totalConIgvNuevo - subtotalNuevo : 0
       const totalNuevo = totalConIgvNuevo
       const { error: cErr } = await (supabase.from('compras') as any)
@@ -1301,7 +1305,7 @@ export default function ComprasPage() {
                   <span className="font-medium">
                     {formatCurrency(
                       editMode
-                        ? (editForm.incluir_igv ? Number(detailCompra.subtotal ?? 0) * IGV_RATE : 0)
+                        ? (editForm.incluir_igv ? Number(detailCompra.subtotal ?? 0) * (igvPct / 100) : 0)
                         : (detailCompra.igv ?? 0)
                     )}
                   </span>
@@ -1311,7 +1315,7 @@ export default function ComprasPage() {
                   <span className="text-green-600">
                     {formatCurrency(
                       editMode
-                        ? Number(detailCompra.subtotal ?? 0) + (editForm.incluir_igv ? Number(detailCompra.subtotal ?? 0) * IGV_RATE : 0)
+                        ? Number(detailCompra.subtotal ?? 0) + (editForm.incluir_igv ? Number(detailCompra.subtotal ?? 0) * (igvPct / 100) : 0)
                         : (detailCompra.total ?? 0)
                     )}
                   </span>
