@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import CobranzasClient, { type ClienteSaldo } from './cobranzas-client'
+import { traerTodo } from '@/lib/supabase/paginar'
 
 export const dynamic = 'force-dynamic'
 
@@ -20,7 +21,14 @@ async function getCobranzasData() {
     .neq('estado', 'anulado')
 
   // 3) Traer cobros (pagos aplicados) por cliente + sus aplicaciones a comprobantes
-  const { data: cobros } = await (supabase as any)
+  /*
+   * De a paginas: son 1.065 cobros y Supabase corta en mil.
+   *
+   * Esta consulta alimenta el saldo por cliente. Con la lista cortada, los
+   * cobros que quedaban afuera no se restaban de lo facturado y el cliente
+   * aparecia debiendo plata que ya habia pagado.
+   */
+  const cobros = await traerTodo<any>((desde, hasta) => (supabase as any)
     .from('cobros')
     .select(`
       id, numero, cliente_id, fecha, total, efectivo, yape, plin, transferencia, notas, created_at, nro_operacion,
@@ -29,6 +37,8 @@ async function getCobranzasData() {
         comprobantes(serie, numero, tipo)
       )
     `)
+    .order('created_at', { ascending: true })
+    .range(desde, hasta))
 
   // 4) Agregación en JS: saldo pendiente por cliente
   const facturadoPorCliente = new Map<string, number>()

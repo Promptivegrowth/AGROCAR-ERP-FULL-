@@ -10,6 +10,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Label } from '@/components/ui/label'
+import { traerTodo } from '@/lib/supabase/paginar'
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, BarChart, Bar
 } from 'recharts'
@@ -102,10 +103,20 @@ export default function ReportesPage() {
     setVentasPorVendedor(vendItems)
 
     // Cuentas por cobrar (real: facturado - cobrado por cliente)
-    const [{ data: clientesActivos }, { data: comprAll }, { data: cobrosAll }] = await Promise.all([
+    /*
+     * Las dos listas van de a paginas: hay 1.261 comprobantes y 1.065 cobros, y
+     * Supabase corta en mil. Cortadas, este calculo restaba cobros que no veia
+     * y sumaba facturas que tampoco: las cuentas por cobrar salian mal por los
+     * dos lados.
+     */
+    const [{ data: clientesActivos }, comprAll, cobrosAll] = await Promise.all([
       supabase.from('clientes').select('id, razon_social, ruc, dni, credito_limite, credito_dias').eq('estado', 'activo').order('razon_social'),
-      supabase.from('comprobantes').select('cliente_id, total').neq('estado', 'anulado'),
-      supabase.from('cobros').select('cliente_id, total'),
+      traerTodo<any>((desde, hasta) => supabase.from('comprobantes')
+        .select('cliente_id, total').neq('estado', 'anulado')
+        .order('id', { ascending: true }).range(desde, hasta)),
+      traerTodo<any>((desde, hasta) => supabase.from('cobros')
+        .select('cliente_id, total')
+        .order('id', { ascending: true }).range(desde, hasta)),
     ])
     const facturadoMap = new Map<string, number>()
     const cobradoMap = new Map<string, number>()

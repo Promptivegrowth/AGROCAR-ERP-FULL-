@@ -80,27 +80,32 @@ async function getCajaData() {
    * cobros registrados hoy" mientras la sesión traía S/ 5.169,86 del sábado.
    * Desde afuera parecía que no se podía liquidar el día anterior.
    */
-  const { data: pendientesRaw } = await (supabase as any)
-    .from('cobros')
-    .select('id, numero, fecha, total, clientes(razon_social), cliente_externo_nombre')
-    .neq('fecha', today)
-    .order('fecha', { ascending: true })
+  /*
+   * Se le pregunta a la base, en vez de traerse dos listas y cruzarlas aca.
+   *
+   * Antes esto eran dos consultas sin `limit`: todos los cobros de dias
+   * anteriores, y todos los movimientos de caja que tuvieran cobro. PostgREST
+   * devuelve como mucho mil filas, y hoy hay 1.065 movimientos con cobro: los
+   * 65 que no entraban quedaban fuera del conjunto de "ya liquidados", asi que
+   * sus cobros aparecian como pendientes aunque estuvieran cerrados hacia dias.
+   *
+   * Daniel lo vio como "no puedo cerrar la caja del 17 y no se carga sola": los
+   * 43 cobros del 17 ya habian entrado en la sesion del 18, pero el cartel
+   * insistia en que faltaban 21. Al abrir caja no se cargaba nada porque no
+   * habia nada que cargar.
+   *
+   * `cobros_sin_liquidar()` lo resuelve en una consulta. Sin listas que traer,
+   * no hay nada que se pueda cortar por el camino.
+   */
+  const { data: pendientesRaw } = await (supabase as any).rpc('cobros_sin_liquidar')
 
-  const { data: yaEnCaja } = await (supabase as any)
-    .from('caja_movimientos')
-    .select('cobro_id')
-    .not('cobro_id', 'is', null)
-
-  const liquidados = new Set(((yaEnCaja ?? []) as any[]).map((m) => m.cobro_id))
-  const cobrosPendientes = ((pendientesRaw ?? []) as any[])
-    .filter((c) => !liquidados.has(c.id) && Number(c.total ?? 0) > 0)
-    .map((c) => ({
-      id: c.id,
-      numero: c.numero ?? null,
-      fecha: c.fecha,
-      total: Number(c.total ?? 0),
-      cliente: c.clientes?.razon_social ?? c.cliente_externo_nombre ?? '—',
-    }))
+  const cobrosPendientes = ((pendientesRaw ?? []) as any[]).map((c) => ({
+    id: c.id,
+    numero: c.numero ?? null,
+    fecha: c.fecha,
+    total: Number(c.total ?? 0),
+    cliente: c.cliente ?? '—',
+  }))
 
   // 3) Movimientos de la sesión actual (si hay)
   let movimientos: MovimientoCaja[] = []

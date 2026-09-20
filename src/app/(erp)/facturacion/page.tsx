@@ -120,6 +120,7 @@ function fechaEmisionComprobante(fechaDespacho?: string | null): string {
   return fechaDespacho <= tope.toISOString().slice(0, 10) ? fechaDespacho : hoy
 }
 
+import { traerTodo } from '@/lib/supabase/paginar'
 import {
   useEstadoSunat, BannerSunat, ChipSunat, BotonDeclarar,
 } from './sunat-acciones'
@@ -260,7 +261,9 @@ export default function FacturacionPage() {
     setLoading(true)
     setBusquedaGlobal(false)
 
-    const [{ data: pedidos }, { data: comp }, { data: tc }] = await Promise.all([
+    // `comp` ya viene como lista: `traerTodo` devuelve las filas, no la
+    // respuesta con `data`.
+    const [{ data: pedidos }, comp, { data: tc }] = await Promise.all([
       (supabase as any)
         .from('pedidos')
         .select(`
@@ -270,20 +273,25 @@ export default function FacturacionPage() {
         `)
         .eq('estado', 'enviado')
         .order('created_at', { ascending: true }),
-      supabase
+      /*
+       * Un mes por vez, y de a paginas.
+       *
+       * El corte por mes lo hace el servidor: traer todo y filtrar despues era
+       * lo que hacia que se perdieran los viejos. Pero un mes ya ronda los
+       * 1.100 comprobantes, y Supabase corta en mil pase lo que pase: pedir
+       * `.limit(5000)` no levanta ese tope, lo impone el servidor y gana. Asi
+       * que se pide de a mil hasta que no queden.
+       */
+      traerTodo<any>((desde, hasta) => supabase
         .from('comprobantes')
         .select(COLUMNAS_COMPROBANTE)
-        // Un mes por vez. El corte lo hace el servidor: traer todo y filtrar
-        // despues es lo que hacia que se perdieran los viejos contra el tope.
         .gte('fecha_emision', `${periodo}-01`)
         .lte('fecha_emision', finDePeriodo(periodo))
         // Pedido de Daniel: agrupado por serie y en orden correlativo — las
         // boletas juntas y las facturas juntas, no mezcladas por fecha.
         .order('serie', { ascending: true })
         .order('numero', { ascending: false })
-        // Holgado a proposito: un mes ronda los 1100 comprobantes y el tope
-        // tiene que quedar lejos, no al lado.
-        .limit(5000),
+        .range(desde, hasta)),
       // TC más reciente disponible (si hoy no hay, usa el último día hábil)
       supabase
         .from('tipo_cambio')
