@@ -114,7 +114,9 @@ export async function GET(req: NextRequest) {
     ['Sin costo de compra', productos.filter((p) => p.costo === null).length],
     ['Valor del inventario (a costo)', totalValor],
     ['Utilidad potencial (si todo se vende)', totalUtil],
-    ['Margen promedio %', totalValor > 0 ? `${((totalUtil / totalValor) * 100).toFixed(2)}%` : '—'],
+    // Numero, como los demas porcentajes del reporte.
+    ['Margen promedio %', totalValor > 0
+      ? Number(((totalUtil / totalValor) * 100).toFixed(2)) : null],
   ], { columnasMoneda: [1] })
 
   row = seccionTitulo(sheet, row, `Resumen por familia (${familiasArr.length})`)
@@ -122,9 +124,10 @@ export async function GET(req: NextRequest) {
     ['Familia', 'Productos', 'Valor Inventario', 'Utilidad Potencial', '% Margen'],
     familiasArr.map((f) => [
       f.nombre, f.productos, f.valor, f.utilidad,
-      f.pct_prom !== null ? `${f.pct_prom.toFixed(2)}%` : '—',
+      // Numero, no texto: asi se puede ordenar y promediar en Excel.
+      f.pct_prom !== null ? Number(f.pct_prom.toFixed(2)) : null,
     ]),
-    { columnasMoneda: [2, 3] },
+    { columnasMoneda: [2, 3], columnasPorcentaje: [4] },
   )
 
   row = seccionTitulo(sheet, row, `Detalle por producto (${productos.length})`)
@@ -132,13 +135,16 @@ export async function GET(req: NextRequest) {
     ['Código', 'Producto', 'Familia', 'Stock', 'Costo prom.', 'Venta prom.', 'Margen', '% Util.', 'Valor Inv.', 'Util. Pot.'],
     productos.map((p) => [
       p.codigo, p.descripcion, p.familia_nombre, p.stock,
-      p.costo ?? '', p.precio_venta ?? '', p.margen ?? '',
-      p.utilidad_pct !== null ? `${p.utilidad_pct.toFixed(2)}%` : '—',
+      // `null` y no cadena vacia: una celda vacia sigue siendo numerica y no
+      // rompe el orden ni las sumas de la columna.
+      p.costo, p.precio_venta, p.margen,
+      p.utilidad_pct !== null ? Number(p.utilidad_pct.toFixed(2)) : null,
       p.valor_inventario, p.utilidad_potencial,
     ]),
     {
       columnasMoneda: [4, 5, 6, 8, 9],
-      totalsRow: ['', '', 'TOTAL', '', '', '', '', '', totalValor, totalUtil],
+      columnasPorcentaje: [7],
+      totalsRow: ['', '', 'TOTAL', null, null, null, null, null, totalValor, totalUtil],
     },
   )
 

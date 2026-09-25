@@ -71,6 +71,12 @@ export async function crearExcelBranded(opts: ExcelBrandedOptions): Promise<Exce
   }
 
   // Filas 1-4 reservadas para logo (visualmente). Datos empresa al lado.
+  // Fusionadas: el texto es largo y asi el ancho queda declarado en vez de
+  // depender de que las celdas de al lado sigan vacias.
+  sheet.mergeCells('C1:H1')
+  sheet.mergeCells('C2:H2')
+  sheet.mergeCells('C3:H3')
+  sheet.mergeCells('C4:H4')
   sheet.getCell('C1').value = EMPRESA.razon_social
   sheet.getCell('C1').font = { bold: true, size: 14, color: { argb: COLOR_NEGRO } }
 
@@ -155,6 +161,15 @@ export function seccionTabla(
   opts?: {
     columnasMoneda?: number[] // índices 0-based de columnas con formato moneda
     columnasFecha?: number[]
+    /**
+     * Columnas de porcentaje, como número: 25.3 se escribe 25.3 y se muestra
+     * "25.30%".
+     *
+     * Antes estos valores se armaban como texto —`${x.toFixed(2)}%`— y en Excel
+     * un texto no se ordena por valor, no se promedia y no entra en un gráfico.
+     * Se veía bien y no servía para nada.
+     */
+    columnasPorcentaje?: number[]
     totalsRow?: (string | number | null)[]
   },
 ): number {
@@ -185,6 +200,10 @@ export function seccionTabla(
       cell.value = val
       if (opts?.columnasMoneda?.includes(colIdx) && typeof val === 'number') {
         cell.numFmt = '"S/ "#,##0.00'
+        cell.alignment = { horizontal: 'right' }
+      } else if (opts?.columnasPorcentaje?.includes(colIdx) && typeof val === 'number') {
+        // El valor va como número; el "%" lo pone el formato.
+        cell.numFmt = '0.00"%"'
         cell.alignment = { horizontal: 'right' }
       } else if (opts?.columnasFecha?.includes(colIdx)) {
         cell.alignment = { horizontal: 'center' }
@@ -222,6 +241,9 @@ export function seccionTabla(
       if (opts.columnasMoneda?.includes(colIdx) && typeof val === 'number') {
         cell.numFmt = '"S/ "#,##0.00'
         cell.alignment = { horizontal: 'right' }
+      } else if (opts.columnasPorcentaje?.includes(colIdx) && typeof val === 'number') {
+        cell.numFmt = '0.00"%"'
+        cell.alignment = { horizontal: 'right' }
       }
       cell.border = {
         top: { style: 'medium', color: { argb: COLOR_NEGRO } },
@@ -231,15 +253,41 @@ export function seccionTabla(
     nextRow++
   }
 
-  // Auto-ajustar anchos de columnas según contenido
+  /*
+   * Los anchos crecen, nunca se achican.
+   *
+   * En Excel el ancho es de la COLUMNA, no de la tabla, y una hoja suele
+   * llevar varias tablas: en el inventario valorizado son tres, de 2, 5 y 10
+   * columnas. Antes cada llamada hacia `col.width = ...` y pisaba lo que
+   * hubiera puesto la anterior, asi que mandaba la ultima tabla: la columna 1
+   * quedaba del ancho de "Codigo" y el "Valor del inventario (a costo)" de la
+   * tabla de totales —que vive en esa misma columna— salia cortado.
+   *
+   * Tomando el maximo, cada columna entra la mas larga de todas las tablas que
+   * la usan y no se corta nada.
+   */
   headers.forEach((h, i) => {
     const col = sheet.getColumn(i + 1)
-    let max = Math.max(h.length, 10)
+    let necesario = Math.max(h.length, 10)
     rows.forEach((r) => {
       const v = String(r[i] ?? '')
-      if (v.length > max) max = v.length
+      if (v.length > necesario) necesario = v.length
     })
-    col.width = Math.min(max + 2, 35)
+    if (opts?.totalsRow) {
+      const v = String(opts.totalsRow[i] ?? '')
+      if (v.length > necesario) necesario = v.length
+    }
+    /*
+     * Hay un tope: una columna de 120 no se imprime. Lo que se pasa no se
+     * corta, se acomoda en varias lineas —`wrapText`—, que es la unica forma
+     * de que un nombre largo se lea entero sin romper la hoja.
+     */
+    const TOPE = 50
+    const propuesto = Math.min(necesario + 2, TOPE)
+    col.width = Math.max(col.width ?? 0, propuesto)
+    if (necesario + 2 > TOPE) {
+      col.alignment = { ...(col.alignment ?? {}), wrapText: true, vertical: 'top' }
+    }
   })
 
   return nextRow + 1 // fila vacía después de la tabla

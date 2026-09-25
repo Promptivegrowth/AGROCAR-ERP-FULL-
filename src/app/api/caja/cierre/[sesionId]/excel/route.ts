@@ -102,6 +102,16 @@ export async function GET(
 
   // Datos generales
   row = seccionTitulo(sheet, row, 'Información general')
+  /*
+   * Estas celdas se escriben a mano, fuera de `seccionTabla`, asi que el
+   * ajuste automatico de anchos no las ve. Las fechas con hora ocupan unos
+   * 24 caracteres y se salian de su columna.
+   */
+  for (const col of ['B', 'E']) {
+    const c = sheet.getColumn(col)
+    c.width = Math.max(c.width ?? 0, 26)
+  }
+
   sheet.getCell(`A${row}`).value = 'Apertura'
   sheet.getCell(`A${row}`).font = { bold: true }
   sheet.getCell(`B${row}`).value = fechaAp

@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useMemo, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { formatCurrency } from '@/lib/utils'
+import { formatCurrency, formatDate } from '@/lib/utils'
 import { hoyLima } from '@/lib/fechas-pe'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -227,8 +227,28 @@ export default function ValorizadoPage() {
   }), [filtrados])
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between flex-wrap gap-2">
+    <div className="space-y-4 print:space-y-2">
+      {/*
+        Reglas de impresion propias de este reporte.
+
+        La tabla del detalle vive en una caja con alto maximo y scroll, que en
+        pantalla esta bien pero al imprimir recorta: se veian 600px de 1601px,
+        o sea que dos de cada tres productos no llegaban al papel. Eso se
+        arregla con las clases `print:` de mas abajo; aca van las dos cosas que
+        Tailwind no puede expresar.
+      */}
+      <style dangerouslySetInnerHTML={{ __html: `
+        @media print {
+          @page { size: A4 landscape; margin: 10mm 8mm; }
+          /* La cabecera de la tabla se repite en cada hoja: sin esto, de la
+             segunda pagina en adelante son numeros sin titulo. */
+          thead { display: table-header-group; }
+          tr, td, th { break-inside: avoid; page-break-inside: avoid; }
+          table { width: 100%; border-collapse: collapse; }
+        }
+      ` }} />
+
+      <div className="flex items-center justify-between flex-wrap gap-2 print:hidden">
         <div>
           <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
             <Package className="w-6 h-6 text-emerald-600" />
@@ -257,8 +277,27 @@ export default function ValorizadoPage() {
         </div>
       </div>
 
+      {/* Solo en el papel: el titulo y que se esta mirando. En pantalla eso lo
+          dicen el encabezado y los filtros, que no se imprimen. */}
+      <div className="hidden print:block border-b-2 border-black pb-2 mb-2">
+        <div className="flex items-baseline justify-between">
+          <span className="text-[11pt] font-bold">AGROCAR S.R.L.</span>
+          <span className="text-[13pt] font-bold uppercase">Inventario Valorizado</span>
+          <span className="text-[8pt]">{formatDate(hoy)}</span>
+        </div>
+        <div className="flex flex-wrap gap-4 text-[9pt] mt-1">
+          <span><strong>Periodo:</strong> {formatDate(desde)} a {formatDate(hasta)}</span>
+          <span><strong>Familia:</strong> {familiaFiltro === 'todas'
+            ? 'Todas'
+            : (familias.find((f) => f.id === familiaFiltro)?.nombre ?? '—')}</span>
+          <span><strong>Productos:</strong> {totales.productos}</span>
+          {soloStock && <span>Solo con stock</span>}
+          {busqueda.trim() && <span><strong>Busqueda:</strong> {busqueda.trim()}</span>}
+        </div>
+      </div>
+
       {/* KPIs grandes */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 print:grid-cols-4 print:gap-2">
         <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
           <p className="text-xs text-blue-700 font-semibold">PRODUCTOS</p>
           <p className="text-lg font-bold text-blue-900">{totales.productos}</p>
@@ -287,7 +326,7 @@ export default function ValorizadoPage() {
       </div>
 
       {/* Filtros */}
-      <div className="bg-white border border-gray-200 rounded-lg p-3 flex flex-wrap items-end gap-3">
+      <div className="bg-white border border-gray-200 rounded-lg p-3 flex flex-wrap items-end gap-3 print:hidden">
         <div>
           <Label className="text-[10px] text-gray-500">Desde</Label>
           <Input type="date" value={desde} max={hasta} onChange={(e) => setDesde(e.target.value)} className="w-36 h-8 text-xs" />
@@ -368,7 +407,10 @@ export default function ValorizadoPage() {
         ) : filtrados.length === 0 ? (
           <p className="text-center py-12 text-gray-400 text-sm">Sin productos que coincidan.</p>
         ) : (
-          <div className="overflow-x-auto max-h-[60vh] overflow-y-auto">
+          // En pantalla la tabla scrollea dentro de su caja; en el papel no hay
+          // caja que valga: se suelta el alto para que salgan todas las filas y
+          // no solo las primeras que entraban en 60vh.
+          <div className="overflow-x-auto max-h-[60vh] overflow-y-auto print:max-h-none print:overflow-visible">
             <table className="w-full text-xs">
               <thead className="bg-gray-50 sticky top-0 z-10">
                 <tr className="border-b border-gray-200">
@@ -388,7 +430,10 @@ export default function ValorizadoPage() {
                   <tr key={p.producto_id} className="border-b border-gray-100 hover:bg-gray-50/60">
                     <td className="p-2 font-mono text-[10px]">{p.codigo}</td>
                     <td className="p-2">
-                      <div className="font-medium text-gray-900 truncate max-w-[260px]">{p.descripcion_completa}</div>
+                      {/* En pantalla se recorta para que la fila no se estire; en el papel
+                          hay lugar de sobra y el nombre entero es justamente lo
+                          que se necesita leer. */}
+                      <div className="font-medium text-gray-900 truncate max-w-[260px] print:overflow-visible print:text-clip print:whitespace-normal print:max-w-none">{p.descripcion_completa}</div>
                       <div className="text-[10px] text-gray-500">{p.familia_nombre}</div>
                     </td>
                     <td className="p-2 text-right font-mono">{p.stock.toFixed(2)}</td>
