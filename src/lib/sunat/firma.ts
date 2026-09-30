@@ -164,10 +164,21 @@ const REINTENTABLES = [401, 429, 500, 502, 503, 504]
 const esperar = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
 export async function enviarASunat(
-  { modo = 'beta', usuario, clave, nombreArchivo, zip, intentos = 3 }:
-  { modo?: ModoSunat; usuario: string; clave: string; nombreArchivo: string; zip: Buffer; intentos?: number },
+  { modo = 'beta', usuario, clave, nombreArchivo, zip, intentos = 3, endpoint }:
+  {
+    modo?: ModoSunat; usuario: string; clave: string; nombreArchivo: string
+    zip: Buffer; intentos?: number
+    /**
+     * Otra direccion, para documentos que no son comprobantes.
+     *
+     * Las guias de remision tienen su propio servicio -`ol-ti-itemision-guia-gem`-
+     * y su propio beta. El sobre SOAP y la seguridad son identicos, asi que se
+     * reusa todo esto y solo cambia a donde se manda.
+     */
+    endpoint?: string
+  },
 ): Promise<RespuestaSunat> {
-  const url = ENDPOINTS[modo]
+  const url = endpoint ?? ENDPOINTS[modo]
   if (!url) throw new Error(`Modo desconocido: ${modo}`)
 
   const sobre = `<?xml version="1.0" encoding="UTF-8"?>
