@@ -20,7 +20,11 @@
 // hay señal, siempre se ve lo último. Si no la hay —el repartidor en la
 // calle—, se sirve la copia guardada igual que antes. Se cambia la pregunta de
 // "¿tengo algo guardado?" a "¿tengo señal?".
-const CACHE_VERSION = 'agrocar-v3'
+//
+// v4: el sistema se dejó en blanco para empezar a usarlo. Las pantallas
+// guardadas en cada teléfono todavía podían mostrar, sin señal, pedidos y
+// cobros de la etapa de prueba. Cambiar la versión las borra todas al abrir.
+const CACHE_VERSION = 'agrocar-v4'
 const STATIC_CACHE = `${CACHE_VERSION}-static`
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`
 const PAGES_CACHE = `${CACHE_VERSION}-pages`
