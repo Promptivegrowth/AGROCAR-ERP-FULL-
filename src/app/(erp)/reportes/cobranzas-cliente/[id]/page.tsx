@@ -101,7 +101,7 @@ export default async function CobranzasClientePage({ params }: { params: Promise
 
   return (
     <div className="min-h-screen bg-gray-50 print:bg-white">
-      <style>{`
+      <style dangerouslySetInnerHTML={{ __html: `
         @media print {
           @page { size: A4 portrait; margin: 12mm; }
           html, body { background: white !important; }
@@ -116,7 +116,7 @@ export default async function CobranzasClientePage({ params }: { params: Promise
           .ec-doc thead { display: table-header-group; }
         }
         .print-only { display: none; }
-      `}</style>
+      ` }} />
 
       <div className="max-w-5xl mx-auto p-4 print:p-0 print:max-w-full">
         <div className="bg-black text-white p-4 rounded-t-xl flex items-center justify-between no-print">

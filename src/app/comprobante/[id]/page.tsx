@@ -449,7 +449,7 @@ export default async function ComprobantePage({
 
   return (
     <div className="min-h-dvh bg-gray-200 py-6 print:bg-white print:py-0">
-      <style>{`
+      <style dangerouslySetInnerHTML={{ __html: `
         @media print {
           /* Pide al navegador papel de 80mm para ticketera térmica.
              Si la impresora es A4 normal y no soporta 80mm, el ticket
@@ -475,7 +475,7 @@ export default async function ComprobantePage({
           }
           .ticket img { max-width: 100% !important; }
         }
-      `}</style>
+      ` }} />
 
       <ToggleFormato />
 

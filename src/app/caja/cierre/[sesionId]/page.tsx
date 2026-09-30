@@ -114,7 +114,7 @@ export default async function CierreCajaReporte({
 
   return (
     <div className="min-h-screen bg-gray-50 print:bg-white">
-      <style>{`
+      <style dangerouslySetInnerHTML={{ __html: `
         @media print {
           @page { size: A4 portrait; margin: 12mm; }
           html, body { background: white !important; }
@@ -131,7 +131,7 @@ export default async function CierreCajaReporte({
           .cierre-table tr { page-break-inside: avoid; }
           .cierre-table thead { display: table-header-group; }
         }
-      `}</style>
+      ` }} />
 
       <div className="no-print sticky top-0 z-10 bg-white border-b border-gray-200 px-4 py-2.5">
         <div className="max-w-5xl mx-auto flex items-center justify-between">

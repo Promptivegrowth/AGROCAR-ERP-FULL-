@@ -103,7 +103,7 @@ export default async function CatalogoPage({ searchParams }: {
 
   return (
     <div className="min-h-screen bg-gray-50 print:bg-white">
-      <style>{`
+      <style dangerouslySetInnerHTML={{ __html: `
         @media print {
           @page { size: A4 landscape; margin: 10mm; }
           html, body { background: white !important; }
@@ -121,7 +121,7 @@ export default async function CatalogoPage({ searchParams }: {
           .familia-header { page-break-after: avoid; }
         }
         .print-only { display: none; }
-      `}</style>
+      ` }} />
 
       <div className="max-w-7xl mx-auto p-4 print:p-0 print:max-w-full">
         <div className="bg-black text-white p-4 rounded-t-xl flex items-center justify-between no-print">

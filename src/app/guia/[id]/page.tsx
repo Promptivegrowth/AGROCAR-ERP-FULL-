@@ -90,7 +90,7 @@ export default async function GuiaPage({ params }: { params: Promise<{ id: strin
 
   return (
     <div className="min-h-dvh bg-gray-200 py-6 px-3 print:bg-white print:py-0 print:px-0">
-      <style>{`
+      <style dangerouslySetInnerHTML={{ __html: `
         @media print {
           @page { size: A4 portrait; margin: 10mm; }
           html, body { background: white !important; }
@@ -98,7 +98,7 @@ export default async function GuiaPage({ params }: { params: Promise<{ id: strin
             font-family: 'Helvetica Neue', Arial, sans-serif !important; color: #111 !important; }
           .no-print { display: none !important; }
         }
-      `}</style>
+      ` }} />
 
       <GuiaActions guiaId={id} numero={numeroCompleto} />
 

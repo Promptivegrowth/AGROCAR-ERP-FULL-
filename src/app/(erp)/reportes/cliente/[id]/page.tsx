@@ -90,7 +90,7 @@ export default async function ClienteReportePage({
 
   return (
     <div className="min-h-screen bg-gray-50 print:bg-white">
-      <style>{`
+      <style dangerouslySetInnerHTML={{ __html: `
         @media print {
           @page { size: A4 portrait; margin: 12mm; }
           html, body { background: white !important; }
@@ -105,7 +105,7 @@ export default async function ClienteReportePage({
           .cliente-doc thead { display: table-header-group; }
         }
         .print-only { display: none; }
-      `}</style>
+      ` }} />
 
       <div className="max-w-6xl mx-auto p-4 print:p-0 print:max-w-full">
         {/* Acciones (no se imprimen) */}

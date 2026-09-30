@@ -59,7 +59,7 @@ export default async function EstadoCuentaPublico({ params }: { params: Promise<
 
   return (
     <div className="min-h-dvh bg-gray-50 py-6 px-3 print:bg-white print:py-0 print:px-0">
-      <style>{`
+      <style dangerouslySetInnerHTML={{ __html: `
         @media print {
           @page { size: A4 portrait; margin: 12mm; }
           html, body { background: white !important; }
@@ -67,7 +67,7 @@ export default async function EstadoCuentaPublico({ params }: { params: Promise<
             font-family: 'Helvetica Neue', Arial, sans-serif !important; }
           .no-print { display: none !important; }
         }
-      `}</style>
+      ` }} />
 
       <div className="max-w-3xl mx-auto bg-white shadow-lg rounded-xl p-6 print:shadow-none print:rounded-none print:p-0">
         {/* Header AGROCAR */}

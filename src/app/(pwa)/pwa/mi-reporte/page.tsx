@@ -157,7 +157,7 @@ export default function MiReportePage() {
 
   return (
     <div className="min-h-full bg-gray-50 print:bg-white">
-      <style>{`
+      <style dangerouslySetInnerHTML={{ __html: `
         @media print {
           @page { size: A4 portrait; margin: 12mm; }
           html, body { background: white !important; }
@@ -172,7 +172,7 @@ export default function MiReportePage() {
           .mi-reporte-doc thead { display: table-header-group; }
         }
         .print-only { display: none; }
-      `}</style>
+      ` }} />
 
       {/* Header — solo pantalla */}
       <div className="bg-black text-white px-4 pt-6 pb-4 border-b-4 border-[#FBE600] no-print">

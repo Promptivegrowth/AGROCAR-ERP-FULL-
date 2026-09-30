@@ -205,7 +205,7 @@ export default async function ImprimirLotePage({
   return (
     <div className="envoltura bg-gray-200 print:bg-white">
       <AutoPrint count={lista.length} esTicket={!esA4} />
-      <style>{`
+      <style dangerouslySetInnerHTML={{ __html: `
         @media print {
           /* En ticket, AutoPrint reemplaza este tamaño por 80mm × alto real:
              "80mm auto" no es CSS válido y hace que el navegador caiga a A4. */
@@ -250,7 +250,7 @@ export default async function ImprimirLotePage({
           .pagebreak img { max-width: 100% !important; }
           `}
         }
-      `}</style>
+      ` }} />
 
       {/* Barra superior solo visible en pantalla */}
       <div className="no-print sticky top-0 bg-white border-b border-gray-200 shadow-sm py-3 px-4 z-10">
