@@ -23,6 +23,8 @@ export interface EstadoSunat {
   razon: string
   envio_automatico: boolean
   sincronizar_desde: string | null
+  /** Días que espera el envío automático después de la emisión (ver lib/sunat/plazo). */
+  dias_espera?: number
   certificado?: { titular: string; vence: string }
   error?: string
 }
@@ -72,7 +74,9 @@ export function BannerSunat({ estado }: { estado: EstadoSunat | null }) {
         {estado.certificado && (
           <p className="mt-0.5 opacity-75">
             Certificado vigente hasta {estado.certificado.vence}
-            {estado.envio_automatico ? ' · envío automático encendido' : ' · el envío es manual'}
+            {estado.envio_automatico
+              ? ` · envío automático ${estado.dias_espera ? `${estado.dias_espera} día${estado.dias_espera === 1 ? '' : 's'} después de la emisión, para poder corregir antes` : 'el mismo día de la emisión'}`
+              : ' · el envío es manual'}
           </p>
         )}
       </div>

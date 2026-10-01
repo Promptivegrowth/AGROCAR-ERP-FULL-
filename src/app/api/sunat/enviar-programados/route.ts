@@ -7,17 +7,18 @@ export const dynamic = 'force-dynamic'
 export const maxDuration = 300
 
 /**
- * Declarar cada mañana los comprobantes que ya llegaron a su fecha.
+ * Declarar cada mañana los comprobantes que ya cumplieron su espera.
  *
  * Los comprobantes se imprimen la noche anterior al reparto -el camión sale a
  * las 3:30 de la mañana y a esa hora no hay nadie en la oficina- y salen
- * fechados el día en que se entrega la mercadería. Ese día nadie tiene que
- * acordarse de apretar nada: este proceso los busca y los declara.
+ * fechados el día en que se entrega la mercadería. Nadie tiene que acordarse
+ * de apretar nada: este proceso los busca y los declara.
  *
- * Que corra el mismo día en que están fechados es lo que hace que el plazo de
- * envío -3 días calendario desde el día siguiente a la emisión, RS
- * 003-2023/SUNAT- empiece a correr recién cuando la mercadería sale, y no dos
- * días antes mientras los papeles esperan en la oficina.
+ * Pero no el mismo día. Daniel quiere usar el plazo de SUNAT -hasta el tercer
+ * día calendario siguiente a la emisión, RS 000003-2023/SUNAT- para anular o
+ * editar desde el sistema si hubo un error o una devolución. Así que espera
+ * `sunat_dias_espera` días (2 por omisión): lo del 01/10 sale el 03/10, y el
+ * 04/10 queda de reserva por si ese envío falla. Ver `lib/sunat/plazo.ts`.
  *
  * No decide nada por su cuenta: usa `declararComprobante`, la misma función que
  * el botón de la pantalla, con las mismas barreras. Lo único propio es a quién
@@ -61,6 +62,7 @@ export async function GET(req: Request) {
     return NextResponse.json({
       fecha: hoy,
       modo: conf.modo,
+      dias_espera: conf.diasEspera,
       envio_automatico: conf.envioAutomatico,
       razon: 'No hay fecha de inicio de sincronización configurada: no se declaró nada. '
         + 'Los comprobantes anteriores a esa fecha no se declaran nunca.',
@@ -78,6 +80,7 @@ export async function GET(req: Request) {
     return NextResponse.json({
       fecha: hoy,
       modo: conf.modo,
+      dias_espera: conf.diasEspera,
       envio_automatico: false,
       razon: 'El envío automático está apagado: no se declaró nada.',
       habria_enviado: pendientes.length,

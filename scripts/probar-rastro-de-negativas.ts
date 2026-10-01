@@ -61,6 +61,8 @@ async function main() {
     certificado: abrirCertificado(fs.readFileSync(env('CERT_PFX')), env('CERT_PASS')),
     envioAutomatico: false,
     sincronizarDesde: '2020-01-01',
+    // Sin espera: estas pruebas son del envío el mismo día de la emisión.
+    diasEspera: 0,
     razon: 'prueba',
   }
 

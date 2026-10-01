@@ -114,6 +114,8 @@ async function main() {
       // El barrido exige una fecha de corte. Se pone una vieja para que la
       // lista incluya al comprobante de prueba y se pueda comprobar el filtro.
       sincronizarDesde: '2020-01-01',
+      // Sin espera: estas pruebas son del envío el mismo día de la emisión.
+      diasEspera: 0,
       razon: 'prueba',
     }
 

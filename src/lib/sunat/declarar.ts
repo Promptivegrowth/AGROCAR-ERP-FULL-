@@ -24,6 +24,7 @@ import { EMISOR_SUNAT, type ConfiguracionSunat } from './config'
 import { construirInvoice, type ItemUbl } from './ubl'
 import { firmarXml, comprimir, enviarASunat } from './firma'
 import { hoyLima } from '@/lib/fechas-pe'
+import { sumarDias } from './plazo'
 
 export interface ResultadoDeclaracion {
   ok: boolean
@@ -119,7 +120,7 @@ export async function declararComprobante(
   const hoy = hoyLima()
   if (c.fecha_emision > hoy) {
     return await no(
-      `${nombre} está fechado el ${c.fecha_emision} y hoy es ${hoy}. Se declara solo, el día del reparto.`,
+      `${nombre} está fechado el ${c.fecha_emision} y hoy es ${hoy}. SUNAT no recibe comprobantes antes de su fecha de emisión.`,
       409, { programadoPara: c.fecha_emision },
     )
   }
@@ -254,9 +255,11 @@ export async function declararComprobante(
 /**
  * Qué comprobantes toca declarar hoy.
  *
- * Los que ya llegaron a su fecha de emisión y todavía no fueron aceptados,
- * ordenados por fecha para que si el plazo de alguno está por vencerse salga
- * primero.
+ * Los que ya cumplieron sus días de espera —el margen para editar o anular,
+ * ver `plazo.ts`— y todavía no fueron aceptados, ordenados por fecha para que
+ * si el plazo de alguno está por vencerse salga primero. Los que se pasaron de
+ * su día de envío sin salir (un envío que falló) siguen entrando: el día de
+ * reserva es para eso.
  *
  * La fecha de corte se respeta acá SIEMPRE, también en pruebas, y esa es la
  * diferencia con el envío manual. Enviar de a uno lo elige una persona que sabe
@@ -280,7 +283,8 @@ export async function comprobantesPendientes(conf: ConfiguracionSunat, limite = 
     .neq('estado', 'anulado')
     .eq('enviado_sunat', false)
     .gte('fecha_emision', conf.sincronizarDesde)
-    .lte('fecha_emision', hoyLima())
+    // Emitido hace al menos `diasEspera` días: con 2, el 03/10 sale lo del 01/10.
+    .lte('fecha_emision', sumarDias(hoyLima(), -conf.diasEspera))
     .order('fecha_emision', { ascending: true })
     .limit(limite)
 

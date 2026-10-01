@@ -19,6 +19,7 @@
 
 import { createAdminClient } from '@/lib/supabase/admin'
 import { abrirCertificado, type Certificado, type ModoSunat } from './firma'
+import { normalizarDiasEspera } from './plazo'
 
 export interface ConfiguracionSunat {
   modo: ModoSunat
@@ -31,6 +32,11 @@ export interface ConfiguracionSunat {
    * producción, por más que alguien lo pida. Vacío: no se declara ninguno.
    */
   sincronizarDesde: string | null
+  /**
+   * Cuántos días después de la emisión lo declara el envío automático. Es el
+   * margen para editar o anular desde el sistema; ver `plazo.ts`.
+   */
+  diasEspera: number
   /** Por qué quedó en este modo. Se muestra en pantalla para que nadie dude. */
   razon: string
 }
@@ -71,7 +77,7 @@ export async function configuracionSunat(): Promise<ConfiguracionSunat> {
   const { data } = await (supabase as any)
     .from('configuracion')
     .select('clave, valor')
-    .in('clave', ['sunat_modo', 'sunat_envio_automatico', 'sunat_sincronizar_desde'])
+    .in('clave', ['sunat_modo', 'sunat_envio_automatico', 'sunat_sincronizar_desde', 'sunat_dias_espera'])
 
   const conf: Record<string, string> = {}
   ;((data ?? []) as { clave: string; valor: string }[]).forEach((c) => { conf[c.clave] = c.valor })
@@ -83,6 +89,7 @@ export async function configuracionSunat(): Promise<ConfiguracionSunat> {
 
   const certificado = leerCertificado()
   const envioAutomatico = conf.sunat_envio_automatico === 'true'
+  const diasEspera = normalizarDiasEspera(conf.sunat_dias_espera)
   const sincronizarDesde = /^\d{4}-\d{2}-\d{2}$/.test(conf.sunat_sincronizar_desde ?? '')
     ? conf.sunat_sincronizar_desde
     : null
@@ -96,6 +103,7 @@ export async function configuracionSunat(): Promise<ConfiguracionSunat> {
       certificado,
       envioAutomatico,
       sincronizarDesde,
+      diasEspera,
       razon: sincronizarDesde
         ? `Modo producción desde el ${sincronizarDesde}: lo emitido antes no se declara.`
         : 'Modo producción sin fecha de inicio: no se puede declarar nada hasta fijarla.',
@@ -109,6 +117,7 @@ export async function configuracionSunat(): Promise<ConfiguracionSunat> {
     certificado,
     envioAutomatico,
     sincronizarDesde,
+    diasEspera,
     razon: quiereProduccion
       ? 'Se pidió producción pero faltan las credenciales SOL en el servidor. Se envía a beta: nada queda declarado.'
       : 'Modo pruebas: nada de lo que se envía queda declarado ante SUNAT.',

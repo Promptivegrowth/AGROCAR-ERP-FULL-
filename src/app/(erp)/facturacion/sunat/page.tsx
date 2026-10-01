@@ -15,6 +15,11 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { useEstadoSunat, BannerSunat, BotonDeclarar, type EstadoSunat } from '../sunat-acciones'
+import { diaDeEnvio, venceElPlazo, DIAS_ESPERA_POR_OMISION } from '@/lib/sunat/plazo'
+
+/** Cuándo lo declara el envío automático, con los días de espera configurados. */
+const envioDe = (c: { fecha_emision: string }, conf: EstadoSunat | null) =>
+  diaDeEnvio(c.fecha_emision, conf?.dias_espera ?? DIAS_ESPERA_POR_OMISION)
 
 /**
  * El estado de cada comprobante ante SUNAT, y la forma de comprobarlo.
@@ -102,7 +107,8 @@ function claveDe(c: Comp, conf: EstadoSunat | null, hoy: string): Clave {
   if (c.sunat_verificacion === 'aceptado') return 'aceptado'
   if (c.sunat_estado === 'rechazado') return 'rechazado'
   if (c.sunat_estado === 'error') return 'error'
-  if (c.fecha_emision > hoy) return 'programado'
+  // Todavía en el margen para corregir: el envío automático lo declara después.
+  if (hoy < envioDe(c, conf)) return 'programado'
   if (conf?.sincronizar_desde && c.fecha_emision < conf.sincronizar_desde) return 'historico'
   if (c.enviado_sunat) return 'pruebas'
   return 'pendiente'
@@ -285,7 +291,7 @@ export default function EstadoSunatPage() {
       .map(({ c }) => c.id)
     if (ids.length === 0) {
       toast.info('No hay comprobantes para verificar', {
-        description: 'Los programados para una fecha futura todavía no están en SUNAT.',
+        description: 'Los programados todavía no se enviaron: están en el plazo para corregir.',
       })
       return
     }
@@ -451,8 +457,15 @@ export default function EstadoSunatPage() {
                       <td className="py-2 pr-3 text-right whitespace-nowrap">{formatCurrency(Number(c.total))}</td>
                       <td className="py-2 pr-3">
                         <span data-estado={clave} className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold whitespace-nowrap ${est.className}`}>
-                          {clave === 'programado' ? `Se declara el ${formatDate(c.fecha_emision)}` : est.label}
+                          {clave === 'programado' ? `Se declara el ${formatDate(envioDe(c, conf))}` : est.label}
                         </span>
+                        {['programado', 'pendiente', 'error', 'rechazado'].includes(clave) && (
+                          <p className={`mt-0.5 text-[10px] ${hoy >= venceElPlazo(c.fecha_emision) ? 'font-semibold text-red-700' : 'text-gray-400'}`}>
+                            {hoy >= venceElPlazo(c.fecha_emision)
+                              ? 'El plazo SUNAT vence HOY'
+                              : `Se puede corregir hasta entonces · plazo SUNAT ${formatDate(venceElPlazo(c.fecha_emision))}`}
+                          </p>
+                        )}
                       </td>
                       <td className="py-2 pr-3 max-w-[260px] text-xs text-gray-600">
                         {c.sunat_codigo || c.sunat_mensaje ? (
@@ -494,7 +507,9 @@ export default function EstadoSunatPage() {
                               Verificar
                             </Button>
                           )}
-                          {['pendiente', 'rechazado', 'error', 'pruebas'].includes(clave) && (
+                          {/* Declarar antes de tiempo se puede, si ya llegó su fecha de emisión. */}
+                          {(['pendiente', 'rechazado', 'error', 'pruebas'].includes(clave)
+                            || (clave === 'programado' && c.fecha_emision <= hoy)) && (
                             <BotonDeclarar comp={c} estado={conf} onListo={cargar} />
                           )}
                           <Button size="sm" variant="ghost" onClick={() => setDetalle(c)} className="h-7 px-2 text-xs gap-1">
@@ -519,6 +534,7 @@ export default function EstadoSunatPage() {
       <DetalleSunat
         comp={detalle}
         clave={detalle ? claveDe(detalle, conf, hoy) : null}
+        envio={detalle ? envioDe(detalle, conf) : null}
         resultado={detalle ? resultados[detalle.id] : undefined}
         verificando={detalle ? verificando.has(detalle.id) : false}
         onVerificar={() => detalle && verificarUno(detalle)}
@@ -528,9 +544,10 @@ export default function EstadoSunatPage() {
   )
 }
 
-function DetalleSunat({ comp, clave, resultado, verificando, onVerificar, onClose }: {
+function DetalleSunat({ comp, clave, envio, resultado, verificando, onVerificar, onClose }: {
   comp: Comp | null
   clave: Clave | null
+  envio: string | null
   resultado?: ResultadoVerificacion
   verificando: boolean
   onVerificar: () => void
@@ -590,7 +607,8 @@ function DetalleSunat({ comp, clave, resultado, verificando, onVerificar, onClos
             ) : (
               <p className="text-gray-500">
                 {clave === 'programado'
-                  ? `Todavía no se envió: se declara solo el ${formatDate(comp.fecha_emision)}, día del reparto.`
+                  ? `Todavía no se envió: se declara solo el ${formatDate(envio ?? comp.fecha_emision)}. Hasta entonces se puede `
+                    + `editar o anular desde Facturación. Plazo SUNAT: ${formatDate(venceElPlazo(comp.fecha_emision))}.`
                   : 'Todavía no se envió a SUNAT.'}
               </p>
             )}

@@ -103,6 +103,7 @@ export async function GET() {
       razon: conf.razon,
       envio_automatico: conf.envioAutomatico,
       sincronizar_desde: conf.sincronizarDesde,
+      dias_espera: conf.diasEspera,
       certificado: {
         titular: conf.certificado.titular,
         vence: conf.certificado.vence.toISOString().slice(0, 10),
