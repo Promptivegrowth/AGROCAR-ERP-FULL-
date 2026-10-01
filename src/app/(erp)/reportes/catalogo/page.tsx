@@ -104,8 +104,13 @@ export default async function CatalogoPage({ searchParams }: {
   return (
     <div className="min-h-screen bg-gray-50 print:bg-white">
       <style dangerouslySetInnerHTML={{ __html: `
+        /*
+         * Impreso en A4 VERTICAL y compacto. Daniel: "en PDF pero vertical,
+         * para que entre en pocas hojas". Salía en horizontal, con dos renglones
+         * por producto y una columna de atributos: 6 hojas para 68 productos.
+         */
         @media print {
-          @page { size: A4 landscape; margin: 10mm; }
+          @page { size: A4 portrait; margin: 8mm 8mm 10mm 8mm; }
           html, body { background: white !important; }
           body { -webkit-print-color-adjust: exact; print-color-adjust: exact;
             font-family: 'Helvetica Neue', Arial, sans-serif !important; color: #111 !important; }
@@ -115,7 +120,27 @@ export default async function CatalogoPage({ searchParams }: {
              entre pantalla y print — antes el navegador las redistribuía
              según contenido al imprimir, distinto a la pantalla. */
           .cat-doc table { table-layout: fixed !important; width: 100% !important; }
-          .cat-doc th, .cat-doc td { padding: 3px 5px !important; overflow: hidden; }
+          .cat-doc table { font-size: 7.6pt !important; }
+          .cat-doc th, .cat-doc td { padding: 1.2px 4px !important; overflow: hidden; line-height: 1.2 !important; }
+          .cat-doc th { font-size: 7.2pt !important; }
+          /* Una línea por producto: la descripción ya dice qué es. */
+          .cat-doc .prod-nombre.con-desc { display: none !important; }
+          .cat-doc .prod-desc { white-space: normal !important; overflow: visible !important; max-width: none !important;
+            color: #111 !important; font-size: 7.6pt !important; }
+          .cat-doc .prod-nombre { font-weight: 600; }
+          /* Los atributos no hacen falta en papel: el producto gana el ancho. */
+          .cat-doc .col-attr-celda { display: none !important; }
+          .cat-doc col.col-attr { width: 0 !important; }
+          .cat-doc col.col-cod { width: 10% !important; }
+          .cat-doc col.col-prod { width: 45% !important; }
+          .cat-doc col.col-udm { width: 6% !important; }
+          .cat-doc col.col-stock { width: 9% !important; }
+          .cat-doc col.col-precio { width: 10% !important; }
+          .cat-doc { gap: 0 !important; }
+          .cat-doc > * + * { margin-top: 5px !important; }
+          .familia-header { font-size: 8pt !important; padding: 1px 4px !important; }
+          .leyenda { font-size: 7pt !important; padding: 2px 4px !important; display: flex !important; gap: 12px !important; }
+          .encabezado-logo { height: 34px !important; }
           .cat-doc tr { page-break-inside: avoid; }
           .cat-doc thead { display: table-header-group; }
           .familia-header { page-break-after: avoid; }
@@ -137,7 +162,7 @@ export default async function CatalogoPage({ searchParams }: {
           <div className="flex items-center justify-between border-b-2 border-black pb-3">
             <div className="flex items-start gap-3">
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src="/logo-agrocar.png" alt="AGROCAR" style={{ height: 55 }} />
+              <img src="/logo-agrocar.png" alt="AGROCAR" className="encabezado-logo" style={{ height: 55 }} />
               <div>
                 <p className="font-bold text-base">{EMPRESA.razon_social}</p>
                 <p style={{ fontFamily: SLOGAN_FONT_STACK, fontSize: 15, lineHeight: 1 }}>{EMPRESA.slogan}</p>
@@ -155,7 +180,7 @@ export default async function CatalogoPage({ searchParams }: {
 
         <div className="cat-doc bg-white border border-gray-200 rounded-b-xl p-4 print:border-0 print:p-0 space-y-4">
           {/* Leyenda */}
-          <div className="bg-gray-50 border border-gray-200 rounded-lg p-2 text-[11px] text-gray-700 grid grid-cols-1 md:grid-cols-3 gap-2">
+          <div className="leyenda bg-gray-50 border border-gray-200 rounded-lg p-2 text-[11px] text-gray-700 grid grid-cols-1 md:grid-cols-3 gap-2">
             <div><strong className="text-gray-900">Lista A:</strong> Mayorista / distribuidores</div>
             <div><strong className="text-gray-900">Lista B:</strong> Tiendas / intermedios</div>
             <div><strong className="text-gray-900">Lista C:</strong> Consumidor final / detalle</div>
@@ -169,14 +194,14 @@ export default async function CatalogoPage({ searchParams }: {
               <table className="w-full text-xs border border-gray-300">
                 {/* Anchos % por colgroup → idéntica distribución en pantalla y print */}
                 <colgroup>
-                  <col style={{ width: '10%' }} />{/* Código */}
-                  <col style={{ width: '36%' }} />{/* Producto — el más ancho */}
-                  <col style={{ width: '6%' }} />{/* UDM */}
-                  <col style={{ width: '9%' }} />{/* Stock */}
-                  <col style={{ width: '10%' }} />{/* Lista A */}
-                  <col style={{ width: '10%' }} />{/* Lista B */}
-                  <col style={{ width: '10%' }} />{/* Lista C */}
-                  <col style={{ width: '9%' }} />{/* Atributos */}
+                  <col className="col-cod" style={{ width: '10%' }} />{/* Código */}
+                  <col className="col-prod" style={{ width: '36%' }} />{/* Producto — el más ancho */}
+                  <col className="col-udm" style={{ width: '6%' }} />{/* UDM */}
+                  <col className="col-stock" style={{ width: '9%' }} />{/* Stock */}
+                  <col className="col-precio" style={{ width: '10%' }} />{/* Lista A */}
+                  <col className="col-precio" style={{ width: '10%' }} />{/* Lista B */}
+                  <col className="col-precio" style={{ width: '10%' }} />{/* Lista C */}
+                  <col className="col-attr" style={{ width: '9%' }} />{/* Atributos */}
                 </colgroup>
                 <thead className="bg-gray-50 border-b border-gray-300">
                   <tr>
@@ -187,7 +212,7 @@ export default async function CatalogoPage({ searchParams }: {
                     <th className="text-right p-1.5 bg-blue-50">Lista A</th>
                     <th className="text-right p-1.5">Lista B</th>
                     <th className="text-right p-1.5">Lista C</th>
-                    <th className="text-center p-1.5">Atributos</th>
+                    <th className="col-attr-celda text-center p-1.5">Atributos</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -195,9 +220,9 @@ export default async function CatalogoPage({ searchParams }: {
                     <tr key={p.id} className="border-b border-gray-100">
                       <td className="p-1.5 font-mono text-[10px]">{p.codigo}</td>
                       <td className="p-1.5">
-                        <div className="font-semibold text-gray-900">{p.nombre}</div>
+                        <div className={`prod-nombre font-semibold text-gray-900${p.descripcion ? ' con-desc' : ''}`}>{p.nombre}</div>
                         {p.descripcion && (
-                          <div className="text-[10px] text-gray-500 truncate max-w-[300px]">{p.descripcion}</div>
+                          <div className="prod-desc text-[10px] text-gray-500 truncate max-w-[300px]">{p.descripcion}</div>
                         )}
                       </td>
                       <td className="p-1.5 text-center uppercase">{p.udm}</td>
@@ -215,7 +240,7 @@ export default async function CatalogoPage({ searchParams }: {
                       <td className="p-1.5 text-right font-mono">
                         {p.precio_c !== null ? formatCurrency(p.precio_c) : '—'}
                       </td>
-                      <td className="p-1.5 text-center text-[9px] space-x-0.5">
+                      <td className="col-attr-celda p-1.5 text-center text-[9px] space-x-0.5">
                         {p.peso_kg ? (
                           <span className="inline-block px-1 py-0.5 bg-gray-100 rounded">
                             {p.peso_kg}kg
