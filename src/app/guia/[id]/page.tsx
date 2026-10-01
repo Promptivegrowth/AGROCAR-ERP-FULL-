@@ -27,7 +27,7 @@ export default async function GuiaPage({ params }: { params: Promise<{ id: strin
     .from('guias_remision')
     .select(`
       *,
-      clientes(razon_social, ruc, dni, direccion),
+      clientes(razon_social, ruc, dni, direccion, telefono, email),
       comprobantes(serie, numero, tipo)
     `)
     .eq('id', id).maybeSingle()
@@ -114,7 +114,8 @@ export default async function GuiaPage({ params }: { params: Promise<{ id: strin
         }
       ` }} />
 
-      <GuiaActions guiaId={id} numero={numeroCompleto} conXml={!!guia.sunat_xml} conCdr={!!guia.sunat_cdr} />
+      <GuiaActions guiaId={id} numero={numeroCompleto} conXml={!!guia.sunat_xml} conCdr={!!guia.sunat_cdr}
+        cliente={cliNombre} telefono={guia.clientes?.telefono ?? null} email={guia.clientes?.email ?? null} />
 
       {!aceptada && (
         <div className="max-w-4xl mx-auto mb-3 rounded-lg border-2 border-red-500 bg-red-50 px-4 py-3 text-red-900">

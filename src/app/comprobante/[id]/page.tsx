@@ -4,6 +4,7 @@ import { notFound } from 'next/navigation'
 import { numeroALetras } from '@/lib/utils'
 import { EMPRESA, SLOGAN_FONT_STACK } from '@/lib/empresa'
 import PrintButton from './print-button'
+import EnviarDocumento from '@/components/erp/enviar-documento'
 import AyudaTicketera from '@/components/erp/ayuda-ticketera'
 import BotonTicketera from '@/components/erp/boton-ticketera'
 import { qrDataUri } from '@/lib/qr'
@@ -88,7 +89,7 @@ export default async function ComprobantePage({
     .select(`
       id, tipo, serie, numero, fecha_emision, fecha_despacho, subtotal, igv, total, moneda, estado, pedido_id, created_at, sunat_xml, sunat_cdr,
       cliente_externo_nombre, cliente_externo_doc,
-      clientes(id, razon_social, ruc, dni, direccion, telefono),
+      clientes(id, razon_social, ruc, dni, direccion, telefono, email),
       profiles!comprobantes_facturador_id_fkey(full_name)
     `)
     .eq('id', id)
@@ -245,6 +246,14 @@ export default async function ComprobantePage({
           {(comp as any).sunat_cdr && (
             <a href={`/api/documentos/comprobante/${id}/cdr`} className="text-xs text-blue-700 underline hover:text-blue-900">Constancia SUNAT</a>
           )}
+          <EnviarDocumento
+            tipo="comprobante" id={id}
+            titulo={`${(comp as any).tipo === 'factura' ? 'Factura' : (comp as any).tipo === 'boleta' ? 'Boleta de venta' : 'Comprobante'} ${(comp as any).serie}-${(comp as any).numero}`}
+            cliente={cliente?.razon_social ?? (comp as any).cliente_externo_nombre ?? null}
+            total={Number((comp as any).total ?? 0)}
+            telefono={cliente?.telefono ?? null} email={cliente?.email ?? null}
+            conXml={!!(comp as any).sunat_xml} conCdr={!!(comp as any).sunat_cdr}
+          />
           <PrintButton />
         </div>
       </div>

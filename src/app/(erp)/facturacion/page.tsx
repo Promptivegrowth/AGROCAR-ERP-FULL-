@@ -5,6 +5,7 @@ import { FileText, Loader2, CheckCircle, AlertCircle, DollarSign, Receipt, Eye, 
 import Link from 'next/link'
 import VentaDirectaDialog from './venta-directa-dialog'
 import NotaCreditoDialog from './nota-credito-dialog'
+import EnviarDocumento from '@/components/erp/enviar-documento'
 import { toast } from 'sonner'
 import { createClient } from '@/lib/supabase/client'
 import { formatCurrency, formatDate } from '@/lib/utils'
@@ -55,7 +56,7 @@ const COLUMNAS_COMPROBANTE = `
   editado, editado_at, enviado_sunat,
   sunat_estado, sunat_codigo, sunat_mensaje, sunat_modo,
   cliente_externo_nombre, cliente_externo_doc,
-  clientes(razon_social, ruc, dni),
+  clientes(razon_social, ruc, dni, telefono, email),
   pedidos(numero, profiles!pedidos_vendedor_id_fkey(full_name))
 `
 
@@ -1766,6 +1767,18 @@ export default function FacturacionPage() {
                                   <Eye className="w-3.5 h-3.5" />
                                   Ver
                                 </Link>
+                                {/* Mandarlo al cliente: PDF, XML y constancia por WhatsApp o correo. */}
+                                {c.estado !== 'anulado' && (
+                                  <EnviarDocumento
+                                    compacto tipo="comprobante" id={c.id}
+                                    titulo={`${NOMBRE_COMPROBANTE[c.tipo] ?? 'Comprobante'} ${c.serie}-${c.numero}`}
+                                    cliente={c.clientes?.razon_social ?? c.cliente_externo_nombre ?? null}
+                                    total={Number(c.total ?? 0)}
+                                    telefono={c.clientes?.telefono ?? null} email={c.clientes?.email ?? null}
+                                    conXml={['factura', 'boleta'].includes(c.tipo)}
+                                    conCdr={!!c.enviado_sunat && c.sunat_modo === 'produccion'}
+                                  />
+                                )}
                                 {c.estado !== 'anulado' && (
                                   <BotonDeclarar comp={c as any} estado={estadoSunat} onListo={loadData} />
                                 )}

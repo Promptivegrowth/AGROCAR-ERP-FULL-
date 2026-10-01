@@ -1,9 +1,11 @@
 'use client'
 
 import { Printer } from 'lucide-react'
+import EnviarDocumento from '@/components/erp/enviar-documento'
 
-export default function GuiaActions({ guiaId, numero, conXml = false, conCdr = false }: {
+export default function GuiaActions({ guiaId, numero, conXml = false, conCdr = false, cliente, telefono, email }: {
   guiaId: string; numero: string; conXml?: boolean; conCdr?: boolean
+  cliente?: string | null; telefono?: string | null; email?: string | null
 }) {
   return (
     <div className="no-print sticky top-0 z-10 bg-white border-b border-gray-200 px-4 py-2.5 mb-3">
@@ -20,6 +22,8 @@ export default function GuiaActions({ guiaId, numero, conXml = false, conCdr = f
         {conCdr && (
           <a href={`/api/documentos/guia/${guiaId}/cdr`} className="text-xs text-blue-700 underline hover:text-blue-900">Constancia SUNAT</a>
         )}
+        <EnviarDocumento tipo="guia" id={guiaId} titulo={`Guía de remisión ${numero}`}
+          cliente={cliente} telefono={telefono} email={email} conXml={conXml} conCdr={conCdr} />
         <button
           type="button"
           onClick={() => window.print()}

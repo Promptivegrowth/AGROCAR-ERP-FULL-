@@ -9,6 +9,7 @@ import {
 import { toast } from 'sonner'
 import { createClient } from '@/lib/supabase/client'
 import { linkEnviarBoletaPago, esTelefonoPeruanoValido } from '@/lib/whatsapp'
+import CorregirPagoDialog, { type CobroACorregir } from './corregir-pago-dialog'
 import { formatCurrency, formatDate, formatDatetime } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -156,6 +157,8 @@ export default function CajaClient({
   const [egresoOpen, setEgresoOpen] = useState(false)
   const [historialOpen, setHistorialOpen] = useState(false)
   const [cobradorSeleccionado, setCobradorSeleccionado] = useState<string | null>(null)
+  // Corregir efectivo/Yape/Plin/transferencia de un cobro mal registrado.
+  const [corregirCobro, setCorregirCobro] = useState<CobroACorregir | null>(null)
 
   // ─── Recarga manual y en tiempo real ─────────────────────────────────────
   // Ref para evitar saturar el endpoint cuando llegan eventos seguidos
@@ -1029,6 +1032,16 @@ export default function CajaClient({
                                   title="Ver boleta"
                                 >
                                   <Receipt className="w-3.5 h-3.5" />
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => setCorregirCobro(c)}
+                                  className="h-7 px-2 text-xs"
+                                  title="Corregir medio de pago (efectivo / Yape / Plin / transferencia)"
+                                  data-corregir-pago
+                                >
+                                  ✏️
                                 </Button>
                                 {(() => {
                                   const waLink = esTelefonoPeruanoValido(c.cliente_telefono)
@@ -1974,6 +1987,7 @@ export default function CajaClient({
           </div>
         </DialogContent>
       </Dialog>
+      <CorregirPagoDialog cobro={corregirCobro} onClose={() => setCorregirCobro(null)} onListo={() => reloadAll(true)} />
     </div>
   )
 }
