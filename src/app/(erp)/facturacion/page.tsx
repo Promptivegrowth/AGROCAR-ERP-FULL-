@@ -1,7 +1,7 @@
 'use client'
 
-import { useEffect, useState, useCallback, useMemo } from 'react'
-import { FileText, Loader2, CheckCircle, AlertCircle, DollarSign, Receipt, Eye, ExternalLink, Search, CalendarClock } from 'lucide-react'
+import { useEffect, useState, useCallback, useMemo, useRef } from 'react'
+import { FileText, Loader2, CheckCircle, AlertCircle, DollarSign, Receipt, Eye, ExternalLink, Search, CalendarClock, ShieldCheck } from 'lucide-react'
 import Link from 'next/link'
 import VentaDirectaDialog from './venta-directa-dialog'
 import NotaCreditoDialog from './nota-credito-dialog'
@@ -189,6 +189,7 @@ export default function FacturacionPage() {
    * asi que octubre no se podia elegir y Daniel no veia nada de lo emitido.
    */
   const [periodoMasNuevo, setPeriodoMasNuevo] = useState<string | null>(null)
+  const ultimaCarga = useRef(0)
 
   /*
    * Buscar en todo el historial, para cuando no se sabe de que mes es.
@@ -265,6 +266,13 @@ export default function FacturacionPage() {
   const [progresoLote, setProgresoLote] = useState<{ actual: number; total: number; exitosos: number; fallos: number } | null>(null)
 
   const loadData = useCallback(async () => {
+    /*
+     * Solo cuenta la ultima carga pedida. A fin de mes la pantalla pide el mes
+     * de hoy y enseguida salta al de lo emitido para el reparto: si la
+     * respuesta del primero llegaba despues, pisaba la del segundo y quedaba
+     * "octubre" elegido con la lista de septiembre, vacia.
+     */
+    const estaCarga = ++ultimaCarga.current
     setLoading(true)
     setBusquedaGlobal(false)
 
@@ -307,6 +315,7 @@ export default function FacturacionPage() {
         .limit(1)
         .maybeSingle(),
     ])
+    if (estaCarga !== ultimaCarga.current) return
 
     setPedidosPendientes(pedidos ?? [])
     setComprobantes(comp ?? [])
@@ -1181,6 +1190,11 @@ export default function FacturacionPage() {
               </span>
             )}
           </div>
+          <Link href="/facturacion/sunat">
+            <Button variant="outline" className="gap-2 border-emerald-300 text-emerald-800 hover:bg-emerald-50">
+              <ShieldCheck className="w-4 h-4" /> Estado SUNAT
+            </Button>
+          </Link>
           <Button
             onClick={() => setVentaDirectaOpen(true)}
             className="bg-[#FBE600] hover:bg-[#E5D100] text-black font-semibold gap-2"

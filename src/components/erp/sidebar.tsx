@@ -33,6 +33,7 @@ import {
   Boxes,
   Target,
   Tag,
+  ShieldCheck,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -104,6 +105,14 @@ const NAV_ITEMS: NavItem[] = [
     href: '/facturacion',
     icon: FileText,
     roles: ['gerente', 'administrador', 'facturador', 'caja'],
+  },
+  {
+    // Daniel: ver el estado de cada comprobante y verificar desde ahí que
+    // llegó a SUNAT y fue aceptado.
+    label: 'Estado SUNAT',
+    href: '/facturacion/sunat',
+    icon: ShieldCheck,
+    roles: ['gerente', 'administrador', 'facturador', 'caja', 'contador'],
   },
   {
     label: 'Caja',
@@ -191,6 +200,9 @@ export default function Sidebar({ userRole, onNavigate }: SidebarProps) {
 
   const isActive = (href: string) => {
     if (href === '/dashboard') return pathname === '/dashboard'
+    // /facturacion/sunat tiene su propia entrada: no debe encender también
+    // la de Facturación.
+    if (href === '/facturacion') return pathname.startsWith(href) && !pathname.startsWith('/facturacion/sunat')
     return pathname.startsWith(href)
   }
 

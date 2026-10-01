@@ -55,6 +55,7 @@ const PANTALLAS = new Set([
   '/despacho',
   '/despacho/historial',
   '/facturacion',
+  '/facturacion/sunat',
   '/gps',
   '/maestros',
   '/maestros/clientes',
