@@ -54,7 +54,13 @@ export default function PedidosClient({ pedidosIniciales, desde, hasta }: {
       .toISOString().split('T')[0]
   const [search, setSearch] = useState('')
   const debouncedSearch = useDebounce(search, 300)
-  const [filterEstado, setFilterEstado] = useState<EstadoPedido | 'todos' | 'pendientes'>('todos')
+  /*
+   * Abre en "Pendientes": lo que falta trabajar. Daniel: "en los pedidos
+   * está saliendo las ventas directas… no debería ya salir porque ya no está
+   * pendiente". La venta directa nace entregada; tiene su propia pestaña, igual
+   * que lo despachado, y "Todos" sigue mostrando todo.
+   */
+  const [filterEstado, setFilterEstado] = useState<EstadoPedido | 'todos' | 'pendientes'>('pendientes')
   const [page, setPage] = useState(0)
 
   const [detailOpen, setDetailOpen] = useState(false)
@@ -481,7 +487,7 @@ export default function PedidosClient({ pedidosIniciales, desde, hasta }: {
       <Card className="border-gray-200 shadow-sm">
         <CardContent className="p-4">
           <Tabs value={filterEstado} onValueChange={(v) => { setFilterEstado(v as any); setPage(0) }}>
-            <TabsList className="grid grid-cols-4 sm:inline-flex h-auto flex-wrap">
+            <TabsList className="grid grid-cols-3 sm:inline-flex h-auto flex-wrap">
               <TabsTrigger value="todos">Todos</TabsTrigger>
               <TabsTrigger value="pendientes">
                 Pendientes
@@ -493,6 +499,18 @@ export default function PedidosClient({ pedidosIniciales, desde, hasta }: {
               </TabsTrigger>
               <TabsTrigger value="enviado">Enviados</TabsTrigger>
               <TabsTrigger value="facturado">Facturados</TabsTrigger>
+              <TabsTrigger value="despachado">
+                Despachados
+                {(counts.despachado ?? 0) > 0 && (
+                  <span className="ml-1.5 text-[10px] text-gray-500">{counts.despachado}</span>
+                )}
+              </TabsTrigger>
+              <TabsTrigger value="entregado" title="Ventas directas y pedidos ya entregados">
+                Ventas directas / entregados
+                {(counts.entregado ?? 0) > 0 && (
+                  <span className="ml-1.5 text-[10px] text-gray-500">{counts.entregado}</span>
+                )}
+              </TabsTrigger>
             </TabsList>
           </Tabs>
           <div className="mt-3 flex flex-col sm:flex-row gap-2">
@@ -511,6 +529,7 @@ export default function PedidosClient({ pedidosIniciales, desde, hasta }: {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="todos">Todos los estados</SelectItem>
+                <SelectItem value="pendientes">Pendientes (sin facturar)</SelectItem>
                 {(Object.keys(ESTADO_CFG) as EstadoPedido[]).map((e) => (
                   <SelectItem key={e} value={e}>{ESTADO_CFG[e].label}</SelectItem>
                 ))}
