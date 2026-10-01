@@ -1014,13 +1014,9 @@ export default function FacturacionPage() {
   // (cabecera + items snapshot + cambio de estado). Si falla, rollback completo.
   // Esto elimina el bug histórico de comprobantes con monto pero sin detalle.
   const emitirComprobantePedido = async (pedido: any, tipo: 'factura' | 'boleta' | 'nota_pedido_interna') => {
-    // 1) Correlativo
-    const { data: corr, error: corrErr } = await (supabase.rpc as any)('siguiente_correlativo', { p_tipo: tipo })
-    if (corrErr || !corr || corr.length === 0) {
-      throw new Error(corrErr?.message ?? 'Falta configurar la numeración.')
-    }
-    const serieReal = corr[0].serie as string
-    const numero = corr[0].numero as string
+    // 1) El número lo asigna la RPC, dentro de su transacción: si la emisión
+    //    falla, el correlativo vuelve atrás y la serie no queda con un salto
+    //    (migración 116). Antes se pedía aparte y un fallo lo dejaba gastado.
 
     // 2) Totales
     const pedSubtotal = Number(pedido.subtotal ?? 0)
@@ -1038,8 +1034,8 @@ export default function FacturacionPage() {
     const { data: result, error: rpcError } = await (supabase.rpc as any)('emitir_comprobante_atomico', {
       p_pedido_id: pedido.id,
       p_tipo: tipo,
-      p_serie: serieReal,
-      p_numero: numero,
+      p_serie: null,
+      p_numero: null,
       // La fecha de emision es la del reparto: es el dia en que se entrega la
       // mercaderia y el que manda el art. 5 del Reglamento de Comprobantes.
       p_fecha_emision: fechaEmisionComprobante(pedido.fecha_despacho),
@@ -1053,7 +1049,7 @@ export default function FacturacionPage() {
 
     await firmarComprobante(result.id as string)
 
-    return { id: result.id, label: `${serieReal}-${numero}` }
+    return { id: result.id, label: `${result.serie}-${result.numero}` }
   }
 
   // Emisión MASIVA por tipo
@@ -1100,17 +1096,8 @@ export default function FacturacionPage() {
     if (!pedidoSeleccionado) return
     setSaving(true)
 
-    // Obtener correlativo atómico desde la BD (serie + número)
-    const { data: corr, error: corrErr } = await (supabase.rpc as any)('siguiente_correlativo', { p_tipo: tipoComprobante })
-    if (corrErr || !corr || corr.length === 0) {
-      setSaving(false)
-      toast.error('Falta configurar numeración', {
-        description: corrErr?.message ?? 'Ve a Configuración → Numeración de Comprobantes.',
-      })
-      return
-    }
-    const serieReal = corr[0].serie as string
-    const numero = corr[0].numero as string
+    // El número lo asigna la RPC, en la misma transacción que crea el
+    // comprobante: si algo falla no se gasta (migración 116).
 
     // Respetar incluir_igv del pedido. Si el pedido ya tiene IGV calculado, usarlo directamente.
     const pedSubtotal = Number(pedidoSeleccionado.subtotal ?? 0)
@@ -1127,8 +1114,8 @@ export default function FacturacionPage() {
     const { data: result, error: rpcError } = await (supabase.rpc as any)('emitir_comprobante_atomico', {
       p_pedido_id: pedidoSeleccionado.id,
       p_tipo: tipoComprobante,
-      p_serie: serieReal,
-      p_numero: numero,
+      p_serie: null,
+      p_numero: null,
       // La fecha de emision es la del reparto: es el dia en que se entrega la
       // mercaderia y el que manda el art. 5 del Reglamento de Comprobantes.
       p_fecha_emision: fechaEmisionComprobante(pedidoSeleccionado.fecha_despacho),
@@ -1147,7 +1134,7 @@ export default function FacturacionPage() {
     const compInsertado = { id: result.id as string }
     await firmarComprobante(compInsertado.id)
 
-    const label = `${serieReal}-${numero}`
+    const label = `${result.serie}-${result.numero}`
     const totalFmt = (pedTotal > 0 ? pedTotal : subtotalCalc + igvCalc).toLocaleString('es-PE', { style: 'currency', currency: 'PEN' })
     // Calcular fecha de vencimiento (si el cliente tiene credito_dias)
     const creditoDias = (pedidoSeleccionado.clientes as any)?.credito_dias ?? 0

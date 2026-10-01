@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import {
   CheckCircle2, Clock, CalendarClock, XCircle, AlertTriangle, ShieldCheck,
-  Loader2, RefreshCw, Search, FileCode2, FileCheck2, Eye, FlaskConical,
+  Loader2, RefreshCw, Search, FileCode2, FileCheck2, Eye, FlaskConical, Send, Siren,
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { traerTodo } from '@/lib/supabase/paginar'
@@ -15,7 +15,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { useEstadoSunat, BannerSunat, BotonDeclarar, type EstadoSunat } from '../sunat-acciones'
-import { diaDeEnvio, venceElPlazo, DIAS_ESPERA_POR_OMISION } from '@/lib/sunat/plazo'
+import { diaDeEnvio, venceElPlazo, sumarDias, DIAS_ESPERA_POR_OMISION } from '@/lib/sunat/plazo'
 
 /** Cuándo lo declara el envío automático, con los días de espera configurados. */
 const envioDe = (c: { fecha_emision: string }, conf: EstadoSunat | null) =>
@@ -341,6 +341,7 @@ export default function EstadoSunatPage() {
       </div>
 
       <BannerSunat estado={conf} />
+      <PanelPlazos conf={conf} onCambio={cargar} />
 
       <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
         {tarjetas.map((t) => {
@@ -540,6 +541,140 @@ export default function EstadoSunatPage() {
         onVerificar={() => detalle && verificarUno(detalle)}
         onClose={() => setDetalle(null)}
       />
+    </div>
+  )
+}
+
+interface Atrasado { id: string; serie: string; numero: string; tipo: string; fecha_emision: string; sunat_estado: string | null }
+
+/**
+ * Lo que no puede pasar desapercibido, en todos los meses a la vez.
+ *
+ * La tabla de abajo muestra un mes; un comprobante del 31 que no salió se ve
+ * en octubre aunque se esté mirando noviembre. Esto mira todo lo que ya debió
+ * declararse y no se declaró, y dice cuándo corrió por última vez el envío
+ * automático: si un día no corre, acá se ve antes de que el plazo se venza.
+ */
+function PanelPlazos({ conf, onCambio }: { conf: EstadoSunat | null; onCambio: () => void }) {
+  const supabase = useMemo(() => createClient(), [])
+  const [atrasados, setAtrasados] = useState<Atrasado[]>([])
+  const [barrido, setBarrido] = useState<any>(null)
+  const [declarando, setDeclarando] = useState<{ hechos: number; total: number } | null>(null)
+  const hoy = hoyLima()
+  const produccion = conf?.modo === 'produccion'
+
+  const revisar = useCallback(async () => {
+    if (!conf?.sincronizar_desde) { setAtrasados([]); return }
+    const dias = conf.dias_espera ?? DIAS_ESPERA_POR_OMISION
+    const [{ data: lista }, { data: ultimo }] = await Promise.all([
+      (supabase as any).from('comprobantes')
+        .select('id, serie, numero, tipo, fecha_emision, sunat_estado')
+        .in('tipo', ['factura', 'boleta']).neq('estado', 'anulado')
+        // Sin declarar en producción: no enviado, o enviado solo a pruebas.
+        .or('enviado_sunat.eq.false,sunat_modo.neq.produccion,sunat_modo.is.null')
+        .gte('fecha_emision', conf.sincronizar_desde)
+        .lte('fecha_emision', sumarDias(hoyLima(), -dias))
+        .order('fecha_emision').order('serie').order('numero')
+        .limit(1000),
+      (supabase as any).from('configuracion').select('valor').eq('clave', 'sunat_ultimo_barrido').maybeSingle(),
+    ])
+    setAtrasados((lista ?? []) as Atrasado[])
+    try { setBarrido(ultimo?.valor ? JSON.parse(ultimo.valor) : null) } catch { setBarrido(null) }
+  }, [supabase, conf])
+
+  useEffect(() => { revisar() }, [revisar])
+
+  /** Declarar a mano lo atrasado: el respaldo de los respaldos. */
+  const declararAhora = useCallback(async () => {
+    if (!conf?.modo || atrasados.length === 0) return
+    if (!confirm(`¿Declarar ahora ${atrasados.length} comprobante${atrasados.length === 1 ? '' : 's'} ante SUNAT?\n\n`
+      + 'Una vez declarados no se pueden editar ni anular: solo corregir con nota de crédito.')) return
+    setDeclarando({ hechos: 0, total: atrasados.length })
+    let ok = 0
+    const malos: string[] = []
+    for (let i = 0; i < atrasados.length; i++) {
+      const c = atrasados[i]
+      try {
+        const res = await fetch('/api/sunat/enviar', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ comprobante_id: c.id, modo_esperado: conf.modo }),
+        })
+        const r = await res.json()
+        if (res.ok && r.ok) ok++
+        // 409: ya lo está enviando otro proceso, o ya quedó declarado.
+        else if (res.status !== 409) malos.push(`${c.serie}-${c.numero}: ${r.error ?? r.mensaje ?? 'rechazado'}`)
+      } catch (e) {
+        malos.push(`${c.serie}-${c.numero}: ${e instanceof Error ? e.message : 'sin conexión'}`)
+      }
+      setDeclarando({ hechos: i + 1, total: atrasados.length })
+      await new Promise((r) => setTimeout(r, 1200))
+    }
+    setDeclarando(null)
+    if (malos.length) {
+      toast.error(`${malos.length} no se declararon`, { description: malos.slice(0, 4).join(' · '), duration: 15000 })
+    } else {
+      toast.success(`${ok} declarados ante SUNAT`)
+    }
+    await revisar()
+    onCambio()
+  }, [atrasados, conf, revisar, onCambio])
+
+  if (!conf?.modo || !conf.sincronizar_desde) return null
+
+  const vencenHoy = atrasados.filter((c) => venceElPlazo(c.fecha_emision) === hoy).length
+  const fuera = atrasados.filter((c) => venceElPlazo(c.fecha_emision) < hoy).length
+  const horas = barrido?.at ? (Date.now() - new Date(barrido.at).getTime()) / 3_600_000 : null
+  // Con el envío automático encendido tiene que haber corrido en el último día.
+  const noCorrio = !!conf.envio_automatico && produccion && horas !== null && horas > 26
+  const hayAlerta = atrasados.length > 0 || noCorrio
+
+  return (
+    <div data-panel-plazos className={`rounded-lg border px-3 py-2 text-xs ${hayAlerta ? 'border-red-300 bg-red-50' : 'border-gray-200 bg-white'}`}>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="space-y-0.5">
+          {barrido?.at ? (
+            <p className={noCorrio ? 'font-semibold text-red-800' : 'text-gray-600'}>
+              {noCorrio && <Siren className="mr-1 inline h-3.5 w-3.5" />}
+              Último envío automático: {formatDatetime(barrido.at)}
+              {barrido.origen === 'respaldo' ? ' (respaldo)' : ''}
+              {barrido.error
+                ? ` · error: ${barrido.error}`
+                : ` · ${barrido.enviados ?? 0} declarados`
+                  + `${barrido.fallados ? `, ${barrido.fallados} con problemas` : ''}`
+                  + `${barrido.quedaron_para_despues ? `, ${barrido.quedaron_para_despues} quedaron para el próximo` : ''}`
+                  + `${barrido.verificados ? ` · ${barrido.verificados} verificados con SUNAT` : ''}`}
+              {noCorrio ? ' — hace más de un día que no corre: revisar.' : ''}
+            </p>
+          ) : (
+            <p className="text-gray-600">
+              El envío automático todavía no corrió
+              {produccion && conf.envio_automatico ? ': corre a las 6:00, con respaldo a las 13:00 y 21:00.' : '.'}
+            </p>
+          )}
+          {atrasados.length > 0 ? (
+            <p className="font-semibold text-red-800" data-atrasados={atrasados.length}>
+              <AlertTriangle className="mr-1 inline h-3.5 w-3.5" />
+              {atrasados.length} comprobante{atrasados.length === 1 ? '' : 's'} ya debía{atrasados.length === 1 ? '' : 'n'} haberse declarado
+              {vencenHoy ? ` · ${vencenHoy} vence${vencenHoy === 1 ? '' : 'n'} HOY` : ''}
+              {fuera ? ` · ${fuera} fuera de plazo` : ''}
+              {' '}({atrasados.slice(0, 3).map((c) => `${c.serie}-${c.numero}`).join(', ')}{atrasados.length > 3 ? '…' : ''})
+            </p>
+          ) : (
+            <p className="text-emerald-700" data-atrasados={0}>
+              <CheckCircle2 className="mr-1 inline h-3.5 w-3.5" />
+              Nada atrasado: todo lo que ya cumplió su espera está declarado.
+            </p>
+          )}
+        </div>
+        {atrasados.length > 0 && (
+          <Button size="sm" onClick={declararAhora} disabled={!!declarando}
+            className="h-8 gap-1 bg-red-600 text-white hover:bg-red-700">
+            {declarando ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+            {declarando ? `Declarando ${declarando.hechos}/${declarando.total}…` : `Declarar ahora (${atrasados.length})`}
+          </Button>
+        )}
+      </div>
     </div>
   )
 }

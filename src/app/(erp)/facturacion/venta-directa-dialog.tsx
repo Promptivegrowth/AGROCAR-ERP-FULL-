@@ -449,14 +449,8 @@ export default function VentaDirectaDialog({ open, onOpenChange, onCreated }: Pr
       }
 
       // 4. Emitir comprobante (después del trigger de stock)
-      //    Obtener correlativo atómico de la BD
-      const { data: corr, error: corrErr } = await (supabase.rpc as any)('siguiente_correlativo', { p_tipo: tipoComprobante })
-      if (corrErr || !corr || corr.length === 0) {
-        // Rollback: borrar pedido (CASCADE items + stock ya descontado se queda — el usuario debe revertir manualmente)
-        throw new Error(corrErr?.message ?? 'Falta configurar la numeración. Ve a Configuración → Numeración.')
-      }
-      const serieReal = corr[0].serie as string
-      const numeroComp = corr[0].numero as string
+      //    El número lo asigna la RPC dentro de su transacción: si la emisión
+      //    falla, el correlativo no queda gastado (migración 116).
       // RPC atómica: cabecera + items en una transacción. Si los items
       // fallan, todo se hace rollback (no quedan comprobantes huérfanos
       // con monto pero sin detalle, que era el bug reportado por Daniel).
@@ -465,8 +459,8 @@ export default function VentaDirectaDialog({ open, onOpenChange, onCreated }: Pr
       const { data: compResult, error: compError } = await (supabase.rpc as any)('emitir_comprobante_atomico', {
         p_pedido_id: pedido.id,
         p_tipo: tipoComprobante,
-        p_serie: serieReal,
-        p_numero: numeroComp,
+        p_serie: null,
+        p_numero: null,
         p_fecha_emision: hoyLima(),
         p_subtotal: baseImponible,
         p_igv: igvMonto,
@@ -474,6 +468,8 @@ export default function VentaDirectaDialog({ open, onOpenChange, onCreated }: Pr
         p_facturador_id: userId,
       })
       if (compError || !compResult?.id) throw new Error('Comprobante: ' + (compError?.message ?? 'no se generó'))
+      const serieReal = compResult.serie as string
+      const numeroComp = compResult.numero as string
 
       // Para snapshot externo (consumidor final): la RPC no recibe esos
       // campos, los actualizamos aparte para mantener compatibilidad.

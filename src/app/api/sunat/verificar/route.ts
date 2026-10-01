@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { consultarEnSunat, leerCdr, type ResultadoConsulta } from '@/lib/sunat/consulta'
 import { hoyLima } from '@/lib/fechas-pe'
+import { diaDeEnvio, venceElPlazo, normalizarDiasEspera } from '@/lib/sunat/plazo'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 120
@@ -112,15 +113,24 @@ async function verificarUno(id: string): Promise<ResultadoVerificacion> {
         veredicto = 'problema'
         resumen = 'ATENCIÓN: el ERP lo da por aceptado, pero SUNAT no lo encuentra. Si se acaba de enviar, '
           + 'volver a verificar en unos minutos; si sigue igual, avisar a soporte antes de reenviar.'
-      } else if (c.fecha_emision > hoyLima()) {
-        veredicto = 'pendiente'
-        resumen = `Todavía no es su fecha: se declara solo el ${c.fecha_emision.split('-').reverse().join('/')}, día del reparto.`
-      } else if (c.enviado_sunat) {
-        veredicto = 'pendiente'
-        resumen = 'Solo se envió en modo pruebas: SUNAT todavía no lo tiene declarado.'
       } else {
+        const { data: fila } = await (admin as any).from('configuracion')
+          .select('valor').eq('clave', 'sunat_dias_espera').maybeSingle()
+        const envio = diaDeEnvio(c.fecha_emision, normalizarDiasEspera(fila?.valor))
+        const vence = venceElPlazo(c.fecha_emision)
+        const dmy = (f: string) => f.split('-').reverse().join('/')
+        const hoy = hoyLima()
         veredicto = 'pendiente'
-        resumen = 'SUNAT todavía no lo tiene: falta declararlo.'
+        if (hoy < envio) {
+          resumen = `Todavía no se declaró: está en el plazo para corregir. Se declara solo el ${dmy(envio)}`
+            + ` (plazo SUNAT: ${dmy(vence)}). Hasta entonces se puede editar o anular.`
+        } else if (hoy <= vence) {
+          resumen = `SUNAT todavía no lo tiene y ya debía declararse: vence el ${dmy(vence)}. Declararlo ahora.`
+        } else {
+          veredicto = 'problema'
+          resumen = `FUERA DE PLAZO: SUNAT no lo tiene y el plazo venció el ${dmy(vence)}. Consultar con el contador.`
+        }
+        if (c.enviado_sunat) resumen += ' (Se había enviado solo en modo pruebas.)'
       }
       break
     default:

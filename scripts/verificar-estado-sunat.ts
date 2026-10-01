@@ -130,6 +130,19 @@ async function main() {
       `tarjeta ${vista.programados}, tabla ${programadosTabla}`)
     check('Muestra contra qué servicio está', !!vista.banner, vista.banner)
 
+    // ── El plazo: cuándo se declara y el panel de atrasados ──────────────
+    const plazo = await page.evaluate(() => ({
+      etiqueta: (document.querySelector('[data-estado="programado"]') as HTMLElement | null)?.innerText ?? '',
+      atrasados: document.querySelector('[data-atrasados]')?.getAttribute('data-atrasados') ?? null,
+      panel: (document.querySelector('[data-panel-plazos]') as HTMLElement | null)?.innerText.replace(/\s+/g, ' ') ?? '',
+    }))
+    const esperado = (() => {
+      const d = new Date(`${String(ultimo.fecha_emision)}T12:00:00Z`); d.setUTCDate(d.getUTCDate() + 2)
+      return d.toISOString().slice(0, 10).split('-').reverse().join('/')
+    })()
+    check('Se declara dos días después de la emisión', plazo.etiqueta.includes(esperado), plazo.etiqueta)
+    check('El panel de plazos está y no hay nada atrasado', plazo.atrasados === '0', plazo.panel.slice(0, 140))
+
     // ── Filtrar con la tarjeta ────────────────────────────────────────────
     await (await page.$('[data-tarjeta="programado"]'))!.click()
     await esperar(800)

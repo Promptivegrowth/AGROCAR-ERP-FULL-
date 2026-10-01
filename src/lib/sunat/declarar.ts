@@ -25,6 +25,46 @@ import { construirInvoice, type ItemUbl } from './ubl'
 import { firmarXml, comprimir, enviarASunat } from './firma'
 import { hoyLima } from '@/lib/fechas-pe'
 import { sumarDias } from './plazo'
+import { consultarEnSunat } from './consulta'
+
+/**
+ * SUNAT dice que ese número ya lo tiene. Pasa cuando un envío anterior llegó
+ * pero la respuesta se perdió (se cortó la conexión, se venció el tiempo).
+ */
+const YA_REGISTRADO = /registrado previamente|ya (fue|ha sido) (registrad|informad|presentad)/i
+
+/**
+ * Si SUNAT ya tiene el comprobante aceptado, se anota como declarado con la
+ * constancia que devuelve la consulta, sin volver a enviarlo. Devuelve null si
+ * SUNAT no lo tiene aceptado.
+ */
+async function recuperarDeSunat(
+  admin: any,
+  c: { id: string; tipo: string; serie: string; numero: string },
+  nombre: string,
+): Promise<ResultadoDeclaracion | null> {
+  const consulta = await consultarEnSunat(c)
+  if (consulta.estado !== 'aceptado') return null
+  const ahora = new Date().toISOString()
+  await admin.from('comprobantes').update({
+    enviado_sunat: true,
+    sunat_estado: 'aceptado',
+    sunat_modo: 'produccion',
+    sunat_codigo: consulta.cdrCodigo ?? '0',
+    sunat_mensaje: consulta.cdrMensaje ?? consulta.mensaje,
+    ...(consulta.cdrZipBase64 ? { sunat_cdr: consulta.cdrZipBase64 } : {}),
+    sunat_enviado_at: ahora,
+    sunat_verificado_at: ahora,
+    sunat_verificacion: 'aceptado',
+  }).eq('id', c.id)
+  return {
+    ok: true,
+    comprobante: nombre,
+    codigo: consulta.cdrCodigo ?? '0',
+    mensaje: 'SUNAT ya lo tenía aceptado de un envío anterior: se recuperó la constancia sin reenviarlo.',
+    declarado: true,
+  }
+}
 
 export interface ResultadoDeclaracion {
   ok: boolean
@@ -175,6 +215,7 @@ export async function declararComprobante(
     vencimiento = d.toISOString().slice(0, 10)
   }
 
+  let tengoLaReserva = false
   try {
     const { xml, nombreArchivo, totales } = construirInvoice({
       comprobante: {
@@ -210,11 +251,42 @@ export async function declararComprobante(
       )
     }
 
+    /*
+     * Reservar el comprobante para este proceso. Pueden coincidir el envío de
+     * la mañana, el de respaldo y alguien apretando "Declarar": el primero se
+     * lo queda y los demás lo saltan. Mientras dura, la base no deja editarlo
+     * (migración 116), así que SUNAT recibe exactamente lo que queda guardado.
+     */
+    const { data: reservado, error: errReserva } = await (admin as any)
+      .rpc('reservar_envio_sunat', { p_comprobante_id: c.id })
+    if (errReserva) throw new Error(`No se pudo reservar el envío: ${errReserva.message}`)
+    if (!reservado) {
+      return { ok: false, motivo: `${nombre} ya se está enviando o ya fue declarado.`, estadoHttp: 409, comprobante: nombre, declarado: false }
+    }
+    tengoLaReserva = true
+
+    /*
+     * Si ya hubo un intento, antes de reenviar se pregunta. Un envío que llegó
+     * a SUNAT pero cuya respuesta se perdió figura acá como error; reenviarlo
+     * rebotaría por duplicado. Si SUNAT lo tiene aceptado, se recupera.
+     */
+    if (conf.modo === 'produccion' && (c.sunat_intentos ?? 0) > 0) {
+      const recuperado = await recuperarDeSunat(admin, c, nombre)
+      if (recuperado) return recuperado
+    }
+
     const firmado = firmarXml(xml, conf.certificado)
     const zip = await comprimir(nombreArchivo, firmado)
     const r = await enviarASunat({
       modo: conf.modo, usuario: conf.usuario, clave: conf.clave, nombreArchivo, zip,
     })
+
+    // SUNAT dice que ya lo tiene: se consulta y, si está aceptado, se recupera
+    // en lugar de marcarlo rechazado.
+    if (conf.modo === 'produccion' && r.codigo !== '0' && YA_REGISTRADO.test(r.mensaje ?? '')) {
+      const recuperado = await recuperarDeSunat(admin, c, nombre)
+      if (recuperado) return recuperado
+    }
 
     // 4000 es "ya fue presentado": el comprobante está en SUNAT igual.
     const aceptado = r.codigo === '0' || r.codigo === '4000'
@@ -242,12 +314,15 @@ export async function declararComprobante(
     }
   } catch (e) {
     const mensaje = e instanceof Error ? e.message : 'Error inesperado al enviar'
-    await (admin as any).from('comprobantes').update({
+    let falla = (admin as any).from('comprobantes').update({
       sunat_estado: 'error',
       sunat_mensaje: mensaje,
       sunat_enviado_at: new Date().toISOString(),
       sunat_intentos: (c.sunat_intentos ?? 0) + 1,
     }).eq('id', c.id)
+    // Sin la reserva, no se pisa el "enviando" de otro proceso.
+    if (!tengoLaReserva) falla = falla.or('sunat_estado.is.null,sunat_estado.neq.enviando')
+    await falla
     return { ok: false, motivo: mensaje, estadoHttp: 500, comprobante: nombre, declarado: false }
   }
 }
@@ -286,6 +361,9 @@ export async function comprobantesPendientes(conf: ConfiguracionSunat, limite = 
     // Emitido hace al menos `diasEspera` días: con 2, el 03/10 sale lo del 01/10.
     .lte('fecha_emision', sumarDias(hoyLima(), -conf.diasEspera))
     .order('fecha_emision', { ascending: true })
+    // Dentro del mismo día, en orden de correlativo.
+    .order('serie', { ascending: true })
+    .order('numero', { ascending: true })
     .limit(limite)
 
   if (error) throw new Error(error.message)
