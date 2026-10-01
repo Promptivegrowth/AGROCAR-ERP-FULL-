@@ -96,7 +96,7 @@ export default function VentaDirectaDialog({ open, onOpenChange, onCreated }: Pr
 
   // Datos del comprobante
   const [tipoComprobante, setTipoComprobante] = useState<'factura' | 'boleta' | 'nota_pedido_interna'>('boleta')
-  const [serie, setSerie] = useState('B001')
+  const [serie, setSerie] = useState('B002')
   const [incluirIgv, setIncluirIgv] = useState(true)
   const [notas, setNotas] = useState('')
 
@@ -358,7 +358,7 @@ export default function VentaDirectaDialog({ open, onOpenChange, onCreated }: Pr
 
   const updateTipoComprobante = (t: string) => {
     setTipoComprobante(t as any)
-    setSerie(t === 'factura' ? 'F001' : t === 'boleta' ? 'B001' : 'T001')
+    setSerie(t === 'factura' ? 'F002' : t === 'boleta' ? 'B002' : 'T001')
   }
 
   async function guardarVentaDirecta() {

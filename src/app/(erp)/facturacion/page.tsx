@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState, useCallback, useMemo, useRef } from 'react'
-import { FileText, Loader2, CheckCircle, AlertCircle, DollarSign, Receipt, Eye, ExternalLink, Search, CalendarClock, ShieldCheck } from 'lucide-react'
+import { FileText, Loader2, CheckCircle, AlertCircle, DollarSign, Receipt, Eye, ExternalLink, Search, CalendarClock, ShieldCheck, Truck } from 'lucide-react'
 import Link from 'next/link'
 import VentaDirectaDialog from './venta-directa-dialog'
 import NotaCreditoDialog from './nota-credito-dialog'
@@ -253,7 +253,7 @@ export default function FacturacionPage() {
   const [facturarDialog, setFacturarDialog] = useState(false)
   const [pedidoSeleccionado, setPedidoSeleccionado] = useState<any>(null)
   const [tipoComprobante, setTipoComprobante] = useState<string>('factura')
-  const [serie, setSerie] = useState('F001')
+  const [serie, setSerie] = useState('F002')
   const [saving, setSaving] = useState(false)
   const [successMsg, setSuccessMsg] = useState('')
   const [ventaDirectaOpen, setVentaDirectaOpen] = useState(false)
@@ -727,6 +727,9 @@ export default function FacturacionPage() {
       return
     }
     setGuiaSaving(true)
+    // La pestaña se abre ya, en el clic: abrirla después de esperar a SUNAT
+    // la haría bloquear por el navegador como ventana emergente.
+    const ventana = window.open('', '_blank')
     const { data, error } = await (supabase.rpc as any)('emitir_guia_desde_comprobante', {
       p_comprobante_id: guiaComp.id,
       p_fecha_inicio_traslado: guiaForm.fecha_inicio_traslado,
@@ -743,17 +746,49 @@ export default function FacturacionPage() {
       p_transportista_ruc: guiaForm.modalidad === 'publico' ? guiaForm.transportista_ruc : null,
       p_motivo_descripcion: guiaForm.motivo_descripcion || null,
     })
-    setGuiaSaving(false)
     if (error || !data?.id) {
+      setGuiaSaving(false)
+      ventana?.close()
       toast.error('No se pudo emitir', { description: error?.message ?? 'Error desconocido' })
       return
     }
-    toast.success(`Guía ${data.numero_completo} emitida`, {
-      description: 'Se abrirá en una nueva pestaña.',
-    })
+
+    /*
+     * Se declara a SUNAT en el acto. La guía electrónica tiene que estar
+     * aceptada ANTES de que salga el camión: el 01/10 el control móvil paró
+     * los carros y las guías no estaban en SUNAT.
+     */
+    const aviso = toast.loading(`Guía ${data.numero_completo} emitida. Declarando a SUNAT…`)
+    try {
+      const res = await fetch('/api/sunat/gre/enviar', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ guia_id: data.id, accion: 'enviar' }),
+      })
+      const r = await res.json()
+      if (res.ok && r.ok) {
+        toast.success(`Guía ${data.numero_completo} aceptada por SUNAT`, { id: aviso, description: 'Lista para imprimir, con el QR de SUNAT.' })
+      } else if (r.estado === 'procesando') {
+        toast.warning(`SUNAT está procesando la guía ${data.numero_completo}`, {
+          id: aviso, duration: 12000, description: 'Consultá el resultado en Guías antes de que salga el camión.',
+        })
+      } else {
+        toast.error(`SUNAT no aceptó la guía ${data.numero_completo}`, {
+          id: aviso, duration: 20000,
+          description: `${r.error ?? r.mensaje ?? 'Sin detalle'}. Corregí y volvé a declararla desde Guías.`,
+        })
+      }
+    } catch (e) {
+      toast.error('No se pudo declarar a SUNAT', {
+        id: aviso, duration: 20000,
+        description: `${e instanceof Error ? e.message : 'Sin conexión'}. Declarala desde Guías antes de que salga el camión.`,
+      })
+    }
+    setGuiaSaving(false)
     setGuiaOpen(false)
     setGuiaComp(null)
-    window.open(`/guia/${data.id}`, '_blank', 'noopener,noreferrer')
+    if (ventana) ventana.location.href = `/guia/${data.id}`
+    else window.open(`/guia/${data.id}`, '_blank', 'noopener,noreferrer')
   }
 
   // ── Anulación de comprobante (mantiene correlativo, libera pedido para re-facturar)
@@ -1154,7 +1189,7 @@ export default function FacturacionPage() {
 
   const updateSerie = (tipo: string) => {
     setTipoComprobante(tipo)
-    setSerie(tipo === 'factura' ? 'F001' : tipo === 'boleta' ? 'B001' : 'T001')
+    setSerie(tipo === 'factura' ? 'F002' : tipo === 'boleta' ? 'B002' : 'T001')
   }
 
   return (
@@ -1177,6 +1212,11 @@ export default function FacturacionPage() {
               </span>
             )}
           </div>
+          <Link href="/facturacion/guias">
+            <Button variant="outline" className="gap-2">
+              <Truck className="w-4 h-4" /> Guías
+            </Button>
+          </Link>
           <Link href="/facturacion/sunat">
             <Button variant="outline" className="gap-2 border-emerald-300 text-emerald-800 hover:bg-emerald-50">
               <ShieldCheck className="w-4 h-4" /> Estado SUNAT

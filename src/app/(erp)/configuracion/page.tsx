@@ -19,8 +19,9 @@ import { Warehouse, Crosshair } from 'lucide-react'
 import { olvidarIgv } from '@/lib/igv'
 
 const SERIES_INICIALES = [
-  { serie: 'F001', tipo: 'factura', descripcion: 'Facturas electrónicas' },
-  { serie: 'B001', tipo: 'boleta', descripcion: 'Boletas de venta electrónicas' },
+  // Las series 001 son del sistema anterior de AGROCAR: el ERP usa las 002.
+  { serie: 'F002', tipo: 'factura', descripcion: 'Facturas electrónicas' },
+  { serie: 'B002', tipo: 'boleta', descripcion: 'Boletas de venta electrónicas' },
   { serie: 'T001', tipo: 'nota_pedido_interna', descripcion: 'Documentos internos' },
 ]
 

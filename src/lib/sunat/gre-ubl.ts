@@ -216,13 +216,8 @@ export function construirGuiaRemision(
         </cac:PartyLegalEntity>
       </cac:CarrierParty>`
     : `
-      <cac:OwnerParty>
-        <cac:PartyIdentification>
-          <cbc:ID schemeID="6">${esc(emisor.ruc)}</cbc:ID>
-        </cac:PartyIdentification>
-      </cac:OwnerParty>
       <cac:DriverPerson>
-        <cbc:ID schemeID="${esc(guia.transporte.conductor_tipo_doc || '1')}">${esc(guia.transporte.conductor_doc)}</cbc:ID>
+        <cbc:ID schemeID="${esc(guia.transporte.conductor_tipo_doc || '1')}" schemeName="Documento de Identidad" schemeAgencyName="PE:SUNAT" schemeURI="urn:pe:gob:sunat:cpe:see:gem:catalogos:catalogo06">${esc(guia.transporte.conductor_doc)}</cbc:ID>
         <cbc:FirstName><![CDATA[${guia.transporte.conductor_nombres ?? ''}]]></cbc:FirstName>
         <cbc:FamilyName><![CDATA[${guia.transporte.conductor_apellidos ?? ''}]]></cbc:FamilyName>
         <cbc:JobTitle>Principal</cbc:JobTitle>
@@ -245,7 +240,13 @@ export function construirGuiaRemision(
     ? `
   <cac:AdditionalDocumentReference>
     <cbc:ID>${esc(guia.comprobante_relacionado.serie)}-${esc(correlativo(guia.comprobante_relacionado.numero))}</cbc:ID>
-    <cbc:DocumentTypeCode>${esc(guia.comprobante_relacionado.tipo)}</cbc:DocumentTypeCode>
+    <cbc:DocumentTypeCode listAgencyName="PE:SUNAT" listName="Documento relacionado al transporte" listURI="urn:pe:gob:sunat:cpe:see:gem:catalogos:catalogo61">${esc(guia.comprobante_relacionado.tipo)}</cbc:DocumentTypeCode>
+    <cbc:DocumentType>${guia.comprobante_relacionado.tipo === '01' ? 'Factura' : 'Boleta de Venta'}</cbc:DocumentType>
+    <cac:IssuerParty>
+      <cac:PartyIdentification>
+        <cbc:ID schemeID="6" schemeName="Documento de Identidad" schemeAgencyName="PE:SUNAT" schemeURI="urn:pe:gob:sunat:cpe:see:gem:catalogos:catalogo06">${esc(emisor.ruc)}</cbc:ID>
+      </cac:PartyIdentification>
+    </cac:IssuerParty>
   </cac:AdditionalDocumentReference>`
     : ''
 
@@ -278,20 +279,24 @@ export function construirGuiaRemision(
   <cbc:ID>${esc(id)}</cbc:ID>
   <cbc:IssueDate>${esc(guia.fecha_emision)}</cbc:IssueDate>
   <cbc:IssueTime>${esc(guia.hora_emision || '00:00:00')}</cbc:IssueTime>
-  <cbc:DespatchAdviceTypeCode>${TIPO_GUIA_REMITENTE}</cbc:DespatchAdviceTypeCode>
+  <cbc:DespatchAdviceTypeCode listAgencyName="PE:SUNAT" listName="Tipo de Documento" listURI="urn:pe:gob:sunat:cpe:see:gem:catalogos:catalogo01">${TIPO_GUIA_REMITENTE}</cbc:DespatchAdviceTypeCode>
   ${guia.motivo_descripcion ? `<cbc:Note><![CDATA[${guia.motivo_descripcion}]]></cbc:Note>` : ''}
 ${bloqueRelacionado}
   <cac:DespatchSupplierParty>
-    <cbc:CustomerAssignedAccountID schemeID="6">${esc(emisor.ruc)}</cbc:CustomerAssignedAccountID>
     <cac:Party>
+      <cac:PartyIdentification>
+        <cbc:ID schemeID="6" schemeName="Documento de Identidad" schemeAgencyName="PE:SUNAT" schemeURI="urn:pe:gob:sunat:cpe:see:gem:catalogos:catalogo06">${esc(emisor.ruc)}</cbc:ID>
+      </cac:PartyIdentification>
       <cac:PartyLegalEntity>
         <cbc:RegistrationName><![CDATA[${emisor.razon_social}]]></cbc:RegistrationName>
       </cac:PartyLegalEntity>
     </cac:Party>
   </cac:DespatchSupplierParty>
   <cac:DeliveryCustomerParty>
-    <cbc:CustomerAssignedAccountID schemeID="${dest.tipo}">${esc(dest.numero)}</cbc:CustomerAssignedAccountID>
     <cac:Party>
+      <cac:PartyIdentification>
+        <cbc:ID schemeID="${dest.tipo}" schemeName="Documento de Identidad" schemeAgencyName="PE:SUNAT" schemeURI="urn:pe:gob:sunat:cpe:see:gem:catalogos:catalogo06">${esc(dest.numero)}</cbc:ID>
+      </cac:PartyIdentification>
       <cac:PartyLegalEntity>
         <cbc:RegistrationName><![CDATA[${guia.destinatario.razon_social}]]></cbc:RegistrationName>
       </cac:PartyLegalEntity>
@@ -299,12 +304,12 @@ ${bloqueRelacionado}
   </cac:DeliveryCustomerParty>
   <cac:Shipment>
     <cbc:ID>SUNAT_Envio</cbc:ID>
-    <cbc:HandlingCode>${esc(codigoMotivo)}</cbc:HandlingCode>
+    <cbc:HandlingCode listAgencyName="PE:SUNAT" listName="Motivo de traslado" listURI="urn:pe:gob:sunat:cpe:see:gem:catalogos:catalogo20">${esc(codigoMotivo)}</cbc:HandlingCode>
     ${guia.motivo_descripcion ? `<cbc:Information><![CDATA[${guia.motivo_descripcion}]]></cbc:Information>` : ''}
     <cbc:GrossWeightMeasure unitCode="${esc(guia.unidad_peso || 'KGM')}">${Number(guia.peso_bruto_total).toFixed(3)}</cbc:GrossWeightMeasure>
     ${guia.numero_bultos ? `<cbc:TotalTransportHandlingUnitQuantity>${Number(guia.numero_bultos)}</cbc:TotalTransportHandlingUnitQuantity>` : ''}
     <cac:ShipmentStage>
-      <cbc:TransportModeCode>${guia.transporte.modalidad === 'publico' ? '01' : '02'}</cbc:TransportModeCode>
+      <cbc:TransportModeCode listName="Modalidad de traslado" listAgencyName="PE:SUNAT" listURI="urn:pe:gob:sunat:cpe:see:gem:catalogos:catalogo18">${guia.transporte.modalidad === 'publico' ? '01' : '02'}</cbc:TransportModeCode>
       <cac:TransitPeriod>
         <cbc:StartDate>${esc(guia.fecha_inicio_traslado)}</cbc:StartDate>
       </cac:TransitPeriod>${bloqueTransporte}
