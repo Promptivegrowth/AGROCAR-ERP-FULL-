@@ -3,6 +3,7 @@ import { notFound } from 'next/navigation'
 import { EMPRESA } from '@/lib/empresa'
 import GuiaActions from './guia-actions'
 import { qrDataUri } from '@/lib/qr'
+import { leerCdrGuia } from '@/lib/sunat/gre-declarar'
 
 export const dynamic = 'force-dynamic'
 
@@ -78,10 +79,23 @@ export default async function GuiaPage({ params }: { params: Promise<{ id: strin
       day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'America/Lima',
     })
 
-  // QR data básico (similar a SUNAT)
-  const qrData = `${EMPRESA.ruc}|09|${guia.serie}|${guia.numero}|${pesoBruto.toFixed(2)}|${(guia.fecha_inicio_traslado ?? '').replace(/-/g, '')}`
+  /*
+   * El QR y el título dependen de si SUNAT aceptó la guía.
+   *
+   * Antes la guía se imprimía como "GUÍA DE REMISIÓN ELECTRÓNICA" con un QR
+   * armado acá aunque nunca se hubiera enviado: el fiscalizador del control
+   * móvil la buscaba en SUNAT y no estaba (Daniel, 01/10). Ahora, aceptada,
+   * lleva el QR que entrega SUNAT en su constancia; sin aceptar, lo dice.
+   */
+  const aceptada = !!guia.enviado_sunat && guia.sunat_estado === 'aceptado'
+  let urlQrSunat: string | null = null
+  if (aceptada && guia.sunat_cdr) {
+    try { urlQrSunat = (await leerCdrGuia(guia.sunat_cdr)).urlQr } catch { urlQrSunat = null }
+  }
+  const qrData = urlQrSunat
+    ?? `${EMPRESA.ruc}|09|${guia.serie}|${guia.numero}|${pesoBruto.toFixed(2)}|${(guia.fecha_inicio_traslado ?? '').replace(/-/g, '')}`
   // QR generado en el servidor, sin depender de una web externa
-  const qrUrl = await qrDataUri(qrData, 120)
+  const qrUrl = aceptada ? await qrDataUri(qrData, 120) : null
 
   const motivoLabel = MOTIVOS_LABEL[guia.motivo_traslado] ?? guia.motivo_traslado
   const modalidadLabel = guia.modalidad_traslado === 'publico' ? 'Público' : 'Privado'
@@ -102,6 +116,19 @@ export default async function GuiaPage({ params }: { params: Promise<{ id: strin
 
       <GuiaActions guiaId={id} numero={numeroCompleto} />
 
+      {!aceptada && (
+        <div className="max-w-4xl mx-auto mb-3 rounded-lg border-2 border-red-500 bg-red-50 px-4 py-3 text-red-900">
+          <p className="font-bold">Esta guía NO está aceptada por SUNAT.</p>
+          <p className="text-sm">
+            {guia.sunat_estado === 'procesando'
+              ? 'Se envió y SUNAT la está procesando. Consultá el resultado en Facturación → Guías antes de entregarla.'
+              : guia.sunat_estado === 'rechazado' || guia.sunat_estado === 'error'
+                ? `SUNAT la rechazó o hubo un error${guia.sunat_mensaje ? `: ${guia.sunat_mensaje}` : ''}. Corregir y volver a declarar.`
+                : 'Todavía no se declaró. Declarala en Facturación → Guías antes de que salga el camión: sin eso no sustenta el traslado.'}
+          </p>
+        </div>
+      )}
+
       <div className="guia-doc max-w-4xl mx-auto bg-white shadow-lg print:shadow-none p-8" style={{
         fontFamily: '"Helvetica Neue", Arial, sans-serif', fontSize: 11, color: '#111',
       }}>
@@ -110,8 +137,15 @@ export default async function GuiaPage({ params }: { params: Promise<{ id: strin
           <tbody>
             <tr>
               <td style={{ width: '20%', verticalAlign: 'top' }}>
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={qrUrl} alt="QR" style={{ width: 110, height: 110 }} />
+                {qrUrl ? (
+                  /* eslint-disable-next-line @next/next/no-img-element */
+                  <img src={qrUrl} alt="QR" style={{ width: 110, height: 110 }} />
+                ) : (
+                  <div style={{ width: 110, height: 110, border: '2px dashed #b91c1c', color: '#b91c1c', fontSize: 10,
+                    fontWeight: 'bold', display: 'flex', alignItems: 'center', justifyContent: 'center', textAlign: 'center', padding: 6 }}>
+                    NO DECLARADA A SUNAT
+                  </div>
+                )}
               </td>
               <td style={{ width: '50%', verticalAlign: 'top', paddingLeft: 16 }}>
                 <div style={{ fontWeight: 'bold', fontSize: 18 }}>{EMPRESA.razon_social}</div>
@@ -121,6 +155,9 @@ export default async function GuiaPage({ params }: { params: Promise<{ id: strin
                   <div style={{ fontWeight: 'bold' }}>RUC N°{EMPRESA.ruc}</div>
                   <div style={{ fontWeight: 'bold', marginTop: 4 }}>GUÍA DE REMISIÓN ELECTRÓNICA</div>
                   <div style={{ fontWeight: 'bold' }}>REMITENTE</div>
+                  {!aceptada && (
+                    <div style={{ fontWeight: 'bold', marginTop: 4, color: '#b91c1c' }}>NO DECLARADA A SUNAT</div>
+                  )}
                   <div style={{ fontWeight: 'bold', marginTop: 4 }}>N° {numeroCompleto}</div>
                 </div>
               </td>

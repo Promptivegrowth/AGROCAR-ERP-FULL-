@@ -64,6 +64,8 @@ export interface GuiaUbl {
   numero: string | number
   /** El día en que se emite, no el del traslado. */
   fecha_emision: string
+  /** La hora de emisión (HH:MM:SS, hora de Lima). Sin ella va 00:00:00. */
+  hora_emision?: string | null
   /** El día en que sale la mercadería. */
   fecha_inicio_traslado: string
   /** Catálogo 20. */
@@ -175,6 +177,14 @@ function validar(guia: GuiaUbl, items: ItemGuia[]): void {
   } else if (!/^\d{11}$/.test((guia.transporte.transportista_ruc ?? '').trim())) {
     throw new Error('Traslado con transportista: falta el RUC de la empresa de transporte')
   }
+  // La guía se emite ANTES de que salga la mercadería: el traslado no puede
+  // empezar antes del día de emisión.
+  if (guia.fecha_inicio_traslado < guia.fecha_emision) {
+    throw new Error(
+      `El traslado (${guia.fecha_inicio_traslado}) no puede empezar antes de la emisión de la guía `
+      + `(${guia.fecha_emision}).`,
+    )
+  }
   if (!MOTIVO_TRASLADO[guia.motivo_traslado]) {
     throw new Error(`Motivo de traslado desconocido: "${guia.motivo_traslado}"`)
   }
@@ -217,7 +227,7 @@ export function construirGuiaRemision(
         <cbc:FamilyName><![CDATA[${guia.transporte.conductor_apellidos ?? ''}]]></cbc:FamilyName>
         <cbc:JobTitle>Principal</cbc:JobTitle>
         <cac:IdentityDocumentReference>
-          <cbc:ID>${esc(guia.transporte.conductor_licencia ?? '')}</cbc:ID>
+          <cbc:ID>${esc((guia.transporte.conductor_licencia ?? '').replace(/[^A-Za-z0-9]/g, '').toUpperCase())}</cbc:ID>
         </cac:IdentityDocumentReference>
       </cac:DriverPerson>`
 
@@ -267,7 +277,7 @@ export function construirGuiaRemision(
   <cbc:CustomizationID>2.0</cbc:CustomizationID>
   <cbc:ID>${esc(id)}</cbc:ID>
   <cbc:IssueDate>${esc(guia.fecha_emision)}</cbc:IssueDate>
-  <cbc:IssueTime>00:00:00</cbc:IssueTime>
+  <cbc:IssueTime>${esc(guia.hora_emision || '00:00:00')}</cbc:IssueTime>
   <cbc:DespatchAdviceTypeCode>${TIPO_GUIA_REMITENTE}</cbc:DespatchAdviceTypeCode>
   ${guia.motivo_descripcion ? `<cbc:Note><![CDATA[${guia.motivo_descripcion}]]></cbc:Note>` : ''}
 ${bloqueRelacionado}
