@@ -38,7 +38,10 @@ export async function updateSession(request: NextRequest) {
 // hace nada. Tiene que estar acá o el cron termina redirigido a /login y el
 // envío automático no corre nunca -sin ruido, que es lo peor-. Va la ruta
 // completa a propósito: `/api/sunat` a secas dejaría abierto el envío manual.
-const publicPaths = ["/login", "/auth/callback", "/boleta", "/comprobante", "/guia-remision", "/api/consulta", "/api/geocode", "/api/ubigeo", "/api/tipo-cambio", "/api/impresion", "/api/sunat/enviar-programados"];
+// "/guia/" con la barra: la guía de remisión se manda al chofer y al cliente
+// por WhatsApp, igual que el comprobante, y tiene que abrir sin iniciar sesión.
+// "/api/documentos": la descarga del XML y la constancia de SUNAT.
+const publicPaths = ["/login", "/auth/callback", "/boleta", "/comprobante", "/guia-remision", "/guia/", "/api/documentos", "/api/consulta", "/api/geocode", "/api/ubigeo", "/api/tipo-cambio", "/api/impresion", "/api/sunat/enviar-programados"];
   if (publicPaths.some((p) => pathname.startsWith(p))) {
     return supabaseResponse;
   }

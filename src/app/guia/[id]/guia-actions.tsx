@@ -2,7 +2,9 @@
 
 import { Printer } from 'lucide-react'
 
-export default function GuiaActions({ guiaId: _guiaId, numero }: { guiaId: string; numero: string }) {
+export default function GuiaActions({ guiaId, numero, conXml = false, conCdr = false }: {
+  guiaId: string; numero: string; conXml?: boolean; conCdr?: boolean
+}) {
   return (
     <div className="no-print sticky top-0 z-10 bg-white border-b border-gray-200 px-4 py-2.5 mb-3">
       <div className="max-w-4xl mx-auto flex items-center justify-between">
@@ -10,6 +12,14 @@ export default function GuiaActions({ guiaId: _guiaId, numero }: { guiaId: strin
           <h1 className="font-bold text-gray-900 text-sm">Guía de Remisión Electrónica</h1>
           <p className="text-[11px] text-gray-500 font-mono">{numero}</p>
         </div>
+        <div className="flex items-center gap-3">
+        {/* Para mandar al cliente o al chofer: PDF con Imprimir; XML y constancia, acá. */}
+        {conXml && (
+          <a href={`/api/documentos/guia/${guiaId}/xml`} className="text-xs text-blue-700 underline hover:text-blue-900">XML</a>
+        )}
+        {conCdr && (
+          <a href={`/api/documentos/guia/${guiaId}/cdr`} className="text-xs text-blue-700 underline hover:text-blue-900">Constancia SUNAT</a>
+        )}
         <button
           type="button"
           onClick={() => window.print()}
@@ -18,6 +28,7 @@ export default function GuiaActions({ guiaId: _guiaId, numero }: { guiaId: strin
           <Printer className="w-3.5 h-3.5" />
           Imprimir / PDF
         </button>
+        </div>
       </div>
     </div>
   )

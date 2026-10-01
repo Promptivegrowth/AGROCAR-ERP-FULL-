@@ -51,7 +51,7 @@ const NOMBRE_COMPROBANTE: Record<string, string> = {
  * misma forma: la tabla es una sola.
  */
 const COLUMNAS_COMPROBANTE = `
-  id, serie, numero, tipo, fecha_emision, fecha_despacho, created_at, total, estado,
+  id, serie, numero, tipo, fecha_emision, fecha_despacho, created_at, total, estado, cliente_id,
   editado, editado_at, enviado_sunat,
   sunat_estado, sunat_codigo, sunat_mensaje, sunat_modo,
   cliente_externo_nombre, cliente_externo_doc,
@@ -245,6 +245,13 @@ export default function FacturacionPage() {
   const [guiaConductores, setGuiaConductores] = useState<any[]>([])
   const [guiaItems, setGuiaItems] = useState<any[]>([])
   const [editHistorial, setEditHistorial] = useState<any[]>([])
+  /*
+   * Agregar un producto al comprobante. Daniel: "en editar comprobante no
+   * puedo agregar producto". Los productos vienen con el precio de la lista del
+   * cliente, que se puede cambiar.
+   */
+  const [productosParaAgregar, setProductosParaAgregar] = useState<{ id: string; codigo: string; nombre: string; precio: number | null }[]>([])
+  const [nuevoItem, setNuevoItem] = useState({ producto_id: '', cantidad: '', precio: '' })
   const [editNota, setEditNota] = useState('')
   const [editSaving, setEditSaving] = useState(false)
   const [loading, setLoading] = useState(true)
@@ -590,6 +597,67 @@ export default function FacturacionPage() {
     ])
     setEditItems((items ?? []).map((it: any) => ({ ...it, _cantidad: String(it.cantidad), _precio: String(it.precio_unitario) })))
     setEditHistorial(hist ?? [])
+    setNuevoItem({ producto_id: '', cantidad: '', precio: '' })
+
+    // Productos con el precio de la lista del cliente, para poder agregar uno.
+    const [{ data: prods }, { data: cli }] = await Promise.all([
+      (supabase as any).from('productos').select('id, codigo, nombre, descripcion').eq('activo', true).order('codigo'),
+      comp.cliente_id
+        ? (supabase as any).from('clientes').select('lista_precio_id').eq('id', comp.cliente_id).maybeSingle()
+        : Promise.resolve({ data: null }),
+    ])
+    const precios = new Map<string, number>()
+    if (cli?.lista_precio_id) {
+      const { data: lp } = await (supabase as any).from('lista_precio_items')
+        .select('producto_id, precio').eq('lista_precio_id', cli.lista_precio_id).eq('activo', true)
+      ;(lp ?? []).forEach((x: any) => precios.set(x.producto_id, Number(x.precio)))
+    }
+    setProductosParaAgregar(((prods ?? []) as any[]).map((pr) => ({
+      id: pr.id,
+      codigo: pr.codigo,
+      nombre: (pr.descripcion || '').trim() || pr.nombre,
+      precio: precios.get(pr.id) ?? null,
+    })))
+  }
+
+  /** Agregar una línea: se guarda en el acto, con trazabilidad, y mueve el stock. */
+  async function agregarLineaComprobante() {
+    if (!editComp) return
+    const cantidad = parseFloat(nuevoItem.cantidad)
+    const precio = parseFloat(nuevoItem.precio)
+    if (!nuevoItem.producto_id || !(cantidad > 0) || !(precio >= 0)) {
+      toast.error('Faltan datos', { description: 'Elegí el producto e ingresá cantidad y precio.' })
+      return
+    }
+    setEditSaving(true)
+    const { error } = await (supabase.rpc as any)('agregar_item_comprobante', {
+      p_comprobante_id: editComp.id,
+      p_producto_id: nuevoItem.producto_id,
+      p_cantidad: cantidad,
+      p_precio_unitario: precio,
+      p_descripcion: null,
+      p_nota: editNota.trim() || 'Producto agregado al comprobante',
+    })
+    if (error) {
+      setEditSaving(false)
+      toast.error('No se pudo agregar el producto', { description: error.message })
+      return
+    }
+    // Cambió el importe: se firma de nuevo y hay que reimprimir.
+    await firmarComprobante(editComp.id)
+    const [{ data: items }, { data: compRefresh }] = await Promise.all([
+      (supabase as any).from('comprobantes_items').select('*, productos(codigo, nombre)').eq('comprobante_id', editComp.id).order('id'),
+      (supabase as any).from('comprobantes').select('subtotal, igv, total, editado, editado_at').eq('id', editComp.id).single(),
+    ])
+    setEditItems((items ?? []).map((it: any) => ({ ...it, _cantidad: String(it.cantidad), _precio: String(it.precio_unitario) })))
+    if (compRefresh) setEditComp({ ...editComp, ...compRefresh })
+    setNuevoItem({ producto_id: '', cantidad: '', precio: '' })
+    setEditSaving(false)
+    toast.success('Producto agregado', {
+      description: 'Totales recalculados y stock actualizado. Hay que reimprimir el comprobante: cambió el importe.',
+      duration: 10000,
+    })
+    loadData()
   }
 
   // ── Eliminar una línea del comprobante (no editar a 0, borrar de verdad)
@@ -1997,6 +2065,47 @@ export default function FacturacionPage() {
                       })}
                     </tbody>
                   </table>
+                </div>
+
+                {/* Agregar un producto */}
+                <div className="mt-2 rounded-lg border border-dashed border-emerald-300 bg-emerald-50/50 p-2" data-agregar-producto>
+                  <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-emerald-800">Agregar producto</p>
+                  <div className="flex flex-wrap items-end gap-2">
+                    <select
+                      value={nuevoItem.producto_id}
+                      onChange={(e) => {
+                        const pr = productosParaAgregar.find((x) => x.id === e.target.value)
+                        setNuevoItem((n) => ({
+                          ...n,
+                          producto_id: e.target.value,
+                          precio: pr?.precio != null ? String(pr.precio) : n.precio,
+                        }))
+                      }}
+                      disabled={editSaving}
+                      className="h-8 min-w-[260px] flex-1 rounded-md border border-gray-300 bg-white px-2 text-xs"
+                    >
+                      <option value="">Elegir producto…</option>
+                      {productosParaAgregar.map((pr) => (
+                        <option key={pr.id} value={pr.id}>
+                          {pr.codigo} · {pr.nombre}{pr.precio != null ? ` · S/ ${pr.precio.toFixed(2)}` : ''}
+                        </option>
+                      ))}
+                    </select>
+                    <Input type="number" step="0.01" min="0" placeholder="Cantidad" value={nuevoItem.cantidad}
+                      onChange={(e) => setNuevoItem((n) => ({ ...n, cantidad: e.target.value }))}
+                      className="h-8 w-24 text-xs text-right font-mono" disabled={editSaving} />
+                    <Input type="number" step="0.01" min="0" placeholder="P. Unit." value={nuevoItem.precio}
+                      onChange={(e) => setNuevoItem((n) => ({ ...n, precio: e.target.value }))}
+                      className="h-8 w-24 text-xs text-right font-mono" disabled={editSaving} />
+                    <Button type="button" size="sm" onClick={agregarLineaComprobante}
+                      disabled={editSaving || !nuevoItem.producto_id}
+                      className="h-8 bg-emerald-600 hover:bg-emerald-700 text-white text-xs">
+                      + Agregar
+                    </Button>
+                  </div>
+                  <p className="mt-1 text-[10px] text-gray-500">
+                    Se guarda al instante con trazabilidad y descuenta el stock. El precio sale de la lista del cliente; se puede cambiar.
+                  </p>
                 </div>
 
                 {/* Bloque de totales en vivo */}

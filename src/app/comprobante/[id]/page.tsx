@@ -86,7 +86,7 @@ export default async function ComprobantePage({
   const { data: comp } = await (supabase as any)
     .from('comprobantes')
     .select(`
-      id, tipo, serie, numero, fecha_emision, fecha_despacho, subtotal, igv, total, moneda, estado, pedido_id, created_at, sunat_xml,
+      id, tipo, serie, numero, fecha_emision, fecha_despacho, subtotal, igv, total, moneda, estado, pedido_id, created_at, sunat_xml, sunat_cdr,
       cliente_externo_nombre, cliente_externo_doc,
       clientes(id, razon_social, ruc, dni, direccion, telefono),
       profiles!comprobantes_facturador_id_fkey(full_name)
@@ -238,6 +238,13 @@ export default async function ComprobantePage({
         <div className="ml-auto flex items-center gap-3">
           {!esA4 && <AyudaTicketera />}
           {!esA4 && <BotonTicketera />}
+          {/* Para mandar al cliente: el PDF sale de Imprimir; el XML y la constancia, de acá. */}
+          {(comp as any).sunat_xml && (
+            <a href={`/api/documentos/comprobante/${id}/xml`} className="text-xs text-blue-700 underline hover:text-blue-900">XML</a>
+          )}
+          {(comp as any).sunat_cdr && (
+            <a href={`/api/documentos/comprobante/${id}/cdr`} className="text-xs text-blue-700 underline hover:text-blue-900">Constancia SUNAT</a>
+          )}
           <PrintButton />
         </div>
       </div>

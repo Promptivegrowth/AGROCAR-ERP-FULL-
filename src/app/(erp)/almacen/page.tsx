@@ -429,12 +429,14 @@ export default function AlmacenPage() {
         const prod = s.productos as any
         const stockFisico = Number(s.cantidad ?? 0)
         const stockReservado = Number(s.cantidad_reservada ?? 0)
-        const stockDisponible = Math.max(0, stockFisico - stockReservado)
+        // Sin recortar a cero: un negativo es mercadería vendida que todavía no
+        // se ingresó, y la próxima compra la compensa (migración 120).
+        const stockDisponible = stockFisico - stockReservado
         const costo = Number(s.costo_promedio ?? 0)
         const min = prod?.stock_minimo
         const max = prod?.stock_maximo
         let alerta: 'bajo' | 'sobre' | 'ok' | 'sin' = 'ok'
-        if (stockFisico === 0) alerta = 'sin'
+        if (stockFisico <= 0) alerta = 'sin'
         else if (min != null && stockFisico < Number(min)) alerta = 'bajo'
         else if (max != null && stockFisico > Number(max)) alerta = 'sobre'
 
@@ -456,7 +458,8 @@ export default function AlmacenPage() {
           precio_venta_promedio: precioPromedio,
           unidades_vendidas: ventas?.qty ?? 0,
           ingreso_vendido: ventas?.total ?? 0,
-          valor_total: stockFisico * costo,
+          // Lo que se debe no vale como inventario.
+          valor_total: Math.max(0, stockFisico) * costo,
           alerta,
           ultima_actualizacion: s.updated_at,
         }
