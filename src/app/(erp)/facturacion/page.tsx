@@ -182,6 +182,13 @@ export default function FacturacionPage() {
    */
   const [periodo, setPeriodo] = useState<string>(() => hoyLima().slice(0, 7))
   const [periodoMasViejo, setPeriodoMasViejo] = useState<string | null>(null)
+  /*
+   * El mes del comprobante mas nuevo. Puede ser POSTERIOR al de hoy: la
+   * emision lleva la fecha del reparto, y el 30/09 a la noche se emitieron los
+   * 82 comprobantes del 01/10. La lista de meses llegaba solo hasta el actual,
+   * asi que octubre no se podia elegir y Daniel no veia nada de lo emitido.
+   */
+  const [periodoMasNuevo, setPeriodoMasNuevo] = useState<string | null>(null)
 
   /*
    * Buscar en todo el historial, para cuando no se sabe de que mes es.
@@ -316,24 +323,36 @@ export default function FacturacionPage() {
   useEffect(() => { loadData() }, [loadData])
 
   /*
-   * Desde que mes hay comprobantes. Se pregunta una sola vez y con una sola
-   * fila: alcanza para armar la lista de periodos sin traerse el historial.
+   * Desde que mes y hasta que mes hay comprobantes. Se pregunta una sola vez y
+   * con una fila por punta: alcanza para armar la lista de periodos sin
+   * traerse el historial.
    */
   useEffect(() => {
     let vivo = true
+    const punta = (ascending: boolean) => (supabase as any)
+      .from('comprobantes')
+      .select('fecha_emision')
+      .order('fecha_emision', { ascending })
+      .limit(1)
+      .maybeSingle()
     ;(async () => {
-      const { data } = await (supabase as any)
-        .from('comprobantes')
-        .select('fecha_emision')
-        .order('fecha_emision', { ascending: true })
-        .limit(1)
-        .maybeSingle()
-      if (vivo && data?.fecha_emision) {
-        setPeriodoMasViejo(String(data.fecha_emision).slice(0, 7))
+      const [{ data: viejo }, { data: nuevo }] = await Promise.all([punta(true), punta(false)])
+      if (!vivo) return
+      if (viejo?.fecha_emision) setPeriodoMasViejo(String(viejo.fecha_emision).slice(0, 7))
+      if (nuevo?.fecha_emision) {
+        const mes = String(nuevo.fecha_emision).slice(0, 7)
+        setPeriodoMasNuevo(mes)
+        // Al abrir a fin de mes con lo del reparto de mañana ya emitido, se
+        // muestra ese mes: es lo que se acaba de emitir y lo que se va a
+        // imprimir. Solo si se sigue en el mes de hoy, sin pisar una eleccion.
+        const actual = hoyLima().slice(0, 7)
+        if (mes > actual) setPeriodo((p) => (p === actual ? mes : p))
       }
     })()
     return () => { vivo = false }
-  }, [supabase])
+    // Se vuelve a preguntar con cada recarga de la lista: si se emite con la
+    // pantalla abierta, el mes nuevo tiene que aparecer sin recargar la página.
+  }, [supabase, comprobantes])
 
   // Refresco en tiempo real: cuando un vendedor crea un pedido o se emite/edita
   // un comprobante, la página se actualiza sola sin recargar.
@@ -363,14 +382,17 @@ export default function FacturacionPage() {
   }, [supabase])
 
   /*
-   * Los meses que se pueden elegir: desde el primer comprobante hasta hoy, el
-   * mas reciente arriba. Se arman con dos fechas, sin consultar el historial.
+   * Los meses que se pueden elegir: desde el primer comprobante hasta hoy, o
+   * hasta el ultimo comprobante si es de un mes posterior. El mas reciente
+   * arriba. Se arman con fechas sueltas, sin consultar el historial.
    */
   const periodosDisponibles = useMemo(() => {
     const actual = hoyLima().slice(0, 7)
+    const tope = periodoMasNuevo && periodoMasNuevo > actual ? periodoMasNuevo : actual
     const lista: string[] = []
-    let [anio, mes] = (periodoMasViejo ?? actual).split('-').map(Number)
-    const [anioTope, mesTope] = actual.split('-').map(Number)
+    let [anio, mes] = (periodoMasViejo && periodoMasViejo < actual ? periodoMasViejo : actual)
+      .split('-').map(Number)
+    const [anioTope, mesTope] = tope.split('-').map(Number)
     while (anio < anioTope || (anio === anioTope && mes <= mesTope)) {
       lista.push(`${anio}-${String(mes).padStart(2, '0')}`)
       mes += 1
@@ -379,7 +401,7 @@ export default function FacturacionPage() {
     // Por las dudas: si alguien mira un periodo fuera del rango, que igual este.
     if (!lista.includes(periodo)) lista.push(periodo)
     return lista.reverse()
-  }, [periodoMasViejo, periodo])
+  }, [periodoMasViejo, periodoMasNuevo, periodo])
 
   /**
    * Buscar un comprobante en todo el historial, sin saber de que mes es.
