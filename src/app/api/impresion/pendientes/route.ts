@@ -15,8 +15,29 @@ import { createAdminClient } from '@/lib/supabase/admin'
 
 export const dynamic = 'force-dynamic'
 
-// Un solo ticket a la vez: si algo falla, se pierde ese y no toda la tanda
-const MAXIMO_POR_VEZ = 3
+/*
+ * El ritmo de impresión lo pone el servidor, no el agente.
+ *
+ * El 30/09 se mandaron los 62 comprobantes de un carro a la ticketera de Caja:
+ * salieron unos 30 y la impresora se apagó. El agente los había dado a todos
+ * por impresos en 86 segundos, porque Windows acepta el trabajo en cuanto lo
+ * recibe, no cuando sale el papel. La ticketera quedó imprimiendo sin pausa
+ * tickets con logo y QR —mucho negro— y se cortó por temperatura o por la
+ * fuente.
+ *
+ * Así que se entrega de a uno y con aire entre ticket y ticket, y cada tanto
+ * una pausa más larga para que el cabezal se enfríe. Un ticket suelto —una
+ * venta— sale igual de rápido que antes: la espera solo aparece cuando hay
+ * tanda. Se resuelve acá para no tener que reinstalar el agente en cada
+ * computadora.
+ */
+const MAXIMO_POR_VEZ = 1
+/** Segundos mínimos entre un ticket y el siguiente del mismo equipo. */
+const SEGUNDOS_ENTRE_TICKETS = 4
+/** Cada cuántos tickets seguidos se hace la pausa larga… */
+const TICKETS_POR_TANDA = 20
+/** …y cuántos segundos dura. */
+const SEGUNDOS_DE_DESCANSO = 20
 
 export async function GET(request: Request) {
   const url = new URL(request.url)
@@ -72,12 +93,44 @@ export async function GET(request: Request) {
     })
     .eq('id', equipo.id)
 
+  /*
+   * ¿Le toca otro ticket ya, o todavía tiene que descansar?
+   *
+   * Se miran los últimos impresos de este equipo. Si el último fue hace menos
+   * de SEGUNDOS_ENTRE_TICKETS, se espera. Si los últimos TICKETS_POR_TANDA
+   * salieron todos seguidos —sin un hueco de descanso entre ellos—, se espera
+   * SEGUNDOS_DE_DESCANSO desde el último.
+   */
+  const { data: recientes } = await (supabase as any)
+    .from('cola_impresion')
+    .select('impreso_at')
+    .eq('equipo_id', equipo.id)
+    .eq('estado', 'impreso')
+    .gte('impreso_at', new Date(Date.now() - 10 * 60_000).toISOString())
+    .order('impreso_at', { ascending: false })
+    .limit(TICKETS_POR_TANDA)
+  const tiempos = ((recientes ?? []) as { impreso_at: string }[]).map((r) => new Date(r.impreso_at).getTime())
+  if (tiempos.length > 0) {
+    const desdeElUltimo = (Date.now() - tiempos[0]) / 1000
+    if (desdeElUltimo < SEGUNDOS_ENTRE_TICKETS) {
+      return NextResponse.json({ ok: true, equipo: equipo.nombre, impresora: equipo.impresora ?? null, trabajos: [] })
+    }
+    // Una tanda completa sin un descanso en el medio: le toca la pausa larga.
+    const tandaSinDescanso = tiempos.length === TICKETS_POR_TANDA
+      && tiempos.every((t, i) => i === 0 || (tiempos[i - 1] - t) / 1000 < SEGUNDOS_DE_DESCANSO)
+    if (tandaSinDescanso && desdeElUltimo < SEGUNDOS_DE_DESCANSO) {
+      return NextResponse.json({ ok: true, equipo: equipo.nombre, impresora: equipo.impresora ?? null, trabajos: [] })
+    }
+  }
+
   const { data: trabajos, error: falloCola } = await (supabase as any)
     .from('cola_impresion')
     .select('id, contenido, descripcion')
     .eq('equipo_id', equipo.id)
     .eq('estado', 'pendiente')
     .order('created_at', { ascending: true })
+    // Desempate: dos tickets encolados en el mismo instante salen por número.
+    .order('descripcion', { ascending: true })
     .limit(MAXIMO_POR_VEZ)
 
   // Un fallo al leer la cola tiene que verse: si se devuelve una lista vacia,
