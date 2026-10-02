@@ -49,6 +49,9 @@ export default function ZonasPage() {
   const [editingZona, setEditingZona] = useState<any>(null)
   const [saving, setSaving] = useState(false)
   const [activoVal, setActivoVal] = useState(true)
+  // Zona de venta en oficina: sus pedidos se entregan al facturar y no pasan
+  // por Despacho (migración 123).
+  const [sinDespacho, setSinDespacho] = useState(false)
   const [ubigeoVal, setUbigeoVal] = useState<UbigeoValue>(UBIGEO_EMPTY)
   const [centro, setCentro] = useState<[number, number] | null>(null)
   const [centroAprox, setCentroAprox] = useState(false)
@@ -77,7 +80,7 @@ export default function ZonasPage() {
     setLoading(true)
     let query = supabase
       .from('zonas')
-      .select('id, nombre, descripcion, referencias, activo, created_at, ubigeo, departamento, provincia, distrito, centro_lat, centro_lng, centro_aproximado, radio_km, color_hex, dias_visita', { count: 'exact' })
+      .select('id, nombre, descripcion, referencias, activo, created_at, ubigeo, departamento, provincia, distrito, centro_lat, centro_lng, centro_aproximado, radio_km, color_hex, dias_visita, sin_despacho', { count: 'exact' })
       .order('nombre')
 
     if (debouncedSearch) query = query.ilike('nombre', `%${debouncedSearch}%`)
@@ -115,6 +118,7 @@ export default function ZonasPage() {
     setCoordPegar('')
     setRadioKm(1.5)
     setColorHex('#2563eb')
+    setSinDespacho(false)
     setClientesEnZona([])
     setDiasVisita(['lun', 'mar', 'mie', 'jue', 'vie'])
     setClientesAsignados(new Set())
@@ -133,6 +137,7 @@ export default function ZonasPage() {
   const openEdit = async (zona: any) => {
     setEditingZona(zona)
     setActivoVal(zona.activo)
+    setSinDespacho(!!zona.sin_despacho)
     setUbigeoVal({
       departamento_codigo: zona.ubigeo ? zona.ubigeo.slice(0, 2) : null,
       departamento: zona.departamento ?? null,
@@ -230,6 +235,7 @@ export default function ZonasPage() {
         descripcion: data.descripcion || null,
         referencias: data.referencias || null,
         activo: activoVal,
+        sin_despacho: sinDespacho,
         ubigeo: ubigeoVal.ubigeo,
         departamento: ubigeoVal.departamento,
         provincia: ubigeoVal.provincia,
@@ -776,6 +782,16 @@ export default function ZonasPage() {
             <div className="flex items-center gap-2">
               <Switch checked={activoVal} onCheckedChange={setActivoVal} />
               <Label>Zona activa</Label>
+            </div>
+
+            <div className="flex items-start gap-2">
+              <Switch checked={sinDespacho} onCheckedChange={setSinDespacho} />
+              <div>
+                <Label>Venta en oficina (sin despacho)</Label>
+                <p className="text-[11px] text-gray-500">
+                  Los pedidos de los clientes de esta zona se entregan al facturar: no aparecen en Despacho y descuentan el stock en ese momento.
+                </p>
+              </div>
             </div>
 
             <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-3 pt-2 border-t border-gray-100">
