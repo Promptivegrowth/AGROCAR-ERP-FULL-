@@ -66,21 +66,21 @@ async function main() {
     if (editar) {
       await editar.click()
       await esperar(5000)
-      const d = await page.evaluate(() => {
-        const caja = document.querySelector('[data-agregar-producto]')
-        const sel = caja?.querySelector('select') as HTMLSelectElement | null
-        const opciones = sel ? Array.from(sel.options).slice(1) : []
-        return {
-          caja: !!caja,
-          productos: opciones.length,
-          conPrecio: opciones.filter((o) => /S\/ \d/.test(o.text)).length,
-          ejemplo: opciones.find((o) => /S\/ \d/.test(o.text))?.text ?? opciones[0]?.text ?? '',
-          boton: !!Array.from(caja?.querySelectorAll('button') ?? []).find((b) => /Agregar/.test(b.textContent ?? '')),
-        }
+      check('El diálogo tiene "Agregar producto" con buscador', !!(await page.$('[data-agregar-producto] [data-buscar-producto]')))
+      await page.type('[data-buscar-producto]', 'queso edam')
+      await esperar(800)
+      const resultados = await page.$$eval('[data-resultados-producto] button', (b) => b.map((x) => (x as HTMLElement).innerText.replace(/\s+/g, ' ')))
+      check('Busca por nombre', resultados.length > 0 && resultados.every((r) => /QUESO EDAM/i.test(r)), resultados.join(' | ').slice(0, 160))
+      const primero = await page.$('[data-resultados-producto] button')
+      if (primero) await primero.click()
+      await esperar(500)
+      const elegido = await page.evaluate(() => {
+        const caja = document.querySelector('[data-agregar-producto]')!
+        const inputs = Array.from(caja.querySelectorAll('input')) as HTMLInputElement[]
+        return { texto: inputs[0]?.value ?? '', precio: inputs[2]?.value ?? '' }
       })
-      check('El diálogo tiene "Agregar producto"', d.caja && d.boton)
-      check('Lista los productos', d.productos > 0, `${d.productos} productos`)
-      check('Con el precio de la lista del cliente', d.conPrecio > 0, `${d.conPrecio} con precio · ej: ${d.ejemplo}`)
+      check('Al elegir completa el producto y el precio', /QUESO EDAM/i.test(elegido.texto) && Number(elegido.precio) > 0, `${elegido.texto} · S/ ${elegido.precio}`)
+      await page.$eval('[data-buscar-producto]', (el) => { (el as HTMLInputElement).value = '' })
       await page.screenshot({ path: '.sunat/editar-agregar.png' })
     }
     check('Sin errores de JavaScript', errores.length === 0, errores[0] ?? '')

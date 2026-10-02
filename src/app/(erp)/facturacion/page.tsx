@@ -253,6 +253,10 @@ export default function FacturacionPage() {
    */
   const [productosParaAgregar, setProductosParaAgregar] = useState<{ id: string; codigo: string; nombre: string; precio: number | null }[]>([])
   const [nuevoItem, setNuevoItem] = useState({ producto_id: '', cantidad: '', precio: '' })
+  // Buscador del producto a agregar. Daniel: "no se puede buscar por nombre"
+  // en la lista desplegable de 68 productos.
+  const [buscarProducto, setBuscarProducto] = useState('')
+  const [listaAbierta, setListaAbierta] = useState(false)
   const [editNota, setEditNota] = useState('')
   const [editSaving, setEditSaving] = useState(false)
   const [loading, setLoading] = useState(true)
@@ -599,6 +603,7 @@ export default function FacturacionPage() {
     setEditItems((items ?? []).map((it: any) => ({ ...it, _cantidad: String(it.cantidad), _precio: String(it.precio_unitario) })))
     setEditHistorial(hist ?? [])
     setNuevoItem({ producto_id: '', cantidad: '', precio: '' })
+    setBuscarProducto('')
 
     // Productos con el precio de la lista del cliente, para poder agregar uno.
     const [{ data: prods }, { data: cli }] = await Promise.all([
@@ -653,6 +658,7 @@ export default function FacturacionPage() {
     setEditItems((items ?? []).map((it: any) => ({ ...it, _cantidad: String(it.cantidad), _precio: String(it.precio_unitario) })))
     if (compRefresh) setEditComp({ ...editComp, ...compRefresh })
     setNuevoItem({ producto_id: '', cantidad: '', precio: '' })
+    setBuscarProducto('')
     setEditSaving(false)
     toast.success('Producto agregado', {
       description: 'Totales recalculados y stock actualizado. Hay que reimprimir el comprobante: cambió el importe.',
@@ -2084,26 +2090,57 @@ export default function FacturacionPage() {
                 <div className="mt-2 rounded-lg border border-dashed border-emerald-300 bg-emerald-50/50 p-2" data-agregar-producto>
                   <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-emerald-800">Agregar producto</p>
                   <div className="flex flex-wrap items-end gap-2">
-                    <select
-                      value={nuevoItem.producto_id}
-                      onChange={(e) => {
-                        const pr = productosParaAgregar.find((x) => x.id === e.target.value)
-                        setNuevoItem((n) => ({
-                          ...n,
-                          producto_id: e.target.value,
-                          precio: pr?.precio != null ? String(pr.precio) : n.precio,
-                        }))
-                      }}
-                      disabled={editSaving}
-                      className="h-8 min-w-[260px] flex-1 rounded-md border border-gray-300 bg-white px-2 text-xs"
-                    >
-                      <option value="">Elegir producto…</option>
-                      {productosParaAgregar.map((pr) => (
-                        <option key={pr.id} value={pr.id}>
-                          {pr.codigo} · {pr.nombre}{pr.precio != null ? ` · S/ ${pr.precio.toFixed(2)}` : ''}
-                        </option>
-                      ))}
-                    </select>
+                    {/* Buscador: se escribe parte del nombre o del código y se elige. */}
+                    <div className="relative min-w-[260px] flex-1">
+                      <Input
+                        value={buscarProducto}
+                        onChange={(e) => {
+                          setBuscarProducto(e.target.value)
+                          setListaAbierta(true)
+                          // Si se cambia el texto, la elección anterior ya no vale.
+                          if (nuevoItem.producto_id) setNuevoItem((n) => ({ ...n, producto_id: '' }))
+                        }}
+                        onFocus={() => setListaAbierta(true)}
+                        onBlur={() => setTimeout(() => setListaAbierta(false), 150)}
+                        placeholder="Buscar producto por nombre o código…"
+                        className="h-8 text-xs"
+                        disabled={editSaving}
+                        data-buscar-producto
+                      />
+                      {listaAbierta && !nuevoItem.producto_id && (() => {
+                        const palabras = buscarProducto.trim().toLowerCase().split(/\s+/).filter(Boolean)
+                        const encontrados = productosParaAgregar
+                          .filter((pr) => palabras.every((w) => `${pr.codigo} ${pr.nombre}`.toLowerCase().includes(w)))
+                          .slice(0, 12)
+                        return (
+                          <div className="absolute z-50 mt-1 max-h-64 w-full overflow-y-auto rounded-md border border-gray-200 bg-white shadow-lg" data-resultados-producto>
+                            {encontrados.length === 0 ? (
+                              <p className="px-3 py-2 text-xs text-gray-400">Ningún producto coincide</p>
+                            ) : encontrados.map((pr) => (
+                              <button
+                                key={pr.id}
+                                type="button"
+                                // onMouseDown y no onClick: el blur del buscador cierra la lista antes del clic.
+                                onMouseDown={(e) => {
+                                  e.preventDefault()
+                                  setNuevoItem((n) => ({
+                                    ...n,
+                                    producto_id: pr.id,
+                                    precio: pr.precio != null ? String(pr.precio) : n.precio,
+                                  }))
+                                  setBuscarProducto(`${pr.codigo} · ${pr.nombre}`)
+                                  setListaAbierta(false)
+                                }}
+                                className="flex w-full items-center justify-between gap-2 px-3 py-1.5 text-left text-xs hover:bg-emerald-50"
+                              >
+                                <span><span className="font-mono text-gray-500">{pr.codigo}</span> · {pr.nombre}</span>
+                                {pr.precio != null && <span className="shrink-0 font-mono text-gray-600">S/ {pr.precio.toFixed(2)}</span>}
+                              </button>
+                            ))}
+                          </div>
+                        )
+                      })()}
+                    </div>
                     <Input type="number" step="0.01" min="0" placeholder="Cantidad" value={nuevoItem.cantidad}
                       onChange={(e) => setNuevoItem((n) => ({ ...n, cantidad: e.target.value }))}
                       className="h-8 w-24 text-xs text-right font-mono" disabled={editSaving} />
