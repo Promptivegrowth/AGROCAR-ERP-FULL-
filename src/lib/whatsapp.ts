@@ -1,3 +1,4 @@
+import { lineasDatosPago } from '@/lib/empresa'
 /**
  * Helpers para enviar mensajes via WhatsApp deep link (wa.me).
  * No requiere API de WhatsApp — abre la app del usuario con el mensaje prellenado.
@@ -67,6 +68,8 @@ export function linkEnviarBoletaPago(params: {
   if (typeof params.saldoRestante === 'number' && params.saldoRestante > 0.001) {
     lineas.push('')
     lineas.push(`Saldo pendiente: ${moneda} ${params.saldoRestante.toFixed(2)}`)
+    lineas.push('')
+    lineas.push(...lineasDatosPago())
   } else if (typeof params.saldoRestante === 'number' && params.saldoRestante <= 0.001) {
     lineas.push('')
     lineas.push('✅ Cuenta saldada — gracias!')

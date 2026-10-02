@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { Mail, Send } from 'lucide-react'
 import { normalizarTelefonoPeruano } from '@/lib/whatsapp'
+import { lineasDatosPago } from '@/lib/empresa'
 
 /**
  * Mandar un comprobante o una guía al cliente, por WhatsApp o por correo.
@@ -41,6 +42,8 @@ export function armarMensaje(p: EnviarDocumentoProps, origen: string): { asunto:
     `PDF: ${pdf}`,
     ...(p.conXml ? [`XML: ${origen}/api/documentos/${p.tipo}/${p.id}/xml`] : []),
     ...(p.conCdr ? [`Constancia SUNAT (CDR): ${origen}/api/documentos/${p.tipo}/${p.id}/cdr`] : []),
+    // Dónde pagar: solo en los comprobantes, no en la guía.
+    ...(p.tipo === 'comprobante' ? ['', ...lineasDatosPago()] : []),
     '',
     'Gracias por su preferencia.',
     'AGROCAR S.R.L. · RUC 20519883296',

@@ -1,3 +1,4 @@
+import DatosDePago from '@/components/erp/datos-de-pago'
 import { createClient } from '@/lib/supabase/server'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { notFound } from 'next/navigation'
@@ -312,6 +313,9 @@ export default async function CobranzasClientePage({ params }: { params: Promise
               fondo rosa = vencido.
             </div>
           )}
+
+          {/* Dónde pagar el saldo */}
+          {pendientes.length > 0 && <DatosDePago />}
         </div>
       </div>
     </div>

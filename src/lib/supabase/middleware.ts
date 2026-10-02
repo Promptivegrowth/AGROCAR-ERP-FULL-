@@ -41,7 +41,9 @@ export async function updateSession(request: NextRequest) {
 // "/guia/" con la barra: la guía de remisión se manda al chofer y al cliente
 // por WhatsApp, igual que el comprobante, y tiene que abrir sin iniciar sesión.
 // "/api/documentos": la descarga del XML y la constancia de SUNAT.
-const publicPaths = ["/login", "/auth/callback", "/boleta", "/comprobante", "/guia-remision", "/guia/", "/api/documentos", "/api/consulta", "/api/geocode", "/api/ubigeo", "/api/tipo-cambio", "/api/impresion", "/api/sunat/enviar-programados"];
+// "/reporte-publico": el estado de cuenta y el reporte de compras que se le
+// mandan al cliente por WhatsApp. Sin esto el enlace pedía iniciar sesión.
+const publicPaths = ["/login", "/auth/callback", "/boleta", "/comprobante", "/guia-remision", "/guia/", "/api/documentos", "/reporte-publico", "/api/consulta", "/api/geocode", "/api/ubigeo", "/api/tipo-cambio", "/api/impresion", "/api/sunat/enviar-programados"];
   if (publicPaths.some((p) => pathname.startsWith(p))) {
     return supabaseResponse;
   }

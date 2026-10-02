@@ -4,6 +4,7 @@ import { notFound } from 'next/navigation'
 import { diasVencidos, fechaVencimientoTexto } from '@/lib/cliente-saldo'
 import { EMPRESA, SLOGAN_FONT_STACK } from '@/lib/empresa'
 import PrintButton from '@/app/boleta/[id]/print-button'
+import DatosDePago from '@/components/erp/datos-de-pago'
 
 export const dynamic = 'force-dynamic'
 
@@ -178,6 +179,9 @@ export default async function EstadoCuentaPublico({ params }: { params: Promise<
             ¡Cuenta al día! No tienes comprobantes pendientes.
           </p>
         )}
+
+        {/* Dónde pagar el saldo */}
+        {saldoTotal > 0 && <div className="mt-4"><DatosDePago /></div>}
 
         {/* Footer */}
         <div className="mt-6 pt-3 border-t border-gray-200 text-center text-[10px] text-gray-500">

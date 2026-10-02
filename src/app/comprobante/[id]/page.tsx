@@ -4,6 +4,7 @@ import { notFound } from 'next/navigation'
 import { numeroALetras } from '@/lib/utils'
 import { EMPRESA, SLOGAN_FONT_STACK } from '@/lib/empresa'
 import PrintButton from './print-button'
+import DatosDePago from '@/components/erp/datos-de-pago'
 import EnviarDocumento from '@/components/erp/enviar-documento'
 import AyudaTicketera from '@/components/erp/ayuda-ticketera'
 import BotonTicketera from '@/components/erp/boton-ticketera'
@@ -446,6 +447,7 @@ export default async function ComprobantePage({
                     Autorizado mediante Resolución de Intendencia Nº 034-005-0007698/SUNAT.<br/>
                     Bienes y servicios afectos al IGV.
                   </p>
+                  <DatosDePago variante="a4" />
                   {facturador?.full_name && (
                     <p style={{ marginTop: 6, fontSize: 9 }}>Emitido por: {facturador.full_name}</p>
                   )}
@@ -640,6 +642,7 @@ export default async function ComprobantePage({
         <div style={{ textAlign: 'center', fontSize: 8.5, color: '#000', lineHeight: 1.2 }}>
           Representación impresa · Consulta www.sunat.gob.pe
         </div>
+        <DatosDePago variante="ticket" />
       </div>
 
       <div className="mx-auto mt-4 text-center print:hidden" style={{ maxWidth: 350 }}>

@@ -8,6 +8,7 @@ import { createClient } from '@/lib/supabase/client'
 import { useDebounce } from '@/lib/hooks/use-debounce'
 import { hoyLima } from '@/lib/fechas-pe'
 import { construirLinkWhatsapp, esTelefonoPeruanoValido } from '@/lib/whatsapp'
+import { lineasDatosPago } from '@/lib/empresa'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
@@ -1098,7 +1099,9 @@ export default function PedidosPage() {
 
 ` +
                     `Puede verla acá:
-${typeof window !== 'undefined' ? window.location.origin : ''}/comprobante/${ventaHecha.comprobanteId}`,
+${typeof window !== 'undefined' ? window.location.origin : ''}/comprobante/${ventaHecha.comprobanteId}
+
+${lineasDatosPago().join('\n')}`,
                   ) ?? '#'}
                   target="_blank"
                   rel="noopener noreferrer"

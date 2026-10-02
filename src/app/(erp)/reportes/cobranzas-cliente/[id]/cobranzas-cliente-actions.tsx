@@ -2,6 +2,7 @@
 
 import { Printer, FileSpreadsheet, MessageCircle } from 'lucide-react'
 import { construirLinkWhatsapp, esTelefonoPeruanoValido } from '@/lib/whatsapp'
+import { lineasDatosPago } from '@/lib/empresa'
 import { formatCurrency } from '@/lib/utils'
 
 export default function CobranzasClienteActions({
@@ -20,6 +21,7 @@ export default function CobranzasClienteActions({
     ? `Hola ${clienteNombre}, te compartimos tu estado de cuenta con AGROCAR.\n` +
       `Saldo pendiente: S/ ${saldo.toFixed(2)}\n\n` +
       `Detalle: ${reporteUrl}\n\n` +
+      `${lineasDatosPago().join('\n')}\n\n` +
       `Si ya realizaste tu pago, por favor envíanos el comprobante. ¡Gracias!\n` +
       `— AGROCAR S.R.L.`
     : `Hola ${clienteNombre}, te compartimos tu estado de cuenta con AGROCAR.\n` +

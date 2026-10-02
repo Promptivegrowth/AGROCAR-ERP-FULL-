@@ -18,6 +18,33 @@ export const EMPRESA = {
 }
 
 /**
+ * Dónde paga el cliente. Daniel, 01/10: "para poder enviar los saldos
+ * pendientes de cobranza … mi cuenta corriente BCP y mi número de Yape;
+ * inclúyelos en todos los canales que corresponda". Se usan en los mensajes
+ * de WhatsApp y correo (lineasDatosPago) y en los impresos (DatosDePago).
+ * Si cambia una cuenta, se cambia acá y nada más.
+ */
+export const EMPRESA_PAGO = {
+  titular: 'AGROCAR S.R.L.',
+  banco: 'BCP',
+  tipo_cuenta: 'Cuenta corriente en soles',
+  cuenta: '540-2109937-0-38',
+  cci: '00254000210993703835',
+  yape: '952901119',
+}
+
+/** Los datos de pago como líneas de texto, para WhatsApp y correo. */
+export function lineasDatosPago(): string[] {
+  return [
+    'Para su pago:',
+    `• ${EMPRESA_PAGO.banco} ${EMPRESA_PAGO.tipo_cuenta}: ${EMPRESA_PAGO.cuenta}`,
+    `• CCI: ${EMPRESA_PAGO.cci}`,
+    `• Yape: ${EMPRESA_PAGO.yape}`,
+    `Titular: ${EMPRESA_PAGO.titular}`,
+  ]
+}
+
+/**
  * Nombre de la clase CSS para la tipografía del slogan
  * (variable CSS configurada en src/app/layout.tsx con Great Vibes).
  * Usar style={{ fontFamily: 'var(--font-slogan), cursive' }} en lugares

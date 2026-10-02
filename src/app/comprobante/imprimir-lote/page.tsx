@@ -3,6 +3,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { numeroALetras } from '@/lib/utils'
 import { EMPRESA, SLOGAN_FONT_STACK } from '@/lib/empresa'
 import AutoPrint from './auto-print'
+import DatosDePago from '@/components/erp/datos-de-pago'
 import AyudaTicketera from '@/components/erp/ayuda-ticketera'
 import BotonTicketera from '@/components/erp/boton-ticketera'
 import { qrDataUri } from '@/lib/qr'
@@ -517,6 +518,7 @@ export default async function ImprimirLotePage({
                         <td style={{ verticalAlign: 'top', fontSize: 10, paddingLeft: 12, color: '#555' }}>
                           <p style={{ marginBottom: 6 }}>Representación impresa del comprobante electrónico.</p>
                           <p style={{ marginBottom: 6 }}>Consulte en <strong>www.sunat.gob.pe</strong></p>
+                          <DatosDePago variante="a4" />
                           {facturador?.full_name && (
                             <p style={{ marginTop: 6, fontSize: 9 }}>Emitido por: {facturador.full_name}</p>
                           )}
@@ -662,6 +664,7 @@ export default async function ImprimirLotePage({
                   <div style={{ textAlign: 'center', fontSize: 8.5, lineHeight: 1.2 }}>
                     Representación impresa · Consulta www.sunat.gob.pe
                   </div>
+                  <DatosDePago variante="ticket" />
                   {/* Un respiro al final: sin esto la última línea queda al filo
                       del recorte y al pasar a imagen se corta por la mitad. */}
                   <div style={{ height: '2mm' }} />

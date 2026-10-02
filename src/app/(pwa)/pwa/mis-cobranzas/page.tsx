@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import { ArrowLeft, Loader2, Landmark, Search, Phone, ChevronDown, ChevronUp, AlertTriangle } from 'lucide-react'
 import { formatCurrency, formatDate } from '@/lib/utils'
+import { lineasDatosPago } from '@/lib/empresa'
 import { diasVencidos } from '@/lib/cliente-saldo'
 
 interface Doc {
@@ -223,7 +224,7 @@ export default function MisCobranzasPage() {
                           className="flex-1 h-10 bg-blue-600 text-white rounded-lg font-semibold text-xs flex items-center justify-center gap-1">
                           <Phone className="w-3.5 h-3.5" /> Llamar
                         </a>
-                        <a href={`https://wa.me/51${c.telefono.replace(/\D/g, '')}?text=${encodeURIComponent(`Hola ${c.razon_social}, le saluda su vendedor de AGROCAR. Le recuerdo su saldo pendiente de ${formatCurrency(c.saldo)}. ¿Coordinamos el pago?`)}`}
+                        <a href={`https://wa.me/51${c.telefono.replace(/\D/g, '')}?text=${encodeURIComponent(`Hola ${c.razon_social}, le saluda su vendedor de AGROCAR. Le recuerdo su saldo pendiente de ${formatCurrency(c.saldo)}.\n\n${lineasDatosPago().join('\n')}\n\n¿Coordinamos el pago?`)}`}
                           target="_blank" rel="noopener noreferrer"
                           className="flex-1 h-10 bg-green-600 text-white rounded-lg font-semibold text-xs flex items-center justify-center gap-1">
                           💬 WhatsApp
