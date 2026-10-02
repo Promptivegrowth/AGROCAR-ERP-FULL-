@@ -2,36 +2,32 @@
 
 import { Printer, FileSpreadsheet, MessageCircle } from 'lucide-react'
 import { construirLinkWhatsapp, esTelefonoPeruanoValido } from '@/lib/whatsapp'
-import { lineasDatosPago } from '@/lib/empresa'
 import { formatCurrency } from '@/lib/utils'
+import { useOrigen } from '@/lib/use-origen'
+import { mensajeEstadoCuenta, type PendienteMensaje } from '@/lib/mensaje-estado-cuenta'
 
 export default function CobranzasClienteActions({
-  clienteId, clienteNombre, clienteTelefono, saldo, aFavor = 0,
+  clienteId, clienteNombre, clienteTelefono, saldo, aFavor = 0, pendientes = [],
 }: {
   clienteId: string
   clienteNombre: string
   clienteTelefono: string | null
   saldo: number
   aFavor?: number
+  pendientes?: PendienteMensaje[]
 }) {
+  const origen = useOrigen()
   const telOk = esTelefonoPeruanoValido(clienteTelefono ?? '')
-  const baseUrl = typeof window !== 'undefined' ? window.location.origin : ''
-  const reporteUrl = `${baseUrl}/reporte-publico/estado-cuenta/${clienteId}`
-  const mensaje = saldo > 0
-    ? `Hola ${clienteNombre}, te compartimos tu estado de cuenta con AGROCAR.\n` +
-      `Saldo pendiente: S/ ${saldo.toFixed(2)}\n\n` +
-      `Detalle: ${reporteUrl}\n\n` +
-      `${lineasDatosPago().join('\n')}\n\n` +
-      `Si ya realizaste tu pago, por favor envíanos el comprobante. ¡Gracias!\n` +
-      `— AGROCAR S.R.L.`
-    : `Hola ${clienteNombre}, te compartimos tu estado de cuenta con AGROCAR.\n` +
-      `✓ Cuenta al día — sin saldo pendiente.\n` +
-      // Si pago por adelantado conviene que lo sepa: evita el reclamo de
-      // "yo ya te pague" cuando llegue la proxima boleta con el descuento.
-      (aFavor > 0.01 ? `Tienes S/ ${aFavor.toFixed(2)} a favor para tu proxima compra.\n` : '') +
-      `\nDetalle: ${reporteUrl}\n\n` +
-      `¡Gracias por tu confianza!\n— AGROCAR S.R.L.`
-  const waLink = telOk ? construirLinkWhatsapp(clienteTelefono!, mensaje) : null
+  const mensaje = mensajeEstadoCuenta({
+    clienteNombre,
+    saldo,
+    aFavor,
+    pendientes,
+    reporteUrl: `${origen}/reporte-publico/estado-cuenta/${clienteId}`,
+    hoy: new Date().toLocaleDateString('es-PE', { timeZone: 'America/Lima' }),
+  })
+  // Sin el origen todavía, no se arma: saldría un enlace sin dominio.
+  const waLink = telOk && origen ? construirLinkWhatsapp(clienteTelefono!, mensaje) : null
 
   return (
     <div className="flex items-center gap-2 flex-wrap">
@@ -57,6 +53,7 @@ export default function CobranzasClienteActions({
           rel="noopener noreferrer"
           className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold text-white bg-green-600 rounded-md hover:bg-green-700"
           title={`Enviar a ${clienteTelefono}`}
+          data-whatsapp-estado
         >
           <MessageCircle className="w-3 h-3" />
           WhatsApp ({formatCurrency(saldo)})

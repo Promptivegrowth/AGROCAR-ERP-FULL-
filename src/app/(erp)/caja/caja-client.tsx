@@ -10,6 +10,7 @@ import { toast } from 'sonner'
 import { createClient } from '@/lib/supabase/client'
 import { linkEnviarBoletaPago, esTelefonoPeruanoValido } from '@/lib/whatsapp'
 import CorregirPagoDialog, { type CobroACorregir } from './corregir-pago-dialog'
+import { useOrigen } from '@/lib/use-origen'
 import { formatCurrency, formatDate, formatDatetime } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -159,6 +160,9 @@ export default function CajaClient({
   const [cobradorSeleccionado, setCobradorSeleccionado] = useState<string | null>(null)
   // Corregir efectivo/Yape/Plin/transferencia de un cobro mal registrado.
   const [corregirCobro, setCorregirCobro] = useState<CobroACorregir | null>(null)
+  // La dirección del sitio, leída en el navegador: armada en el servidor salía
+  // vacía y el recibo por WhatsApp llevaba un enlace sin dominio.
+  const origen = useOrigen()
 
   // ─── Recarga manual y en tiempo real ─────────────────────────────────────
   // Ref para evitar saturar el endpoint cuando llegan eventos seguidos
@@ -937,9 +941,9 @@ export default function CajaClient({
                             <Receipt className="w-3.5 h-3.5" /> Ver
                           </Button>
                           {(() => {
-                            const waLink = esTelefonoPeruanoValido(c.cliente_telefono)
+                            const waLink = origen && esTelefonoPeruanoValido(c.cliente_telefono)
                               ? linkEnviarBoletaPago({
-                                  baseUrl: typeof window !== 'undefined' ? window.location.origin : '',
+                                  baseUrl: origen,
                                   cobroId: c.id,
                                   clienteNombre: c.cliente_nombre,
                                   total: c.total,
@@ -1044,9 +1048,9 @@ export default function CajaClient({
                                   ✏️
                                 </Button>
                                 {(() => {
-                                  const waLink = esTelefonoPeruanoValido(c.cliente_telefono)
+                                  const waLink = origen && esTelefonoPeruanoValido(c.cliente_telefono)
                                     ? linkEnviarBoletaPago({
-                                        baseUrl: typeof window !== 'undefined' ? window.location.origin : '',
+                                        baseUrl: origen,
                                         cobroId: c.id,
                                         clienteNombre: c.cliente_nombre,
                                         total: c.total,

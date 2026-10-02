@@ -5,8 +5,8 @@ import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import { ArrowLeft, Loader2, Landmark, Search, Phone, ChevronDown, ChevronUp, AlertTriangle } from 'lucide-react'
 import { formatCurrency, formatDate } from '@/lib/utils'
-import { lineasDatosPago } from '@/lib/empresa'
-import { diasVencidos } from '@/lib/cliente-saldo'
+import { diasVencidos, fechaVencimientoTexto } from '@/lib/cliente-saldo'
+import { mensajeEstadoCuenta } from '@/lib/mensaje-estado-cuenta'
 
 interface Doc {
   comp_id: string
@@ -224,7 +224,22 @@ export default function MisCobranzasPage() {
                           className="flex-1 h-10 bg-blue-600 text-white rounded-lg font-semibold text-xs flex items-center justify-center gap-1">
                           <Phone className="w-3.5 h-3.5" /> Llamar
                         </a>
-                        <a href={`https://wa.me/51${c.telefono.replace(/\D/g, '')}?text=${encodeURIComponent(`Hola ${c.razon_social}, le saluda su vendedor de AGROCAR. Le recuerdo su saldo pendiente de ${formatCurrency(c.saldo)}.\n\n${lineasDatosPago().join('\n')}\n\n¿Coordinamos el pago?`)}`}
+                        <a href={`https://wa.me/51${c.telefono.replace(/\D/g, '')}?text=${encodeURIComponent(mensajeEstadoCuenta({
+                          clienteNombre: c.razon_social,
+                          saldo: c.saldo,
+                          aFavor: 0,
+                          pendientes: c.docs.map((d) => ({
+                            documento: `${d.serie}-${String(d.numero).padStart(8, '0')}`,
+                            fecha: formatDate(d.fecha_emision),
+                            vence: fechaVencimientoTexto(d.fecha_emision, c.credito_dias),
+                            dias_vencidos: Number.isFinite(d.dv) ? d.dv : 0,
+                            total: d.total,
+                            abonado: d.abonado,
+                            saldo: d.saldo,
+                          })),
+                          reporteUrl: `${window.location.origin}/reporte-publico/estado-cuenta/${c.id}`,
+                          hoy: new Date().toLocaleDateString('es-PE', { timeZone: 'America/Lima' }),
+                        }))}`}
                           target="_blank" rel="noopener noreferrer"
                           className="flex-1 h-10 bg-green-600 text-white rounded-lg font-semibold text-xs flex items-center justify-center gap-1">
                           💬 WhatsApp

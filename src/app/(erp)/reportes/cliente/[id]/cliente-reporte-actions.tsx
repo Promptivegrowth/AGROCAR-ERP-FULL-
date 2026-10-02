@@ -3,6 +3,7 @@
 import { useRouter } from 'next/navigation'
 import { Printer, FileSpreadsheet, MessageCircle } from 'lucide-react'
 import { construirLinkWhatsapp, esTelefonoPeruanoValido } from '@/lib/whatsapp'
+import { useOrigen } from '@/lib/use-origen'
 import { hoyLima } from '@/lib/fechas-pe'
 
 export default function ClienteReporteActions({
@@ -26,14 +27,15 @@ export default function ClienteReporteActions({
   // WhatsApp link al reporte público (HTML) — el cliente lo abre, ve todo
   // bonito, y puede usar "Guardar como PDF" del navegador.
   const telOk = esTelefonoPeruanoValido(clienteTelefono ?? '')
-  const baseUrl = typeof window !== 'undefined' ? window.location.origin : ''
+  const baseUrl = useOrigen()
   const reporteUrl = `${baseUrl}/reporte-publico/cliente/${clienteId}?desde=${desde}&hasta=${hasta}`
   const mensaje =
     `Hola ${clienteNombre}, te compartimos tu reporte de compras con AGROCAR.\n` +
     `Período: del ${desde} al ${hasta}.\n\n` +
     `Ver reporte: ${reporteUrl}\n\n` +
     `— AGROCAR S.R.L.`
-  const waLink = telOk
+  // Sin el origen todavía no se arma: saldría un enlace sin dominio.
+  const waLink = telOk && baseUrl
     ? construirLinkWhatsapp(clienteTelefono!, mensaje)
     : null
 

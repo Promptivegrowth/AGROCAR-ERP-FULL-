@@ -136,6 +136,15 @@ export default async function CobranzasClientePage({ params }: { params: Promise
             clienteTelefono={cliente.telefono ?? null}
             saldo={totales.saldo}
             aFavor={totales.a_favor}
+            pendientes={pendientes.map((d) => ({
+              documento: `${d.serie}-${String(d.numero).padStart(8, '0')}`,
+              fecha: formatDate(d.fecha_emision),
+              vence: d.vencimiento,
+              dias_vencidos: Number.isFinite(d.dias_vencidos) ? d.dias_vencidos : 0,
+              total: d.total,
+              abonado: d.abonado,
+              saldo: d.saldo,
+            }))}
           />
         </div>
 
