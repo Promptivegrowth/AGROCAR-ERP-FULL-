@@ -212,6 +212,14 @@ export async function enviarASunat(
       })
       texto = await res.text()
       if (!REINTENTABLES.includes(res.status)) break
+      /*
+       * SUNAT devuelve sus rechazos (Fault con código de 4 dígitos) con HTTP
+       * 500. Eso no es "el servicio no contestó": contestó, y reintentar choca
+       * con el primer envío ("0140 - Existe un documento igual en proceso"),
+       * que es lo único que quedaba anotado. Pasó el 03/10 con 73 comprobantes:
+       * el error verdadero era 2325, certificado no comunicado a SUNAT.
+       */
+      if (/<faultcode>[^<]*\b\d{4}<\/faultcode>/.test(texto)) break
       ultimoFallo = `HTTP ${res.status}`
     } catch (e) {
       ultimoFallo = e instanceof Error ? e.message : String(e)
