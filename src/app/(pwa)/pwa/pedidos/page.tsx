@@ -29,6 +29,17 @@ interface ProductoSeleccionado {
 
 interface PedidoConTotal extends Pedido {
   total: number
+  /** Para "Mis pedidos": a quién y qué se pidió. Solo lectura. */
+  clientes?: { razon_social: string | null } | null
+  pedidos_items?: Array<{
+    id: string
+    cantidad: number
+    precio_unitario: number
+    subtotal: number
+    descripcion_libre: string | null
+    productos: { codigo: string | null; nombre: string | null; descripcion: string | null;
+      unidades_medida: { simbolo: string | null } | null } | null
+  }>
 }
 
 const MINIMO_PEDIDO = 30
@@ -796,14 +807,17 @@ export default function PedidosPage() {
     // Repartidor: todos los pedidos del día (para ver qué despachar).
     let q = supabase
       .from('pedidos')
-      .select('*')
+      // El cliente y los productos, para verlos en la lista (no se editan acá).
+      .select(`*, clientes(razon_social),
+        pedidos_items(id, cantidad, precio_unitario, subtotal, descripcion_libre,
+          productos(codigo, nombre, descripcion, unidades_medida(simbolo)))`)
       .gte('created_at', hoy)
       .order('created_at', { ascending: false })
     if (userRole === 'vendedor') q = q.eq('vendedor_id', userId)
 
     const { data } = await q
 
-    setMisPedidos((data ?? []) as PedidoConTotal[])
+    setMisPedidos((data ?? []) as unknown as PedidoConTotal[])
     setLoadingPedidos(false)
   }, [userId, userRole])
 
@@ -1558,8 +1572,11 @@ ${lineasDatosPago().join('\n')}`,
                   <CardContent className="p-4">
                     <div className="flex items-start justify-between">
                       <div>
-                        <div className="font-semibold text-gray-900 text-sm">
-                          Pedido #{pedido.id.slice(-8).toUpperCase()}
+                        <div className="font-semibold text-gray-900 text-sm" data-cliente-pedido>
+                          {pedido.clientes?.razon_social ?? (pedido as any).cliente_externo_nombre ?? 'Cliente'}
+                        </div>
+                        <div className="text-xs text-gray-500 mt-0.5">
+                          Pedido {(pedido as any).numero ?? `#${pedido.id.slice(-8).toUpperCase()}`}
                         </div>
                         <div className="text-xs text-gray-500 mt-0.5">
                           Despacho: {formatDate(pedido.fecha_despacho ?? '')}
@@ -1576,6 +1593,25 @@ ${lineasDatosPago().join('\n')}`,
                         <span className="font-bold text-green-700">{formatCurrency(pedido.total ?? 0)}</span>
                       </div>
                     </div>
+                    {/* Los productos, solo para ver: el pedido se modifica desde la oficina. */}
+                    {(pedido.pedidos_items?.length ?? 0) > 0 && (
+                      <details className="mt-2 rounded-lg bg-gray-50 px-3 py-2" data-productos-pedido>
+                        <summary className="cursor-pointer text-xs font-semibold text-gray-700">
+                          Ver productos ({pedido.pedidos_items!.length})
+                        </summary>
+                        <ul className="mt-2 space-y-1.5">
+                          {pedido.pedidos_items!.map((it) => (
+                            <li key={it.id} className="flex items-start justify-between gap-2 text-xs">
+                              <span className="text-gray-800">
+                                <span className="font-semibold">{Number(it.cantidad)} {it.productos?.unidades_medida?.simbolo ?? ''}</span>{' '}
+                                {it.descripcion_libre?.trim() || it.productos?.descripcion?.trim() || it.productos?.nombre || 'Producto'}
+                              </span>
+                              <span className="shrink-0 font-mono text-gray-600">{formatCurrency(Number(it.subtotal ?? 0))}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </details>
+                    )}
                     {(pedido as Pedido & { requiere_autorizacion?: boolean }).requiere_autorizacion && (
                       <div className="mt-2 flex items-center gap-1.5 text-amber-700 text-xs">
                         <AlertCircle className="w-3.5 h-3.5" />
