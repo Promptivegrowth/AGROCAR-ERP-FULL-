@@ -15,6 +15,7 @@ import {
   Landmark,
   MapPin,
   BarChart3,
+  TrendingUp,
   BookOpen,
   Settings,
   ChevronDown,
@@ -165,6 +166,13 @@ const NAV_ITEMS: NavItem[] = [
     href: '/reportes',
     icon: BarChart3,
     roles: ['gerente', 'administrador', 'contador'],
+  },
+  {
+    // Reporte gerencial de utilidad: ni el contador lo ve (pedido de Daniel).
+    label: 'Utilidad',
+    href: '/gerencia/utilidad',
+    icon: TrendingUp,
+    roles: ['gerente', 'administrador'],
   },
   {
     label: 'Contabilidad',
