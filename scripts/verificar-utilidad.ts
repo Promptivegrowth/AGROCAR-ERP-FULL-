@@ -100,17 +100,35 @@ async function main() {
     await page.screenshot({ path: '.sunat/utilidad-rango.png', fullPage: true })
 
     // Filtro por familia: solo esa, y los totales son los de esa familia.
-    const fam = base.familias[1]
-    await page.select('select[aria-label="Familia"]', fam.familia)
+    const fam = base.grupos[1]
+    await page.select('select[aria-label="Filtro"]', fam.grupo)
     await esperar(6000)
     const kf = await page.evaluate(`(() => {
       const t = (k) => Array.from(document.querySelectorAll('p')).find((p) => p.textContent === k)?.nextElementSibling?.textContent ?? ''
       return { venta: t('VENTA NETA'), url: location.search, grupos: document.querySelectorAll('tbody').length - 1 }
     })()`) as { venta: string; url: string; grupos: number }
-    check('El filtro por familia muestra solo esa familia', Math.abs(soles(kf.venta) - fam.venta) < 0.01 && kf.grupos === 1,
+    check('El filtro de marca muestra solo esa marca', Math.abs(soles(kf.venta) - fam.venta) < 0.01 && kf.grupos === 1,
       `${decodeURIComponent(kf.url)} · venta ${kf.venta} (base ${fam.venta})`)
-    await page.select('select[aria-label="Familia"]', '')
+    await page.select('select[aria-label="Filtro"]', '')
     await esperar(6000)
+
+    // Por marca es lo que abre; por tipo de producto reagrupa y el total no cambia.
+    const marcas = await page.$$eval('[data-fila-grupo]', (x) => x.length)
+    check('Abre agrupado por marca, con su % de la utilidad', marcas === base.grupos.length
+      && (await page.evaluate(() => document.body.innerText.includes('% de la utilidad'))), `${marcas} marcas`)
+    await page.select('select[aria-label="Agrupar por"]', 'tipo')
+    await esperar(6000)
+    const tipo = await page.evaluate(`(() => {
+      const t = (k) => Array.from(document.querySelectorAll('p')).find((p) => p.textContent === k)?.nextElementSibling?.textContent ?? ''
+      return { venta: t('VENTA NETA'), filas: document.querySelectorAll('[data-fila-grupo]').length, h1: document.querySelector('h1')?.textContent ?? '' }
+    })()`) as { venta: string; filas: number; h1: string }
+    check('Agrupar por tipo de producto reagrupa sin cambiar el total',
+      Math.abs(soles(tipo.venta) - base.total.venta) < 0.01 && tipo.filas > 0 && tipo.filas !== marcas,
+      `${tipo.h1} · ${tipo.filas} tipos · venta ${tipo.venta}`)
+    await page.screenshot({ path: '.sunat/utilidad-tipo.png', fullPage: false })
+    await page.select('select[aria-label="Agrupar por"]', 'marca')
+    await esperar(6000)
+    await page.screenshot({ path: '.sunat/utilidad-marca.png', fullPage: false })
 
     const excel = await page.evaluate(async () => {
       const a = Array.from(document.querySelectorAll('a')).find((x) => x.textContent?.includes('Excel')) as HTMLAnchorElement

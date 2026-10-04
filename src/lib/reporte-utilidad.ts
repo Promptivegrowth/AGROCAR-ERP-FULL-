@@ -1,5 +1,10 @@
 /**
- * Utilidad por producto y familia, entre dos fechas. Reporte gerencial.
+ * Utilidad por producto, agrupada por marca o por tipo de producto, entre dos
+ * fechas. Reporte gerencial.
+ *
+ * Marca es la tabla `familias` (Cerdeña, Americana, Dely's…: en este ERP la
+ * "familia" es la marca). Tipo es el nombre corto del producto (Salchichas,
+ * Jamón, Lácteos…). Daniel pidió verlo por marca (04/10/2026).
  *
  * Todo va SIN IGV: el IGV no es ingreso ni costo de la empresa, y la utilidad
  * neta se mide sin él.
@@ -17,8 +22,9 @@
  * no tiene compras, se usa el costo promedio de su ficha; si tampoco tiene,
  * queda "sin costo" y no entra en la utilidad (si entrara, la inflaría).
  *
- * Los porcentajes de familia y del total son ponderados: utilidad sobre venta
- * del grupo, no el promedio simple de los porcentajes de cada producto.
+ * Los porcentajes de cada grupo y del total son ponderados: utilidad sobre
+ * venta del grupo, no el promedio simple de los porcentajes de cada producto.
+ * La participación es la parte del grupo en la venta y en la utilidad totales.
  */
 
 import { traerTodo } from '@/lib/supabase/paginar'
@@ -27,7 +33,8 @@ export interface FilaUtilidad {
   producto_id: string | null
   codigo: string
   producto: string
-  familia: string
+  marca: string
+  tipo: string
   cantidad: number
   /** Venta sin IGV. */
   venta: number
@@ -43,8 +50,11 @@ export interface FilaUtilidad {
   margen_costo: number | null
 }
 
-export interface GrupoFamilia {
-  familia: string
+export type Agrupacion = 'marca' | 'tipo'
+
+export interface GrupoUtilidad {
+  /** La marca o el tipo, según la agrupación. */
+  grupo: string
   productos: FilaUtilidad[]
   cantidad: number
   venta: number
@@ -55,13 +65,18 @@ export interface GrupoFamilia {
   margen_venta: number | null
   margen_costo: number | null
   sin_costo: number
+  /** Parte del grupo en la venta total, en %. */
+  part_venta: number | null
+  /** Parte del grupo en la utilidad total, en %. */
+  part_utilidad: number | null
 }
 
 export interface ReporteUtilidad {
   desde: string
   hasta: string
-  familias: GrupoFamilia[]
-  total: Omit<GrupoFamilia, 'familia' | 'productos'>
+  por: Agrupacion
+  grupos: GrupoUtilidad[]
+  total: Omit<GrupoUtilidad, 'grupo' | 'productos' | 'part_venta' | 'part_utilidad'>
 }
 
 const r2 = (n: number) => Math.round(n * 100) / 100
@@ -74,7 +89,9 @@ function margenes(utilidad: number, venta: number, costo: number) {
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export async function calcularUtilidad(supabase: any, desde: string, hasta: string): Promise<ReporteUtilidad> {
+export async function calcularUtilidad(
+  supabase: any, desde: string, hasta: string, por: Agrupacion = 'marca',
+): Promise<ReporteUtilidad> {
   const [ventas, compras, fichas] = await Promise.all([
     traerTodo<any>((a, b) => supabase
       .from('comprobantes_items')
@@ -140,7 +157,8 @@ export async function calcularUtilidad(supabase: any, desde: string, hasta: stri
       producto_id: it.producto_id,
       codigo: it.productos?.codigo ?? '—',
       producto: (it.productos?.descripcion || '').trim() || it.productos?.nombre || it.descripcion || '—',
-      familia: it.productos?.familias?.nombre ?? 'SIN FAMILIA',
+      marca: (it.productos?.familias?.nombre ?? '').trim() || 'SIN MARCA',
+      tipo: (it.productos?.nombre ?? '').trim() || 'SIN TIPO',
       cantidad: 0, venta: 0, precio_promedio: 0,
       costo_unitario: null, costo_total: null, utilidad: null, margen_venta: null, margen_costo: null,
     }
@@ -175,19 +193,28 @@ export async function calcularUtilidad(supabase: any, desde: string, hasta: stri
     }
   }
 
-  const porFamilia = new Map<string, FilaUtilidad[]>()
-  for (const f of Array.from(prod.values())) {
-    const lista = porFamilia.get(f.familia) ?? []
-    lista.push(f)
-    porFamilia.set(f.familia, lista)
-  }
-  const familias: GrupoFamilia[] = Array.from(porFamilia.entries())
-    .map(([familia, filas]) => ({
-      familia,
-      productos: filas.sort((a, b) => b.venta - a.venta),
-      ...sumar(filas),
-    }))
-    .sort((a, b) => b.venta - a.venta)
+  const total = sumar(Array.from(prod.values()))
+  const parte = (n: number, de: number) => (de > 0 ? (n / de) * 100 : null)
 
-  return { desde, hasta, familias, total: sumar(Array.from(prod.values())) }
+  const porGrupo = new Map<string, FilaUtilidad[]>()
+  for (const f of Array.from(prod.values())) {
+    const clave = por === 'marca' ? f.marca : f.tipo
+    const lista = porGrupo.get(clave) ?? []
+    lista.push(f)
+    porGrupo.set(clave, lista)
+  }
+  const grupos: GrupoUtilidad[] = Array.from(porGrupo.entries())
+    .map(([grupo, filas]) => {
+      const s = sumar(filas)
+      return {
+        grupo,
+        productos: filas.sort((a, b) => b.venta - a.venta),
+        ...s,
+        part_venta: parte(s.venta, total.venta),
+        part_utilidad: parte(s.utilidad, total.utilidad),
+      }
+    })
+    .sort((a, b) => b.utilidad - a.utilidad)
+
+  return { desde, hasta, por, grupos, total }
 }

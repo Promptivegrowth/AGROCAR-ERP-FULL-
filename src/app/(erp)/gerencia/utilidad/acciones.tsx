@@ -12,12 +12,17 @@ function restarDias(fecha: string, dias: number) {
   return d.toISOString().slice(0, 10)
 }
 
-export default function AccionesUtilidad({ desde, hasta, familia, familias }: {
-  desde: string; hasta: string; familia: string; familias: string[]
+type Por = 'marca' | 'tipo'
+
+export default function AccionesUtilidad({ desde, hasta, por, grupo, grupos }: {
+  desde: string; hasta: string; por: Por; grupo: string; grupos: string[]
 }) {
   const router = useRouter()
-  const ir = (d: string, h: string, f = familia) =>
-    router.push(`${RUTA}?desde=${d}&hasta=${h}${f ? `&familia=${encodeURIComponent(f)}` : ''}`)
+  const consulta = (d: string, h: string, p: Por, g: string) =>
+    `desde=${d}&hasta=${h}&por=${p}${g ? `&grupo=${encodeURIComponent(g)}` : ''}`
+  // Al cambiar la agrupación, el filtro de la anterior ya no aplica.
+  const ir = (d: string, h: string, p: Por = por, g = p === por ? grupo : '') =>
+    router.push(`${RUTA}?${consulta(d, h, p, g)}`)
   const hoy = hoyLima()
   const inicioMes = `${hoy.slice(0, 8)}01`
   const atajos: [string, string][] = [
@@ -27,7 +32,8 @@ export default function AccionesUtilidad({ desde, hasta, familia, familias }: {
   const boton = (activo: boolean) => `px-2 py-1 text-[10px] font-semibold rounded border ${activo
     ? 'bg-[#FBE600] text-black border-[#FBE600]'
     : 'bg-white/10 text-white border-white/30 hover:bg-white/20'}`
-  const excel = `/api/gerencia/utilidad/excel?desde=${desde}&hasta=${hasta}${familia ? `&familia=${encodeURIComponent(familia)}` : ''}`
+  const excel = `/api/gerencia/utilidad/excel?${consulta(desde, hasta, por, grupo)}`
+  const campo = 'h-7 text-[11px] px-1.5 border border-gray-400 rounded bg-white text-black'
 
   return (
     <div className="flex items-center gap-2 flex-wrap">
@@ -44,12 +50,18 @@ export default function AccionesUtilidad({ desde, hasta, familia, familias }: {
         <input type="date" value={hasta} min={desde} onChange={(e) => e.target.value && ir(desde, e.target.value)}
           className="h-7 text-[11px] px-1.5 border border-gray-400 rounded bg-white text-black" />
       </div>
-      <select value={familia} onChange={(e) => ir(desde, hasta, e.target.value)}
-        className="h-7 text-[11px] px-1.5 border border-gray-400 rounded bg-white text-black max-w-[180px]"
-        aria-label="Familia">
-        <option value="">Todas las familias</option>
-        {familias.map((f) => <option key={f} value={f}>{f}</option>)}
-      </select>
+      <div className="flex items-center gap-1 text-xs">
+        <label className="text-gray-300">Agrupar por:</label>
+        <select value={por} onChange={(e) => ir(desde, hasta, e.target.value as Por)} className={campo} aria-label="Agrupar por">
+          <option value="marca">Marca</option>
+          <option value="tipo">Tipo de producto</option>
+        </select>
+        <select value={grupo} onChange={(e) => ir(desde, hasta, por, e.target.value)}
+          className={`${campo} max-w-[180px]`} aria-label="Filtro">
+          <option value="">{por === 'marca' ? 'Todas las marcas' : 'Todos los tipos'}</option>
+          {grupos.map((g) => <option key={g} value={g}>{g}</option>)}
+        </select>
+      </div>
       <a href={excel}
         className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold text-white bg-green-700 rounded-md hover:bg-green-800">
         <FileSpreadsheet className="w-3 h-3" />Excel
