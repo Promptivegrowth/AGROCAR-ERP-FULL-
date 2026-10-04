@@ -3,6 +3,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { numeroALetras } from '@/lib/utils'
 import { EMPRESA, SLOGAN_FONT_STACK } from '@/lib/empresa'
 import AutoPrint from './auto-print'
+import { condicionDePago } from '@/lib/condicion-pago'
 import DatosDePago from '@/components/erp/datos-de-pago'
 import AyudaTicketera from '@/components/erp/ayuda-ticketera'
 import BotonTicketera from '@/components/erp/boton-ticketera'
@@ -133,7 +134,7 @@ export default async function ImprimirLotePage({
     .select(`
       id, tipo, serie, numero, fecha_emision, fecha_despacho, subtotal, igv, total, moneda, estado, pedido_id, created_at, sunat_xml,
       cliente_externo_nombre, cliente_externo_doc, editado, editado_at,
-      clientes(id, razon_social, ruc, dni, direccion, telefono),
+      clientes(id, razon_social, ruc, dni, direccion, telefono, credito_dias),
       profiles!comprobantes_facturador_id_fkey(full_name)
     `)
     .in('id', idsArr)
@@ -156,21 +157,16 @@ export default async function ImprimirLotePage({
     .filter(Boolean) as string[]
 
   const vendedorPorPedido = new Map<string, string>()
-  const cobradoPorPedido = new Map<string, number>()
+  const tipoPagoPorPedido = new Map<string, string | null>()
 
   if (pedidoIds.length > 0) {
-    const [{ data: pedidos }, { data: cobros }] = await Promise.all([
-      supabase
-        .from('pedidos')
-        .select('id, profiles!pedidos_vendedor_id_fkey(full_name)')
-        .in('id', pedidoIds),
-      supabase.from('cobros').select('referencia_id, total').in('referencia_id', pedidoIds),
-    ])
+    const { data: pedidos } = await supabase
+      .from('pedidos')
+      .select('id, tipo_pago, profiles!pedidos_vendedor_id_fkey(full_name)')
+      .in('id', pedidoIds)
     ;(pedidos ?? []).forEach((p: any) => {
       if (p.profiles?.full_name) vendedorPorPedido.set(p.id, p.profiles.full_name)
-    })
-    ;(cobros ?? []).forEach((c: any) => {
-      cobradoPorPedido.set(c.referencia_id, (cobradoPorPedido.get(c.referencia_id) ?? 0) + Number(c.total ?? 0))
+      tipoPagoPorPedido.set(p.id, p.tipo_pago ?? null)
     })
   }
 
@@ -337,8 +333,13 @@ export default async function ImprimirLotePage({
           const monedaLabel = comp.moneda === 'USD' ? 'DOLARES AMERICANOS' : 'SOLES'
           const clienteTelefono = cliente?.telefono ?? null
           const vendedorNombre = comp.pedido_id ? (vendedorPorPedido.get(comp.pedido_id) ?? '—') : '—'
-          const cobrado = comp.pedido_id ? (cobradoPorPedido.get(comp.pedido_id) ?? 0) : 0
-          const condicion = cobrado >= totalNum && totalNum > 0 ? 'CONTADO' : 'CREDITO'
+          // Cómo se vendió, no si ya se cobró: se imprime la noche anterior al reparto.
+          const cond = condicionDePago(
+            comp.pedido_id ? tipoPagoPorPedido.get(comp.pedido_id) : null,
+            cliente?.credito_dias, comp.fecha_emision)
+          const condicion = cond.credito && cond.vencimiento
+            ? `CRÉDITO · Vence ${cond.vencimiento.split('-').reverse().join('/')}`
+            : cond.etiqueta
           const impreso = new Date().toLocaleString('es-PE', { timeZone: 'America/Lima' })
           const fechaDespacho = (comp as any).fecha_despacho
             ? new Date((comp as any).fecha_despacho + 'T12:00:00-05:00').toLocaleDateString('es-PE', {

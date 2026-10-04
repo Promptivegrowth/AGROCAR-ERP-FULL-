@@ -1027,7 +1027,17 @@ export default function ClientesPage() {
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <div>
                 <Label>Crédito Días</Label>
-                <Input {...register('credito_dias')} type="number" min={0} className="mt-1" />
+                <Input {...register('credito_dias')} type="number" min={0} className="mt-1" placeholder="7 por defecto" />
+                {/* Atajos; también se puede escribir cualquier número. Vacío o 0 = 7 días. */}
+                <div className="mt-1 flex gap-1" data-atajos-credito>
+                  {[3, 5, 7, 15].map((n) => (
+                    <button key={n} type="button"
+                      onClick={() => setValue('credito_dias', n, { shouldDirty: true })}
+                      className="rounded border border-gray-300 px-2 py-0.5 text-[11px] hover:bg-gray-50">
+                      {n} días
+                    </button>
+                  ))}
+                </div>
               </div>
               <div>
                 <Label>Límite Crédito (S/)</Label>

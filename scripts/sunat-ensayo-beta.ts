@@ -26,6 +26,7 @@ import { construirInvoice, type ItemUbl } from '../src/lib/sunat/ubl'
 import { abrirCertificado, firmarXml, comprimir, enviarASunat } from '../src/lib/sunat/firma'
 import { EMISOR_SUNAT } from '../src/lib/sunat/config'
 import { hoyLima } from '../src/lib/fechas-pe'
+import { condicionDePago } from '../src/lib/condicion-pago'
 
 function cargarEnvLocal() {
   const f = path.join(process.cwd(), '.env.local')
@@ -77,14 +78,9 @@ async function main() {
       codigo: it.productos?.codigo ?? null,
       unidad: it.productos?.unidades_medida?.codigo_sunat || 'NIU',
     }))
-    const diasCredito = Number(c.clientes?.credito_dias ?? 0)
-    const esCredito = c.pedidos?.tipo_pago === 'credito' && diasCredito > 0
-    let vencimiento: string | null = null
-    if (esCredito) {
-      const d = new Date(`${hoy}T12:00:00Z`)
-      d.setUTCDate(d.getUTCDate() + diasCredito)
-      vencimiento = d.toISOString().slice(0, 10)
-    }
+    const cond = condicionDePago(c.pedidos?.tipo_pago, c.clientes?.credito_dias, hoy)
+    const esCredito = cond.credito
+    const vencimiento = cond.vencimiento
 
     try {
       const { xml, nombreArchivo, totales } = construirInvoice({

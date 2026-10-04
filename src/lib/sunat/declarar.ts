@@ -25,6 +25,7 @@ import { construirInvoice, type ItemUbl } from './ubl'
 import { firmarXml, comprimir, enviarASunat } from './firma'
 import { hoyLima } from '@/lib/fechas-pe'
 import { sumarDias } from './plazo'
+import { condicionDePago } from '@/lib/condicion-pago'
 import { consultarEnSunat } from './consulta'
 
 /**
@@ -201,19 +202,12 @@ export async function declararComprobante(
   }))
 
   /*
-   * El vencimiento sale de los días de crédito del cliente, no de un valor por
-   * omisión. Si el cliente no tiene días pactados no hay plazo que declarar y
-   * la venta va como contado: es lo que realmente se acordó. Inventar una fecha
-   * acá haría que SUNAT rechace con 3267.
+   * Contado o crédito según cómo se vendió (el pedido); el plazo, el del
+   * cliente o 7 días. La misma regla que el papel impreso: lib/condicion-pago.
    */
-  const diasCredito = Number(c.clientes?.credito_dias ?? 0)
-  const esCredito = c.pedidos?.tipo_pago === 'credito' && diasCredito > 0
-  let vencimiento: string | null = null
-  if (esCredito) {
-    const d = new Date(`${c.fecha_emision}T12:00:00Z`)
-    d.setUTCDate(d.getUTCDate() + diasCredito)
-    vencimiento = d.toISOString().slice(0, 10)
-  }
+  const cond = condicionDePago(c.pedidos?.tipo_pago, c.clientes?.credito_dias, c.fecha_emision)
+  const esCredito = cond.credito
+  const vencimiento = cond.vencimiento
 
   let tengoLaReserva = false
   try {

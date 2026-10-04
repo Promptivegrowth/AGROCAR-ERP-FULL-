@@ -1,3 +1,4 @@
+import { condicionDePago } from '@/lib/condicion-pago'
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
@@ -71,14 +72,10 @@ export async function POST(req: Request) {
       unidad: it.productos?.unidades_medida?.codigo_sunat || 'NIU',
     }))
 
-    const diasCredito = Number(c.clientes?.credito_dias ?? 0)
-    const esCredito = c.pedidos?.tipo_pago === 'credito' && diasCredito > 0
-    let vencimiento: string | null = null
-    if (esCredito) {
-      const d = new Date(`${c.fecha_emision}T12:00:00Z`)
-      d.setUTCDate(d.getUTCDate() + diasCredito)
-      vencimiento = d.toISOString().slice(0, 10)
-    }
+    // La misma regla que la declaración y el papel (lib/condicion-pago).
+    const cond = condicionDePago(c.pedidos?.tipo_pago, c.clientes?.credito_dias, c.fecha_emision)
+    const esCredito = cond.credito
+    const vencimiento = cond.vencimiento
 
     const { xml } = construirInvoice({
       comprobante: {

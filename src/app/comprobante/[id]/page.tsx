@@ -4,6 +4,7 @@ import { notFound } from 'next/navigation'
 import { numeroALetras } from '@/lib/utils'
 import { EMPRESA, SLOGAN_FONT_STACK } from '@/lib/empresa'
 import PrintButton from './print-button'
+import { condicionDePago } from '@/lib/condicion-pago'
 import DatosDePago from '@/components/erp/datos-de-pago'
 import EnviarDocumento from '@/components/erp/enviar-documento'
 import AyudaTicketera from '@/components/erp/ayuda-ticketera'
@@ -90,7 +91,7 @@ export default async function ComprobantePage({
     .select(`
       id, tipo, serie, numero, fecha_emision, fecha_despacho, subtotal, igv, total, moneda, estado, pedido_id, created_at, sunat_xml, sunat_cdr,
       cliente_externo_nombre, cliente_externo_doc,
-      clientes(id, razon_social, ruc, dni, direccion, telefono, email),
+      clientes(id, razon_social, ruc, dni, direccion, telefono, email, credito_dias),
       profiles!comprobantes_facturador_id_fkey(full_name)
     `)
     .eq('id', id)
@@ -132,27 +133,25 @@ export default async function ComprobantePage({
 
   // Vendedor desde el pedido asociado
   let vendedorNombre = '—'
-  let totalCobrado = 0
+  let tipoPago: string | null = null
   if (comp.pedido_id) {
     const { data: pedido } = await supabase
       .from('pedidos')
-      .select('vendedor_id, profiles!pedidos_vendedor_id_fkey(full_name)')
+      .select('vendedor_id, tipo_pago, profiles!pedidos_vendedor_id_fkey(full_name)')
       .eq('id', comp.pedido_id)
       .maybeSingle()
     vendedorNombre = (pedido as any)?.profiles?.full_name ?? '—'
-
-    // Cobros para determinar condición (contado/crédito)
-    const { data: cobros } = await supabase
-      .from('cobros')
-      .select('total')
-      .eq('referencia_id', comp.pedido_id)
-    totalCobrado = (cobros ?? []).reduce((acc, c: any) => acc + Number(c.total ?? 0), 0)
+    tipoPago = (pedido as any)?.tipo_pago ?? null
   }
 
   const totalNum = Number(comp.total ?? 0)
   const subtotalNum = Number(comp.subtotal ?? 0)
   const igvNum = Number(comp.igv ?? 0)
-  const condicion = totalCobrado >= totalNum && totalNum > 0 ? 'CONTADO' : 'CREDITO'
+  // Cómo se vendió, no si ya se cobró: se imprime la noche anterior al reparto.
+  const cond = condicionDePago(tipoPago, (comp as any).clientes?.credito_dias, comp.fecha_emision)
+  const condicion = cond.credito && cond.vencimiento
+    ? `CRÉDITO · Vence ${cond.vencimiento.split('-').reverse().join('/')}`
+    : cond.etiqueta
 
   const fechaEmision = new Date(comp.fecha_emision + 'T12:00:00-05:00').toLocaleDateString('es-PE', {
     day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'America/Lima',
