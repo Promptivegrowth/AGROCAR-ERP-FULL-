@@ -28,7 +28,7 @@ import { Switch } from '@/components/ui/switch'
 import LeafletMap from '@/components/maps/leaflet-map'
 import UbigeoSelector, { UBIGEO_EMPTY, type UbigeoValue } from '@/components/ubigeo-selector'
 import { matchUbigeoFromNombres } from '@/lib/ubigeo/match'
-import { tipoComprobanteSugerido, getIdentificadorLabel } from '@/lib/cliente-utils'
+import { tipoComprobanteSugerido, getIdentificadorLabel, rucValido, ruc10DesdeDni } from '@/lib/cliente-utils'
 import DiasVisitaSelector from '@/components/dias-visita-selector'
 import { labelDias } from '@/lib/dias-visita'
 
@@ -825,6 +825,33 @@ export default function ClientesPage() {
                     SUNAT
                   </Button>
                 </div>
+                {/*
+                  Daniel, 03/10: no podía pasar a una clienta de DNI a RUC para
+                  darle factura. Había escrito 10 + DNI (10 dígitos) y le faltaba
+                  el dígito verificador; "Factura" no se habilitaba y no decía por qué.
+                */}
+                {rucInput.length > 0 && rucInput.length < 11 && (
+                  <p className="mt-1 text-[11px] text-amber-700" data-aviso-ruc>
+                    Faltan {11 - rucInput.length} dígito{11 - rucInput.length === 1 ? '' : 's'}: el RUC tiene 11.
+                  </p>
+                )}
+                {rucInput.length === 11 && !rucValido(rucInput) && (
+                  <p className="mt-1 text-[11px] text-red-700" data-aviso-ruc>
+                    El último dígito no corresponde a un RUC válido. Revíselo.
+                  </p>
+                )}
+                {dniInput.length === 8 && rucInput !== ruc10DesdeDni(dniInput) && (rucInput.length === 0 || rucInput.startsWith('10')) && (
+                  <button type="button" data-sugerir-ruc
+                    onClick={() => {
+                      const r = ruc10DesdeDni(dniInput)
+                      setRucInput(r)
+                      setValue('ruc', r)
+                      setTipoComprobantePref('factura')
+                    }}
+                    className="mt-1 text-[11px] text-blue-700 underline hover:text-blue-900">
+                    Si es persona con negocio, su RUC sería {ruc10DesdeDni(dniInput)}: usarlo (luego confirme con SUNAT)
+                  </button>
+                )}
               </div>
               <div>
                 <Label>DNI</Label>

@@ -53,3 +53,27 @@ export function esRucValido(ruc: string): boolean {
 export function esDniValido(dni: string): boolean {
   return /^\d{8}$/.test(dni)
 }
+
+/** Pesos del dígito verificador del RUC (módulo 11, SUNAT). */
+const PESOS_RUC = [5, 4, 3, 2, 7, 6, 5, 4, 3, 2]
+
+function digitoVerificadorRuc(diez: string): number {
+  const suma = PESOS_RUC.reduce((a, p, i) => a + p * Number(diez[i]), 0)
+  const d = 11 - (suma % 11)
+  return d === 10 ? 0 : d === 11 ? 1 : d
+}
+
+/** 11 dígitos y el último cuadra con el módulo 11 de SUNAT. */
+export function rucValido(ruc: string): boolean {
+  if (!/^\d{11}$/.test(ruc)) return false
+  return digitoVerificadorRuc(ruc.slice(0, 10)) === Number(ruc[10])
+}
+
+/**
+ * El RUC de persona natural que corresponde a un DNI: "10" + DNI + dígito
+ * verificador. Que exista hay que confirmarlo con SUNAT (el botón del formulario).
+ */
+export function ruc10DesdeDni(dni: string): string {
+  const diez = `10${dni}`
+  return `${diez}${digitoVerificadorRuc(diez)}`
+}
