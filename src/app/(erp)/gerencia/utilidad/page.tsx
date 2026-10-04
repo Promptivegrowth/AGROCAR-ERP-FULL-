@@ -33,13 +33,17 @@ function CeldasMonto({ f }: { f: Pick<FilaUtilidad, 'venta' | 'costo_total' | 'u
 }
 
 export default async function UtilidadPage({ searchParams }: {
-  searchParams: Promise<{ desde?: string; hasta?: string }>
+  searchParams: Promise<{ desde?: string; hasta?: string; familia?: string }>
 }) {
   const sp = await searchParams
   const hasta = sp.hasta ?? hoyLima()
   const desde = sp.desde ?? `${hasta.slice(0, 8)}01`
   const supabase = await createClient()
-  const { familias, total } = await calcularUtilidad(supabase, desde, hasta)
+  const reporte = await calcularUtilidad(supabase, desde, hasta)
+  // Filtro por familia: el reporte se arma completo y se muestra solo esa.
+  const familia = sp.familia && reporte.familias.some((g) => g.familia === sp.familia) ? sp.familia : ''
+  const familias = familia ? reporte.familias.filter((g) => g.familia === familia) : reporte.familias
+  const total = familia ? familias[0] : reporte.total
 
   return (
     <div className="min-h-screen bg-gray-50 print:bg-white">
@@ -64,9 +68,12 @@ export default async function UtilidadPage({ searchParams }: {
           <div>
             <p className="text-xs uppercase tracking-wider text-gray-400">AGROCAR ERP · Gerencia</p>
             <h1 className="text-xl font-bold">Utilidad por producto y familia</h1>
-            <p className="text-sm text-gray-300">Del {formatDate(desde)} al {formatDate(hasta)} · montos sin IGV</p>
+            <p className="text-sm text-gray-300">
+              Del {formatDate(desde)} al {formatDate(hasta)}{familia ? ` · ${familia}` : ''} · montos sin IGV
+            </p>
           </div>
-          <AccionesUtilidad desde={desde} hasta={hasta} />
+          <AccionesUtilidad desde={desde} hasta={hasta} familia={familia}
+            familias={reporte.familias.map((g) => g.familia).sort((a, b) => a.localeCompare(b))} />
         </div>
 
         <div className="print-only mb-3">
@@ -82,7 +89,7 @@ export default async function UtilidadPage({ searchParams }: {
             </div>
             <div className="text-right">
               <p className="text-sm font-bold">Utilidad por producto y familia</p>
-              <p className="text-[10px] text-gray-600">Del {formatDate(desde)} al {formatDate(hasta)} · montos sin IGV · reservado a gerencia</p>
+              <p className="text-[10px] text-gray-600">Del {formatDate(desde)} al {formatDate(hasta)}{familia ? ` · Familia ${familia}` : ''} · montos sin IGV · reservado a gerencia</p>
             </div>
           </div>
         </div>
@@ -121,7 +128,8 @@ export default async function UtilidadPage({ searchParams }: {
               {/* Resumen por familia */}
               <div>
                 <h2 className="text-sm font-bold text-gray-700 uppercase mb-2">Resumen por familia ({familias.length})</h2>
-                <table className="w-full text-xs border border-gray-200">
+                <div className="overflow-x-auto">
+                <table className="w-full min-w-[720px] text-xs border border-gray-200">
                   <thead className="bg-gray-100 border-b border-gray-300">
                     <tr>
                       <th className="text-left p-1.5">Familia</th>
@@ -155,12 +163,14 @@ export default async function UtilidadPage({ searchParams }: {
                     </tr>
                   </tbody>
                 </table>
+                </div>
               </div>
 
               {/* Detalle por producto, agrupado por familia */}
               <div>
                 <h2 className="text-sm font-bold text-gray-700 uppercase mb-2">Detalle por producto</h2>
-                <table className="w-full text-xs border border-gray-200">
+                <div className="overflow-x-auto">
+                <table className="w-full min-w-[900px] text-xs border border-gray-200">
                   <thead className="bg-gray-100 border-b border-gray-300">
                     <tr>
                       <th className="text-left p-1.5">Código</th>
@@ -196,6 +206,7 @@ export default async function UtilidadPage({ searchParams }: {
                     </tbody>
                   ))}
                 </table>
+                </div>
               </div>
             </>
           )}

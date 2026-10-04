@@ -18,12 +18,16 @@ export async function GET(req: NextRequest) {
   const hasta = req.nextUrl.searchParams.get('hasta') ?? hoyLima()
   const desde = req.nextUrl.searchParams.get('desde') ?? `${hasta.slice(0, 8)}01`
   const supabase = await createClient()
-  const { familias, total } = await calcularUtilidad(supabase, desde, hasta)
+  const reporte = await calcularUtilidad(supabase, desde, hasta)
+  const pedida = req.nextUrl.searchParams.get('familia') ?? ''
+  const familia = reporte.familias.some((g) => g.familia === pedida) ? pedida : ''
+  const familias = familia ? reporte.familias.filter((g) => g.familia === familia) : reporte.familias
+  const total = familia ? familias[0] : reporte.total
   const n2 = (n: number | null) => (n === null ? null : Math.round(n * 100) / 100)
 
   const { workbook, sheet, startRow } = await crearExcelBranded({
     titulo: 'Utilidad por producto y familia',
-    subtitulo: 'Reporte gerencial · montos sin IGV',
+    subtitulo: `Reporte gerencial${familia ? ` · Familia ${familia}` : ''} · montos sin IGV`,
     periodo: { desde, hasta },
     sheetName: 'Utilidad',
   })
@@ -64,5 +68,6 @@ export async function GET(req: NextRequest) {
       `${total.sin_costo} producto(s) sin costo de compra: su venta cuenta, pero no entra en la utilidad.`, 11)
   }
   footerReporte(sheet, row)
-  return excelResponse(workbook, `utilidad-${desde}-a-${hasta}.xlsx`)
+  const sufijo = familia ? `-${familia.toLowerCase().replace(/[^a-z0-9]+/g, '-')}` : ''
+  return excelResponse(workbook, `utilidad-${desde}-a-${hasta}${sufijo}.xlsx`)
 }
