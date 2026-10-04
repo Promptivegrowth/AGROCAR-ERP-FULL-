@@ -43,6 +43,12 @@ export default function PedidosClient({ pedidosIniciales, desde, hasta }: {
   const supabase = createClient()
 
   const [pedidos, setPedidos] = useState(pedidosIniciales)
+  /*
+   * Al cambiar las fechas (o al refrescar), el servidor manda otra lista, pero
+   * useState se queda con la primera. Daniel elegía del 02 al 03/10 y veía los
+   * 23 pedidos de hoy, con Facturados, Despachados y Entregados en cero.
+   */
+  useEffect(() => { setPedidos(pedidosIniciales) }, [pedidosIniciales])
 
   // El filtro vive en la URL para que el servidor traiga solo ese rango
   const irA = (d: string, h: string) => {
@@ -460,6 +466,11 @@ export default function PedidosClient({ pedidosIniciales, desde, hasta }: {
               30 días
             </button>
           </div>
+          {/* Los productos que salen en un día de despacho, para preparar e imprimir. */}
+          <a href="/pedidos/salida" data-boton-salida
+            className="inline-flex items-center h-9 px-3 text-xs font-semibold border border-blue-300 text-blue-800 rounded-md bg-white hover:bg-blue-50">
+            Productos que salen
+          </a>
           <Button
             onClick={() => setNuevoOpen(true)}
             className="bg-[#FBE600] hover:bg-[#E5D100] text-black font-semibold gap-2"

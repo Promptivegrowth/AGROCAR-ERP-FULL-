@@ -69,6 +69,7 @@ const PANTALLAS = new Set([
   '/maestros/vehiculos',
   '/maestros/zonas',
   '/pedidos',
+  '/pedidos/salida',
   '/planillas',
   '/planillas/asistencia',
   '/planillas/beneficios',
