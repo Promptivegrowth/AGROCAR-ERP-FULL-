@@ -167,7 +167,7 @@ export async function GET(req: Request) {
     })
   }
 
-  const pendientes = await comprobantesPendientes(conf, 500)
+  const pendientes = await comprobantesPendientes(conf)
   const enviados: string[] = []
   const fallados: { comprobante: string; motivo: string }[] = []
   let quedaron = 0

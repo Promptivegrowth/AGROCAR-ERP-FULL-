@@ -24,7 +24,7 @@ import { EMISOR_SUNAT, type ConfiguracionSunat } from './config'
 import { construirInvoice, type ItemUbl } from './ubl'
 import { firmarXml, comprimir, enviarASunat } from './firma'
 import { hoyLima } from '@/lib/fechas-pe'
-import { sumarDias } from './plazo'
+import { sumarDias, venceElPlazo } from './plazo'
 import { condicionDePago } from '@/lib/condicion-pago'
 import { consultarEnSunat } from './consulta'
 
@@ -342,12 +342,12 @@ export async function declararComprobante(
  * Sin fecha de corte configurada no devuelve nada: el barrido no arranca a
  * ciegas.
  */
-export async function comprobantesPendientes(conf: ConfiguracionSunat, limite = 200) {
+export async function comprobantesPendientes(conf: ConfiguracionSunat, limite = 1000) {
   if (!conf.sincronizarDesde) return []
 
   const admin = createAdminClient()
   const { data, error } = await (admin as any).from('comprobantes')
-    .select('id, serie, numero, fecha_emision')
+    .select('id, serie, numero, fecha_emision, sunat_enviado_at')
     .in('tipo', ['factura', 'boleta'])
     .neq('estado', 'anulado')
     .eq('enviado_sunat', false)
@@ -361,5 +361,26 @@ export async function comprobantesPendientes(conf: ConfiguracionSunat, limite = 
     .limit(limite)
 
   if (error) throw new Error(error.message)
-  return (data ?? []) as { id: string; serie: string; numero: string; fecha_emision: string }[]
+
+  /*
+   * Quién va primero. Cada barrido tiene unos cuatro minutos, y del 03 al
+   * 05/10/2026 SUNAT rebotó todo (2325, certificado sin activar): en orden de
+   * fecha, cada barrido gastaba su tiempo en los mismos 110 más viejos y los
+   * siguientes —que vencían antes de que les llegara el turno— no se intentaban
+   * nunca. Ahora:
+   *   1. lo que sigue en plazo va antes que lo vencido (que SUNAT ya no acepta);
+   *   2. dentro de eso, lo que hace más tiempo que no se intenta (lo nunca
+   *      intentado, primero), así una falla general recorre toda la cola;
+   *   3. a igualdad, fecha y correlativo.
+   */
+  const hoy = hoyLima()
+  type Fila = { id: string; serie: string; numero: string; fecha_emision: string; sunat_enviado_at: string | null }
+  const filas = (data ?? []) as Fila[]
+  const vencido = (f: Fila) => (venceElPlazo(f.fecha_emision) < hoy ? 1 : 0)
+  const ultimo = (f: Fila) => (f.sunat_enviado_at ? new Date(f.sunat_enviado_at).getTime() : 0)
+  return filas.sort((a, b) => vencido(a) - vencido(b)
+    || ultimo(a) - ultimo(b)
+    || a.fecha_emision.localeCompare(b.fecha_emision)
+    || a.serie.localeCompare(b.serie)
+    || a.numero.localeCompare(b.numero))
 }
