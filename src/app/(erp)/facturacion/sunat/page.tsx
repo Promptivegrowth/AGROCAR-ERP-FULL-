@@ -462,9 +462,11 @@ export default function EstadoSunatPage() {
                         </span>
                         {['programado', 'pendiente', 'error', 'rechazado'].includes(clave) && (
                           <p className={`mt-0.5 text-[10px] ${hoy >= venceElPlazo(c.fecha_emision) ? 'font-semibold text-red-700' : 'text-gray-400'}`}>
-                            {hoy >= venceElPlazo(c.fecha_emision)
-                              ? 'El plazo SUNAT vence HOY'
-                              : `Se puede corregir hasta entonces · plazo SUNAT ${formatDate(venceElPlazo(c.fecha_emision))}`}
+                            {hoy > venceElPlazo(c.fecha_emision)
+                              ? `Plazo SUNAT vencido el ${formatDate(venceElPlazo(c.fecha_emision))}`
+                              : hoy === venceElPlazo(c.fecha_emision)
+                                ? 'El plazo SUNAT vence HOY'
+                                : `Se puede corregir hasta entonces · plazo SUNAT ${formatDate(venceElPlazo(c.fecha_emision))}`}
                           </p>
                         )}
                       </td>
