@@ -9,7 +9,7 @@ import {
 import { toast } from 'sonner'
 import { createClient } from '@/lib/supabase/client'
 import { linkEnviarBoletaPago, esTelefonoPeruanoValido } from '@/lib/whatsapp'
-import CorregirPagoDialog, { type CobroACorregir } from './corregir-pago-dialog'
+import CorregirPagoDialog, { BuscarCobro, type CobroACorregir } from './corregir-pago-dialog'
 import { useOrigen } from '@/lib/use-origen'
 import { formatCurrency, formatDate, formatDatetime } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
@@ -39,6 +39,7 @@ export interface CajaSesionData {
 
 export interface CobroDia {
   id: string
+  numero: string | null
   cliente_id: string
   cliente_nombre: string
   cliente_telefono: string | null
@@ -198,7 +199,7 @@ export default function CajaClient({
       // 2) Cobros del día
       const { data: cobrosRaw } = await supabase
         .from('cobros')
-        .select(`id, cliente_id, cobrador_id, fecha, efectivo, yape, plin, transferencia, total, tipo, notas, created_at,
+        .select(`id, numero, cliente_id, cobrador_id, fecha, efectivo, yape, plin, transferencia, total, tipo, notas, created_at,
                  cliente_externo_nombre,
                  clientes(razon_social, telefono),
                  profiles!cobros_cobrador_id_fkey(full_name, role)`)
@@ -208,6 +209,7 @@ export default function CajaClient({
       setCobros(
         (cobrosRaw ?? []).map((c: any) => ({
           id: c.id,
+          numero: c.numero ?? null,
           cliente_id: c.cliente_id,
           cliente_nombre: c.clientes?.razon_social ?? c.cliente_externo_nombre ?? '—',
           cliente_telefono: c.clientes?.telefono ?? null,
@@ -868,10 +870,11 @@ export default function CajaClient({
         {/* Tab 1: Cobros de hoy */}
         <TabsContent value="cobros" className="mt-4">
           <Card className="border-gray-200 shadow-sm">
-            <CardHeader className="pb-2">
+            <CardHeader className="pb-2 flex flex-row items-center justify-between gap-2 flex-wrap space-y-0">
               <CardTitle className="text-base font-semibold text-gray-800">
                 Cobros del Día ({cobros.length})
               </CardTitle>
+              <BuscarCobro onElegir={(c) => setCorregirCobro(c)} />
             </CardHeader>
             <CardContent className="p-0">
               {cobros.length === 0 ? (
@@ -939,6 +942,15 @@ export default function CajaClient({
                             className="h-7 text-xs gap-1"
                           >
                             <Receipt className="w-3.5 h-3.5" /> Ver
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => setCorregirCobro(c)}
+                            className="h-7 text-xs"
+                            title="Corregir o anular este cobro"
+                          >
+                            ✏️ Corregir
                           </Button>
                           {(() => {
                             const waLink = origen && esTelefonoPeruanoValido(c.cliente_telefono)
@@ -1042,7 +1054,7 @@ export default function CajaClient({
                                   variant="outline"
                                   onClick={() => setCorregirCobro(c)}
                                   className="h-7 px-2 text-xs"
-                                  title="Corregir medio de pago (efectivo / Yape / Plin / transferencia)"
+                                  title="Corregir (monto, medio de pago, cliente) o anular este cobro"
                                   data-corregir-pago
                                 >
                                   ✏️
