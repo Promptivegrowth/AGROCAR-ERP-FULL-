@@ -145,11 +145,9 @@ export default function NuevoPedidoDialog({ open, onOpenChange, onCreated }: Pro
           .select('id, razon_social, ruc, dni, direccion, telefono, lista_precio_id, tipo_comprobante_preferido, estado')
           .eq('estado', 'activo')
           .order('razon_social'),
-        supabase
-          .from('profiles')
-          .select('id, full_name, role')
-          .eq('role', 'vendedor')
-          .order('full_name'),
+        // Por RPC: los permisos de profiles no dejan al facturador ver a otros
+        // usuarios y la lista le salía vacía (migración 126).
+        (supabase.rpc as any)('vendedores_activos'),
         supabase
           .from('productos')
           .select('id, codigo, nombre, descripcion, tiene_lote, tiene_vencimiento, activo, stock(cantidad), unidades_medida(simbolo)')

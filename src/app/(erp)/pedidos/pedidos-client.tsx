@@ -161,7 +161,7 @@ export default function PedidosClient({ pedidosIniciales, desde, hasta }: {
     // Releer cabecera (totales pueden haber cambiado)
     const { data: ped } = await (supabase as any)
       .from('pedidos')
-      .select('id, subtotal, igv, descuento_monto, descuento_porcentaje, total, incluir_igv, estado, requiere_reposicion')
+      .select('id, subtotal, igv, descuento_monto, descuento_porcentaje, total, incluir_igv, estado, requiere_reposicion, fecha_despacho, vendedor_id, profiles!pedidos_vendedor_id_fkey(id, full_name)')
       .eq('id', selected.id)
       .maybeSingle()
     if (ped) {
@@ -702,7 +702,13 @@ export default function PedidosClient({ pedidosIniciales, desde, hasta }: {
                 </div>
 
                 <div className="grid grid-cols-2 gap-3 text-sm">
-                  <InfoRow icon={User} label="Vendedor" value={selected.profiles?.full_name ?? '—'} />
+                  <VendedorPedido
+                    pedidoId={selected.id}
+                    estado={selected.estado}
+                    vendedorId={selected.profiles?.id ?? null}
+                    vendedorNombre={selected.profiles?.full_name ?? null}
+                    onCambio={recargarPedidoActual}
+                  />
                   <InfoRow icon={Calendar} label="Fecha pedido" value={formatDate(selected.fecha_pedido)} />
                   {editMode ? (
                     <div className="flex items-start gap-2">
@@ -1153,6 +1159,82 @@ function KpiCard({ label, value, color }: { label: string; value: number; color:
         <p className={`text-2xl font-bold mt-1 ${bg.split(' ')[1]}`}>{value}</p>
       </CardContent>
     </Card>
+  )
+}
+
+/**
+ * Vendedor del pedido, asignable después de guardado (Daniel, 05/10): los
+ * pedidos cargados en la oficina quedaban sin vendedor. Las reglas —quién puede,
+ * en qué estado, liquidaciones de comisión— las pone asignar_vendedor_pedido.
+ */
+function VendedorPedido({ pedidoId, estado, vendedorId, vendedorNombre, onCambio }: {
+  pedidoId: string
+  estado: string
+  vendedorId: string | null
+  vendedorNombre: string | null
+  onCambio: () => Promise<void>
+}) {
+  const supabase = createClient()
+  const [editando, setEditando] = useState(false)
+  const [vendedores, setVendedores] = useState<{ id: string; full_name: string }[]>([])
+  const [elegido, setElegido] = useState(vendedorId ?? '')
+  const [guardando, setGuardando] = useState(false)
+
+  useEffect(() => { setElegido(vendedorId ?? ''); setEditando(false) }, [pedidoId, vendedorId])
+  useEffect(() => {
+    if (!editando || vendedores.length) return
+    ;(async () => {
+      const { data } = await (supabase.rpc as any)('vendedores_activos')
+      setVendedores((data ?? []) as { id: string; full_name: string }[])
+    })()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editando])
+
+  const guardar = async () => {
+    if (!elegido || elegido === vendedorId) { setEditando(false); return }
+    setGuardando(true)
+    const { data, error } = await (supabase.rpc as any)('asignar_vendedor_pedido', {
+      p_pedido_id: pedidoId, p_vendedor_id: elegido,
+    })
+    setGuardando(false)
+    if (error) { toast.error('No se pudo asignar el vendedor', { description: error.message, duration: 8000 }); return }
+    toast.success(data?.antes ? `Vendedor cambiado: ${data.antes} → ${data.ahora}` : `Vendedor asignado: ${data?.ahora ?? ''}`)
+    setEditando(false)
+    await onCambio()
+  }
+
+  return (
+    <div className="flex items-start gap-2" data-vendedor-pedido>
+      <User className="w-4 h-4 text-gray-400 mt-0.5 shrink-0" />
+      <div className="min-w-0 flex-1">
+        <p className="text-xs text-gray-500">Vendedor</p>
+        {editando ? (
+          <div className="flex flex-wrap items-center gap-1.5">
+            <select value={elegido} onChange={(e) => setElegido(e.target.value)} disabled={guardando}
+              className="h-8 w-full max-w-[200px] rounded-md border border-gray-300 bg-white px-1.5 text-xs" aria-label="Vendedor">
+              <option value="">Elegir vendedor…</option>
+              {vendedores.map((v) => <option key={v.id} value={v.id}>{v.full_name}</option>)}
+            </select>
+            <Button size="sm" onClick={guardar} disabled={guardando || !elegido || elegido === vendedorId}
+              className="h-8 bg-[#FBE600] text-black hover:bg-[#E5D100] text-xs font-semibold">
+              {guardando ? 'Guardando…' : 'Guardar'}
+            </Button>
+            <button type="button" onClick={() => { setEditando(false); setElegido(vendedorId ?? '') }}
+              className="text-xs text-gray-500 hover:underline" disabled={guardando}>cancelar</button>
+          </div>
+        ) : (
+          <p className="text-sm text-gray-800">
+            {vendedorNombre ?? <span className="text-amber-700">Sin vendedor</span>}
+            {estado !== 'cancelado' && (
+              <button type="button" onClick={() => setEditando(true)} data-asignar-vendedor
+                className="ml-2 text-xs font-semibold text-blue-700 hover:underline">
+                {vendedorNombre ? 'Cambiar' : 'Asignar'}
+              </button>
+            )}
+          </p>
+        )}
+      </div>
+    </div>
   )
 }
 
