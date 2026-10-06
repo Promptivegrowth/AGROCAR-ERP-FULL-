@@ -122,7 +122,32 @@ export default function ComprasPage() {
   const watchItems = watch('items')
   const watchProveedorId = watch('proveedor_id')
 
+  const cambiarTipoDocumento = (interno: boolean) => {
+    setDocInterno(interno)
+    if (interno) {
+      // El número lo pone la base; esto solo deja pasar la validación del formulario.
+      setValue('numero_factura', 'DI (automático)')
+      setIncluirIgv(false)
+      if (!watchProveedorId) {
+        const generico = proveedores.find((p: any) => p.razon_social === 'VARIOS - SIN COMPROBANTE')
+        if (generico) {
+          setValue('proveedor_id', generico.id)
+          setProveedorSearch(generico.razon_social)
+        }
+      }
+    } else {
+      setValue('numero_factura', '')
+      setIncluirIgv(true)
+    }
+  }
+
   const [incluirIgv, setIncluirIgv] = useState(true)
+  /*
+   * Documento interno (Daniel, 05/10): mercadería que llega sin factura. Se
+   * numera sola (DI-000001), va sin IGV y no se informa a SUNAT; la base lo
+   * hace cumplir (migración 127), esto solo lo presenta.
+   */
+  const [docInterno, setDocInterno] = useState(false)
   const [modoIngreso, setModoIngreso] = useState<'unitario' | 'total'>('unitario')
 
   // Cargar última preferencia del usuario
@@ -175,7 +200,7 @@ export default function ComprasPage() {
     const [{ data: c, count }, { data: p }, { data: pr }] = await Promise.all([
       supabase
         .from('compras')
-        .select(`id, numero_factura_proveedor, fecha, total, estado, proveedores(razon_social)`, { count: 'exact' })
+        .select(`id, numero_factura_proveedor, documento_interno, fecha, total, estado, proveedores(razon_social)`, { count: 'exact' })
         .order('fecha', { ascending: false })
         .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1),
       supabase.from('proveedores').select('id, razon_social, ruc').eq('activo', true).order('razon_social'),
@@ -233,7 +258,8 @@ export default function ComprasPage() {
       // 1. Insertar cabecera en compras (estado='registrada', sin impactar almacén)
       const { data: compra, error } = await (supabase.from('compras') as any).insert({
         proveedor_id: data.proveedor_id,
-        numero_factura_proveedor: data.numero_factura,
+        numero_factura_proveedor: docInterno ? null : data.numero_factura,
+        documento_interno: docInterno,
         fecha: data.fecha,
         metodo_valorizacion: data.metodo_valorizacion,
         subtotal: subtotalCalc,
@@ -266,11 +292,12 @@ export default function ComprasPage() {
       const { error: itemsError } = await (supabase.from('compras_items') as any).insert(itemsToInsert)
       if (itemsError) throw new Error(itemsError.message)
 
-      toast.success('Compra registrada', {
-        description: `Factura ${data.numero_factura} · Total ${formatCurrency(subtotalCalc + igvCalc)} · Estado: Registrada (pendiente validación)`,
+      toast.success(docInterno ? 'Documento interno registrado' : 'Compra registrada', {
+        description: `${docInterno ? 'Documento' : 'Factura'} ${compra.numero_factura_proveedor ?? data.numero_factura} · Total ${formatCurrency(subtotalCalc + igvCalc)} · Estado: Registrada (pendiente validación)`,
       })
       setDialogOpen(false)
       setIncluirIgv(true)
+      setDocInterno(false)
       reset()
       loadData()
     } catch (err: any) {
@@ -288,10 +315,10 @@ export default function ComprasPage() {
     setDetailItems([])
     try {
       const [{ data: compra }, { data: items }] = await Promise.all([
-        supabase
+        (supabase as any)
           .from('compras')
           .select(`
-            id, numero_factura_proveedor, fecha, total, subtotal, igv, incluir_igv,
+            id, numero_factura_proveedor, documento_interno, fecha, total, subtotal, igv, incluir_igv,
             metodo_valorizacion, moneda, estado, created_at, proveedor_id,
             proveedores(id, razon_social, ruc, pais)
           `)
@@ -342,7 +369,8 @@ export default function ComprasPage() {
       const { error } = await (supabase.from('compras') as any)
         .update({
           proveedor_id: editForm.proveedor_id,
-          numero_factura_proveedor: editForm.numero_factura.trim(),
+          // El número de un documento interno lo puso la base y no se cambia.
+          ...(detailCompra.documento_interno ? {} : { numero_factura_proveedor: editForm.numero_factura.trim() }),
           fecha: editForm.fecha,
           metodo_valorizacion: editForm.metodo_valorizacion,
           incluir_igv: editForm.incluir_igv,
@@ -557,7 +585,7 @@ export default function ComprasPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Compras</h1>
-          <p className="text-sm text-gray-500 mt-0.5">Registro de compras y facturas de proveedores</p>
+          <p className="text-sm text-gray-500 mt-0.5">Registro de compras: facturas de proveedores y documentos internos</p>
         </div>
         <Button onClick={() => setDialogOpen(true)} className="bg-[#FBE600] hover:bg-[#E5D100] text-black font-semibold gap-2">
           <Plus className="w-4 h-4" /> Nueva Compra
@@ -580,7 +608,7 @@ export default function ComprasPage() {
               <table className="w-full text-sm">
                 <thead className="border-b border-gray-100 bg-gray-50/50">
                   <tr>
-                    {['Factura', 'Proveedor', 'Fecha', 'Total', 'Estado', 'Acciones'].map((h) => (
+                    {['Documento', 'Proveedor', 'Fecha', 'Total', 'Estado', 'Acciones'].map((h) => (
                       <th key={h} className="text-left py-3 px-4 text-xs font-semibold text-gray-500 uppercase tracking-wide">
                         {h}
                       </th>
@@ -592,7 +620,14 @@ export default function ComprasPage() {
                     const estadoCfg = ESTADO_CONFIG[c.estado] ?? ESTADO_CONFIG.activo
                     return (
                       <tr key={c.id} className="hover:bg-gray-50/50 transition-colors">
-                        <td className="py-3 px-4 font-mono text-xs text-gray-600">{c.numero_factura_proveedor ?? '—'}</td>
+                        <td className="py-3 px-4 font-mono text-xs text-gray-600">
+                          {c.numero_factura_proveedor ?? '—'}
+                          {(c as any).documento_interno && (
+                            <span className="ml-1.5 rounded bg-amber-100 px-1.5 py-0.5 font-sans text-[10px] font-semibold text-amber-800" title="Sin comprobante del proveedor: sin IGV y fuera del Registro de Compras">
+                              Interno
+                            </span>
+                          )}
+                        </td>
                         <td className="py-3 px-4 font-medium text-gray-900">{(c.proveedores as any)?.razon_social ?? '—'}</td>
                         <td className="py-3 px-4 text-gray-500 text-xs">
                           {c.fecha ? formatDate(c.fecha) : '—'}
@@ -646,6 +681,21 @@ export default function ComprasPage() {
             <DialogTitle>Registrar Nueva Compra</DialogTitle>
           </DialogHeader>
           <form onSubmit={handleSubmit(onSubmit as any)} className="space-y-5 mt-2">
+            <div data-tipo-documento>
+              <Label>Documento de la compra</Label>
+              <div className="mt-1 grid grid-cols-2 gap-2">
+                <button type="button" onClick={() => cambiarTipoDocumento(false)} data-tipo="factura"
+                  className={`rounded-lg border px-3 py-2 text-left text-sm ${!docInterno ? 'border-green-500 bg-green-50 font-semibold' : 'border-gray-200 hover:bg-gray-50'}`}>
+                  Factura del proveedor
+                  <span className="block text-[11px] font-normal text-gray-500">Con comprobante: IGV y Registro de Compras</span>
+                </button>
+                <button type="button" onClick={() => cambiarTipoDocumento(true)} data-tipo="interno"
+                  className={`rounded-lg border px-3 py-2 text-left text-sm ${docInterno ? 'border-amber-500 bg-amber-50 font-semibold' : 'border-gray-200 hover:bg-gray-50'}`}>
+                  Documento interno
+                  <span className="block text-[11px] font-normal text-gray-500">Sin factura: se numera solo (DI-…), sin IGV</span>
+                </button>
+              </div>
+            </div>
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <Label>Proveedor *</Label>
@@ -712,8 +762,12 @@ export default function ComprasPage() {
 
             <div className="grid grid-cols-3 gap-4">
               <div>
-                <Label>N° Factura Proveedor *</Label>
-                <Input {...register('numero_factura')} placeholder="F001-00001" className="mt-1" />
+                <Label>{docInterno ? 'N° Documento interno' : 'N° Factura Proveedor *'}</Label>
+                {docInterno ? (
+                  <Input value="Se asigna al guardar (DI-…)" disabled className="mt-1 font-mono text-xs" data-numero-interno />
+                ) : (
+                  <Input {...register('numero_factura')} placeholder="F001-00001" className="mt-1" />
+                )}
                 {errors.numero_factura && <p className="text-xs text-red-500 mt-1">{errors.numero_factura.message}</p>}
               </div>
               <div>
@@ -1003,6 +1057,12 @@ export default function ComprasPage() {
             </div>
 
             {/* Toggle IGV */}
+            {docInterno ? (
+              <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-[12px] text-amber-900" data-aviso-interno>
+                <b>Sin IGV.</b> Sin comprobante no hay crédito fiscal que recuperar: el costo de la mercadería es lo que se pagó.
+                Ingresa al almacén como cualquier compra, pero <b>no se informa a SUNAT</b> en el Registro de Compras.
+              </div>
+            ) : (
             <div className="flex items-center justify-between bg-blue-50 border border-blue-100 rounded-lg px-4 py-3">
               <div>
                 <p className="text-sm font-medium text-blue-900">Aplica IGV (18%)</p>
@@ -1016,6 +1076,7 @@ export default function ComprasPage() {
                 <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${incluirIgv ? 'translate-x-6' : 'translate-x-1'}`} />
               </button>
             </div>
+            )}
 
             {/* Totales */}
             <div className="bg-gray-50 rounded-lg p-4 space-y-2">
@@ -1079,10 +1140,11 @@ export default function ComprasPage() {
                       </Select>
                     </div>
                     <div>
-                      <Label className="text-xs">N° Factura *</Label>
+                      <Label className="text-xs">{detailCompra.documento_interno ? 'N° Documento interno' : 'N° Factura *'}</Label>
                       <Input
                         value={editForm.numero_factura}
                         onChange={(e) => setEditForm((f) => ({ ...f, numero_factura: e.target.value }))}
+                        disabled={!!detailCompra.documento_interno}
                         className="mt-1 h-9 text-sm font-mono"
                       />
                     </div>
@@ -1107,6 +1169,7 @@ export default function ComprasPage() {
                       </Select>
                     </div>
                   </div>
+                  {!detailCompra.documento_interno && (
                   <div className="flex items-center justify-between bg-white border border-amber-200 rounded px-3 py-2">
                     <div>
                       <p className="text-xs font-medium text-gray-900">Aplica IGV (18%)</p>
@@ -1120,6 +1183,7 @@ export default function ComprasPage() {
                       <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${editForm.incluir_igv ? 'translate-x-5' : 'translate-x-1'}`} />
                     </button>
                   </div>
+                  )}
                 </div>
               ) : (
                 <div className="grid grid-cols-2 gap-4">
@@ -1136,8 +1200,13 @@ export default function ComprasPage() {
                   <div className="flex items-start gap-2.5">
                     <FileText className="w-4 h-4 text-gray-400 mt-0.5 shrink-0" />
                     <div className="min-w-0">
-                      <p className="text-[11px] text-gray-500 uppercase tracking-wide">N° Factura</p>
+                      <p className="text-[11px] text-gray-500 uppercase tracking-wide">
+                        {detailCompra.documento_interno ? 'Documento interno' : 'N° Factura'}
+                      </p>
                       <p className="text-sm font-mono text-gray-900">{detailCompra.numero_factura_proveedor ?? '—'}</p>
+                      {detailCompra.documento_interno && (
+                        <p className="text-[10px] text-amber-700">Sin comprobante · sin IGV · fuera del Registro de Compras</p>
+                      )}
                     </div>
                   </div>
                   <div className="flex items-start gap-2.5">
