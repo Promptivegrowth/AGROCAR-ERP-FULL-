@@ -66,7 +66,14 @@ async function main() {
     check('La función interna no se puede llamar desde afuera', !!r4.error, r4.error?.message?.slice(0, 60))
 
     // 2) La pantalla, sin guardar.
-    const { data: ultimo } = await admin.from('cobros').select('numero, total, clientes(razon_social)').not('cliente_id', 'is', null).order('created_at', { ascending: false }).limit(1).single()
+    // Un cobro que todavía se pueda corregir (sin caja cerrada) y uno que no.
+    const { data: recientes } = await admin.from('cobros')
+      .select('numero, total, cliente_id, caja_movimientos(caja_sesiones(estado))')
+      .not('cliente_id', 'is', null).order('created_at', { ascending: false }).limit(300)
+    const cerrado = (c: any) => (c.caja_movimientos ?? []).some((m: any) => m.caja_sesiones && m.caja_sesiones.estado !== 'abierta')
+    const ultimo = (recientes ?? []).find((c: any) => !cerrado(c))
+    const enCajaCerrada = (recientes ?? []).find((c: any) => cerrado(c))
+    if (!ultimo) console.log('  info  todos los cobros recientes están en cajas cerradas: se prueba solo el bloqueo')
     browser = await puppeteer.launch({ executablePath: CHROME, headless: true, args: ['--no-sandbox'] })
     const page = await browser.newPage()
     await page.setViewport({ width: 1440, height: 950 })
@@ -79,6 +86,21 @@ async function main() {
     const boton = await page.$('[data-buscar-cobro]')
     check('Caja muestra "Corregir un cobro de otro día"', !!boton)
     await boton!.click(); await esperar(1000)
+    if (enCajaCerrada) {
+      await page.type('input[placeholder^="N° de recibo"]', enCajaCerrada.numero)
+      await esperar(3000)
+      const bloqueado = await page.$eval(`xpath/.//button[contains(., "${enCajaCerrada.numero}")]`, (b) => (b as HTMLButtonElement).disabled && (b.textContent ?? '').includes('caja cerrada')).catch(() => false)
+      check('Un cobro de caja cerrada aparece bloqueado', bloqueado, enCajaCerrada.numero)
+      await page.$eval('input[placeholder^="N° de recibo"]', (e) => {
+        const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!
+        set.call(e, ''); e.dispatchEvent(new Event('input', { bubbles: true }))
+      })
+      await esperar(500)
+    }
+    if (!ultimo) {
+      check('Sin errores de JavaScript', errores.length === 0, errores[0] ?? '')
+      return
+    }
     await page.type('input[placeholder^="N° de recibo"]', ultimo.numero)
     await esperar(3000)
     const fila = await page.$('xpath/.//button[contains(., "' + ultimo.numero + '")]')

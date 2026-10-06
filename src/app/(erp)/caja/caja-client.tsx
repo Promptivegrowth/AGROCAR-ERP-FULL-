@@ -10,6 +10,7 @@ import { toast } from 'sonner'
 import { createClient } from '@/lib/supabase/client'
 import { linkEnviarBoletaPago, esTelefonoPeruanoValido } from '@/lib/whatsapp'
 import CorregirPagoDialog, { BuscarCobro, type CobroACorregir } from './corregir-pago-dialog'
+import AcumuladoCaja from './acumulado-caja'
 import { useOrigen } from '@/lib/use-origen'
 import { formatCurrency, formatDate, formatDatetime } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
@@ -111,12 +112,22 @@ function formatDuration(startISO: string, endISO?: string | null): string {
   return `${hours}h ${minutes}m`
 }
 
+/**
+ * Hora de Lima, "05:21 p. m.", armada a mano.
+ *
+ * toLocaleTimeString('es-PE') no escribe igual en el servidor (Node) que en el
+ * navegador —cambian los espacios de "p. m."—, y esa diferencia hacía que React
+ * descartara todo lo que mandó el servidor y redibujara Caja entera al abrirla
+ * (el aviso de hidratación). Las horas y minutos en números sí salen iguales.
+ */
+const HORA_LIMA = new Intl.DateTimeFormat('en-US', {
+  timeZone: 'America/Lima', hour: '2-digit', minute: '2-digit', hour12: false,
+})
 function formatHora(iso: string): string {
-  return new Date(iso).toLocaleTimeString('es-PE', {
-    hour: '2-digit',
-    minute: '2-digit',
-    timeZone: 'America/Lima',
-  })
+  const partes = HORA_LIMA.formatToParts(new Date(iso))
+  const h = Number(partes.find((p) => p.type === 'hour')?.value ?? 0) % 24
+  const m = partes.find((p) => p.type === 'minute')?.value ?? '00'
+  return `${String(h % 12 || 12).padStart(2, '0')}:${m} ${h < 12 ? 'a. m.' : 'p. m.'}`
 }
 
 // ─── Componente principal ───────────────────────────────────────────────────
@@ -628,7 +639,7 @@ export default function CajaClient({
               <span className="absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75 animate-ping" />
               <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500" />
             </span>
-            <span>En vivo · actualizado {formatHora(ultimaActualizacion.toISOString())}</span>
+            <span suppressHydrationWarning>En vivo · actualizado {formatHora(ultimaActualizacion.toISOString())}</span>
           </div>
           <Button
             variant="outline"
@@ -823,7 +834,7 @@ export default function CajaClient({
 
       {/* C) Tabs */}
       <Tabs defaultValue="cobros" className="w-full">
-        <TabsList className="grid grid-cols-2 lg:grid-cols-4 w-full h-auto">
+        <TabsList className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 w-full h-auto">
           <TabsTrigger value="cobros" className="text-xs sm:text-sm">
             Cobros de hoy
           </TabsTrigger>
@@ -835,6 +846,9 @@ export default function CajaClient({
           </TabsTrigger>
           <TabsTrigger value="arqueo" className="text-xs sm:text-sm">
             Arqueo
+          </TabsTrigger>
+          <TabsTrigger value="acumulado" className="text-xs sm:text-sm" data-tab-acumulado>
+            Acumulado por fechas
           </TabsTrigger>
         </TabsList>
 
@@ -1483,9 +1497,7 @@ export default function CajaClient({
                           const items: Mov[] = []
                           cobros.forEach((c) => {
                             items.push({
-                              hora: new Date(c.created_at).toLocaleTimeString('es-PE', {
-                                hour: '2-digit', minute: '2-digit', timeZone: 'America/Lima',
-                              }),
+                              hora: formatHora(c.created_at),
                               tipo: 'ingreso',
                               doc: (c as any).numero ?? '—',
                               desc: c.cliente_nombre,
@@ -1495,9 +1507,7 @@ export default function CajaClient({
                           })
                           movimientos.filter((m) => m.tipo === 'egreso').forEach((m) => {
                             items.push({
-                              hora: new Date(m.created_at).toLocaleTimeString('es-PE', {
-                                hour: '2-digit', minute: '2-digit', timeZone: 'America/Lima',
-                              }),
+                              hora: formatHora(m.created_at),
                               tipo: 'egreso',
                               doc: '—',
                               desc: `${m.categoria ?? ''} · ${m.descripcion ?? '—'}`,
@@ -1551,6 +1561,11 @@ export default function CajaClient({
               </div>
             </CardContent>
           </Card>
+        </TabsContent>
+
+        {/* Cobranza entre dos fechas por medio de pago (Daniel, 05/10). */}
+        <TabsContent value="acumulado" className="mt-4">
+          <AcumuladoCaja />
         </TabsContent>
       </Tabs>
 

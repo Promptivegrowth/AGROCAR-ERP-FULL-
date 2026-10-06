@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase/client'
 import { formatCurrency } from '@/lib/utils'
 import { hoyLima } from '@/lib/fechas-pe'
 import { EMPRESA } from '@/lib/empresa'
+import { traerTodo } from '@/lib/supabase/paginar'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -82,6 +83,9 @@ export default function ReporteCobrosPage() {
   const cargar = useCallback(async () => {
     setLoading(true)
     try {
+      // Paginado: con ~70 cobros por día, un mes pasa las mil filas que
+      // Supabase devuelve como máximo, y los totales salían cortos sin avisar.
+      const consulta = () => {
       let q = (supabase as any)
         .from('cobros')
         .select(`
@@ -97,9 +101,13 @@ export default function ReporteCobrosPage() {
         .order('numero', { ascending: true })
 
       if (cobradorId !== 'todos') q = q.eq('cobrador_id', cobradorId)
+      return q
+      }
 
-      const { data, error } = await q
-      if (error) {
+      let data: any[] = []
+      try {
+        data = await traerTodo<any>((a, b) => consulta().order('id').range(a, b))
+      } catch (error) {
         console.error(error)
         setCobros([])
         return
