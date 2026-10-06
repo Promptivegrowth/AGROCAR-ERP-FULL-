@@ -64,7 +64,6 @@ export default function AjustesInventarioPage() {
   const [productos, setProductos] = useState<Producto[]>([])
   const [loading, setLoading] = useState(true)
   const [userRole, setUserRole] = useState<string | null>(null)
-  const [userId, setUserId] = useState<string | null>(null)
   const [dialogOpen, setDialogOpen] = useState(false)
 
   // Formulario
@@ -74,6 +73,8 @@ export default function AjustesInventarioPage() {
   const [motivo, setMotivo] = useState('')
   const [motivoCustom, setMotivoCustom] = useState('')
   const [notas, setNotas] = useState('')
+  // Solo entradas: lo que costó cada unidad (en producción, el costo de producirla).
+  const [costoUnitario, setCostoUnitario] = useState('')
   const [enviando, setEnviando] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
   const [mensajeExito, setMensajeExito] = useState<string | null>(null)
@@ -86,7 +87,6 @@ export default function AjustesInventarioPage() {
       setLoading(true)
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) return
-      setUserId(user.id)
 
       const { data: profile } = await supabase
         .from('profiles')
@@ -107,6 +107,8 @@ export default function AjustesInventarioPage() {
       .from('movimientos_stock')
       .select('*, productos(nombre, descripcion, codigo), profiles!created_by(full_name)')
       .in('tipo', ['ajuste', 'entrada', 'salida'])
+      // Solo los ajustes: antes salían también las entradas de compras y las salidas de ventas.
+      .eq('referencia_tipo', 'ajuste')
       .order('created_at', { ascending: false })
       .limit(50)
 
@@ -134,8 +136,9 @@ export default function AjustesInventarioPage() {
   useEffect(() => {
     const cantNum = parseFloat(cantidad)
     const esRolRestringido = userRole !== 'administrador' && userRole !== 'gerente'
-    setRequiereAprobacion(esRolRestringido && cantNum > 50)
-  }, [cantidad, userRole])
+    // La producción del día es grande por naturaleza (cientos de hielos): no se marca.
+    setRequiereAprobacion(esRolRestringido && cantNum > 50 && motivo !== 'Producción')
+  }, [cantidad, userRole, motivo])
 
   function resetForm() {
     setProductoId('')
@@ -144,6 +147,7 @@ export default function AjustesInventarioPage() {
     setMotivo('')
     setMotivoCustom('')
     setNotas('')
+    setCostoUnitario('')
     setFormError(null)
   }
 
@@ -162,23 +166,21 @@ export default function AjustesInventarioPage() {
 
     try {
       const motivoFinal = motivo === 'Otro' ? (motivoCustom || 'Sin especificar') : motivo
-      const cantidadFinal = tipo === 'salida'
-        ? -Math.abs(parseFloat(cantidad))
-        : Math.abs(parseFloat(cantidad))
-
       const notasFinal = [
-        `Motivo: ${motivoFinal}`,
         notas || '',
         requiereAprobacion ? '[REQUIERE APROBACIÓN ADMIN]' : '',
       ].filter(Boolean).join(' | ')
+      const costo = tipo === 'entrada' && costoUnitario.trim() !== '' ? parseFloat(costoUnitario) : null
 
-      const { error } = await supabase.from('movimientos_stock').insert({
-        producto_id: productoId,
-        tipo: tipo === 'entrada' ? 'entrada' : 'salida',
-        cantidad: cantidadFinal,
-        notas: notasFinal,
-        created_by: userId,
-        referencia_tipo: 'ajuste',
+      // Movimiento y stock juntos, en la base (migración 129). Antes se insertaba
+      // solo el movimiento y el stock no cambiaba.
+      const { data: res, error } = await (supabase.rpc as any)('registrar_ajuste_inventario', {
+        p_producto_id: productoId,
+        p_tipo: tipo,
+        p_cantidad: Math.abs(parseFloat(cantidad)),
+        p_motivo: motivoFinal,
+        p_notas: notasFinal || null,
+        p_costo_unitario: costo,
       })
 
       if (error) {
@@ -187,9 +189,10 @@ export default function AjustesInventarioPage() {
         return
       }
 
+      const stockNuevo = res?.stock != null ? ` · Stock ahora: ${Number(res.stock).toLocaleString('es-PE')}` : ''
       const mensaje = requiereAprobacion
-        ? 'Ajuste registrado y enviado para aprobación del administrador'
-        : 'Ajuste de inventario registrado correctamente'
+        ? `Ajuste registrado y marcado para revisión del administrador${stockNuevo}`
+        : `Ajuste de inventario registrado${stockNuevo}`
       setMensajeExito(mensaje)
       toast.success('Ajuste registrado', { description: mensaje })
       setDialogOpen(false)
@@ -394,7 +397,7 @@ export default function AjustesInventarioPage() {
               {requiereAprobacion && (
                 <p className="text-xs text-amber-700 flex items-center gap-1">
                   <AlertCircle className="w-3.5 h-3.5" />
-                  Cantidad mayor a 50 unidades requiere aprobación del administrador
+                  Más de 50 unidades: queda marcado para revisión del administrador
                 </p>
               )}
             </div>
@@ -420,6 +423,20 @@ export default function AjustesInventarioPage() {
                 />
               )}
             </div>
+
+            {/* Costo unitario (solo entradas) */}
+            {tipo === 'entrada' && (
+              <div className="space-y-1.5" data-costo-ajuste>
+                <Label>Costo unitario (opcional)</Label>
+                <Input type="number" min="0" step="0.01" placeholder="Vacío = no cambia el costo"
+                  value={costoUnitario} onChange={(e) => setCostoUnitario(e.target.value)} />
+                <p className="text-[11px] text-gray-500">
+                  {motivo === 'Producción'
+                    ? 'Lo que cuesta producir una unidad (insumos, envase). Se promedia con el costo actual, como una compra.'
+                    : 'Si lo indicas, se promedia con el costo actual. Si lo dejas vacío, el costo no cambia.'}
+                </p>
+              </div>
+            )}
 
             {/* Notas */}
             <div className="space-y-1.5">
