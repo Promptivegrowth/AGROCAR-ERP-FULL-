@@ -206,7 +206,10 @@ export default function EstadoSunatPage() {
         .in('tipo', ['factura', 'boleta'])
         .gte('fecha_emision', `${periodo}-01`).lte('fecha_emision', finDePeriodo(periodo))
         .order('fecha_emision', { ascending: false })
-        .order('serie').order('numero', { ascending: false })
+        // Dentro del día, primero las facturas (F002 antes que B002): ordenadas
+        // al revés quedaban debajo de 60 o 70 boletas y Daniel creyó que no
+        // aparecían (06/10).
+        .order('serie', { ascending: false }).order('numero', { ascending: false })
         .range(desde, hasta))
       if (estaCarga !== ultimaCarga.current) return
       setComps(filas)
@@ -387,9 +390,9 @@ export default function EstadoSunatPage() {
                 onChange={(e) => setTipo(e.target.value as typeof tipo)}
                 className="h-9 rounded-md border border-gray-300 bg-white px-2 text-sm"
               >
-                <option value="todos">Facturas y boletas</option>
-                <option value="factura">Solo facturas</option>
-                <option value="boleta">Solo boletas</option>
+                <option value="todos">Facturas y boletas ({comps.length})</option>
+                <option value="factura">Solo facturas ({comps.filter((c) => c.tipo === 'factura').length})</option>
+                <option value="boleta">Solo boletas ({comps.filter((c) => c.tipo === 'boleta').length})</option>
               </select>
             </div>
             <div className="flex-1 min-w-[200px] relative">
