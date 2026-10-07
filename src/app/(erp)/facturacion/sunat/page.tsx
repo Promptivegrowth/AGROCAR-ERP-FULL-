@@ -38,6 +38,7 @@ const COLUMNAS = `
   id, serie, numero, tipo, fecha_emision, total, estado,
   enviado_sunat, sunat_estado, sunat_codigo, sunat_mensaje, sunat_observaciones,
   sunat_modo, sunat_enviado_at, sunat_intentos, sunat_verificado_at, sunat_verificacion,
+  sunat_retenido_motivo,
   clientes(razon_social, ruc, dni)
 `
 
@@ -56,6 +57,8 @@ const finDePeriodo = (p: string) => {
 
 interface Comp {
   id: string
+  /** Nota de la base; en las 24 facturas del 01-02/10 dice de qué fecha se cambiaron (migración 132). */
+  sunat_retenido_motivo?: string | null
   serie: string
   numero: string
   tipo: string
@@ -453,7 +456,15 @@ export default function EstadoSunatPage() {
                         <p className="font-mono font-semibold">{c.serie}-{c.numero}</p>
                         <p className="text-[11px] text-gray-500 capitalize">{c.tipo}</p>
                       </td>
-                      <td className="py-2 pr-3 whitespace-nowrap">{formatDate(c.fecha_emision)}</td>
+                      <td className="py-2 pr-3 whitespace-nowrap">
+                        {formatDate(c.fecha_emision)}
+                        {/* Las 24 facturas del 01-02/10 se declararon con fecha 03/10 por indicación de SUNAT. */}
+                        {c.sunat_retenido_motivo?.startsWith('Fecha de emisión cambiada') && (
+                          <p className="text-[10px] text-amber-700" title={c.sunat_retenido_motivo}>
+                            Antes {c.sunat_retenido_motivo.match(/de (\d{2}\/\d{2}\/\d{4})/)?.[1] ?? ''} · cambiada por SUNAT
+                          </p>
+                        )}
+                      </td>
                       <td className="py-2 pr-3 max-w-[220px]">
                         <p className="truncate">{c.clientes?.razon_social ?? '—'}</p>
                         <p className="text-[11px] text-gray-500">{c.clientes?.ruc || c.clientes?.dni || ''}</p>
