@@ -107,8 +107,10 @@ export async function calcularUtilidad(
       .range(a, b)),
     traerTodo<any>((a, b) => supabase
       .from('compras_items')
-      .select('id, producto_id, cantidad, precio_unitario, compras!inner(fecha, estado, subtotal, total)')
+      .select('id, producto_id, cantidad, precio_unitario, compras!inner(fecha, estado, subtotal, total, regulariza_internos)')
       .eq('compras.estado', 'aplicada')
+      // La factura que regulariza documentos internos no trae mercadería: ya entró con el interno.
+      .eq('compras.regulariza_internos', false)
       .lte('compras.fecha', hasta)
       .order('id')
       .range(a, b)),

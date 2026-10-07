@@ -148,6 +148,17 @@ export default function ComprasPage() {
    * hace cumplir (migración 127), esto solo lo presenta.
    */
   const [docInterno, setDocInterno] = useState(false)
+  // Proveedores que entregan con documento interno: su factura mensual se
+  // registra desde la liquidación, no como compra (sumaría el stock dos veces).
+  const [provConInternos, setProvConInternos] = useState<Set<string>>(new Set())
+  useEffect(() => {
+    ;(async () => {
+      const { data } = await (supabase.rpc as any)('proveedores_con_internos')
+      setProvConInternos(new Set(((data ?? []) as any[])
+        .filter((p) => p.con_internos || p.ruc === '20602230792').map((p) => p.id)))
+    })()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
   const [modoIngreso, setModoIngreso] = useState<'unitario' | 'total'>('unitario')
 
   // Cargar última preferencia del usuario
@@ -200,7 +211,7 @@ export default function ComprasPage() {
     const [{ data: c, count }, { data: p }, { data: pr }] = await Promise.all([
       supabase
         .from('compras')
-        .select(`id, numero_factura_proveedor, documento_interno, fecha, total, estado, proveedores(razon_social)`, { count: 'exact' })
+        .select(`id, numero_factura_proveedor, documento_interno, regulariza_internos, fecha, total, estado, proveedores(razon_social)`, { count: 'exact' })
         .order('fecha', { ascending: false })
         .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1),
       supabase.from('proveedores').select('id, razon_social, ruc').eq('activo', true).order('razon_social'),
@@ -318,7 +329,7 @@ export default function ComprasPage() {
         (supabase as any)
           .from('compras')
           .select(`
-            id, numero_factura_proveedor, documento_interno, fecha, total, subtotal, igv, incluir_igv,
+            id, numero_factura_proveedor, documento_interno, regulariza_internos, fecha, total, subtotal, igv, incluir_igv,
             metodo_valorizacion, moneda, estado, created_at, proveedor_id,
             proveedores(id, razon_social, ruc, pais)
           `)
@@ -587,9 +598,16 @@ export default function ComprasPage() {
           <h1 className="text-2xl font-bold text-gray-900">Compras</h1>
           <p className="text-sm text-gray-500 mt-0.5">Registro de compras: facturas de proveedores y documentos internos</p>
         </div>
-        <Button onClick={() => setDialogOpen(true)} className="bg-[#FBE600] hover:bg-[#E5D100] text-black font-semibold gap-2">
-          <Plus className="w-4 h-4" /> Nueva Compra
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <a href="/almacen/compras/liquidacion"
+            className="inline-flex items-center gap-2 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-800 hover:bg-gray-50"
+            title="Cierre de mes: lo que el proveedor debe facturar por lo vendido con factura y boleta">
+            Liquidación de internos
+          </a>
+          <Button onClick={() => setDialogOpen(true)} className="bg-[#FBE600] hover:bg-[#E5D100] text-black font-semibold gap-2">
+            <Plus className="w-4 h-4" /> Nueva Compra
+          </Button>
+        </div>
       </div>
 
       <Card className="border-gray-200 shadow-sm">
@@ -625,6 +643,11 @@ export default function ComprasPage() {
                           {(c as any).documento_interno && (
                             <span className="ml-1.5 rounded bg-amber-100 px-1.5 py-0.5 font-sans text-[10px] font-semibold text-amber-800" title="Sin comprobante del proveedor: sin IGV y fuera del Registro de Compras">
                               Interno
+                            </span>
+                          )}
+                          {(c as any).regulariza_internos && (
+                            <span className="ml-1.5 rounded bg-blue-100 px-1.5 py-0.5 font-sans text-[10px] font-semibold text-blue-800" title="Factura mensual que regulariza documentos internos: no movió stock">
+                              Regulariza
                             </span>
                           )}
                         </td>
@@ -696,6 +719,13 @@ export default function ComprasPage() {
                 </button>
               </div>
             </div>
+            {!docInterno && watchProveedorId && provConInternos.has(watchProveedorId) && (
+              <div className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-[12px] text-blue-900" data-aviso-regulariza>
+                Este proveedor entrega con documento interno. Si esta es <b>su factura mensual</b> por lo vendido con factura y boleta,
+                regístrala desde <a href="/almacen/compras/liquidacion" className="font-semibold underline">Liquidación de internos</a>:
+                aquí sumaría el stock por segunda vez.
+              </div>
+            )}
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <Label>Proveedor *</Label>
@@ -1206,6 +1236,9 @@ export default function ComprasPage() {
                       <p className="text-sm font-mono text-gray-900">{detailCompra.numero_factura_proveedor ?? '—'}</p>
                       {detailCompra.documento_interno && (
                         <p className="text-[10px] text-amber-700">Sin comprobante · sin IGV · fuera del Registro de Compras</p>
+                      )}
+                      {detailCompra.regulariza_internos && (
+                        <p className="text-[10px] text-blue-700">Regulariza documentos internos · no movió stock</p>
                       )}
                     </div>
                   </div>
