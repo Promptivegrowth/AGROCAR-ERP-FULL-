@@ -76,6 +76,21 @@ async function main() {
     const dias = await page.$$eval('[data-fila-dia]', (x) => x.length)
     check('Muestra el detalle por día', dias > 0, `${dias} días`)
     await page.screenshot({ path: '.sunat/caja-acumulado.png', fullPage: true })
+
+    // Tocar un día abre su liquidación: cada cobro y la rendición por cobrador.
+    const { data: delDia } = await admin.from('cobros').select('total').eq('fecha', DESDE)
+    const totDia = Math.round((delDia ?? []).reduce((s: number, c: any) => s + Number(c.total), 0) * 100) / 100
+    await page.click('[data-fila-dia]'); await esperar(4000)
+    const det = await page.evaluate(() => ({
+      titulo: document.querySelector('[data-liquidacion-dia] h2')?.textContent ?? '',
+      cobros: document.querySelectorAll('[data-cobro-dia]').length,
+      rendiciones: document.querySelectorAll('[data-rendicion]').length,
+    }))
+    check('Tocar un día abre su liquidación con todos los cobros', det.cobros === (delDia ?? []).length && det.titulo.includes(String(totDia.toLocaleString('en-US', { minimumFractionDigits: 2 }))),
+      `${det.titulo} · ${det.cobros} cobros (base ${(delDia ?? []).length}, S/ ${totDia})`)
+    check('Cada cobrador tiene su botón de rendición', det.rendiciones > 0, `${det.rendiciones} rendiciones`)
+    await page.screenshot({ path: '.sunat/caja-liquidacion-dia.png' })
+    await page.keyboard.press('Escape'); await esperar(600)
     const mesAnt = await page.$('xpath/.//button[contains(., "Mes anterior")]')
     await mesAnt!.click(); await esperar(3000)
     const desdeMes = await page.$eval('[data-desde]', (e) => (e as HTMLInputElement).value)

@@ -6,6 +6,7 @@ import { createClient } from '@/lib/supabase/client'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { hoyLima } from '@/lib/fechas-pe'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import LiquidacionDiaDialog from './liquidacion-dia-dialog'
 
 /**
  * Cobranza acumulada entre dos fechas, por medio de pago (Daniel, 05/10): cuánto
@@ -50,6 +51,8 @@ export default function AcumuladoCaja() {
   const [datos, setDatos] = useState<Datos | null>(null)
   const [cargando, setCargando] = useState(false)
   const [error, setError] = useState('')
+  // Día abierto en el detalle de liquidación (Daniel, 07/10).
+  const [diaAbierto, setDiaAbierto] = useState<string | null>(null)
 
   const cargar = useCallback(async () => {
     if (!desde || !hasta || hasta < desde) return
@@ -182,7 +185,10 @@ export default function AcumuladoCaja() {
           </Card>
 
           <Card className="border-gray-200 shadow-sm">
-            <CardHeader className="pb-2"><CardTitle className="text-base font-semibold text-gray-800">Por día</CardTitle></CardHeader>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base font-semibold text-gray-800">Por día</CardTitle>
+              <p className="no-print text-[11px] text-gray-500">Toca un día para ver su liquidación: cada cobro, quién lo cobró y la rendición de cada cobrador.</p>
+            </CardHeader>
             <CardContent className="p-0">
               <div className="overflow-x-auto">
                 <table className="w-full min-w-[760px] text-sm">
@@ -191,8 +197,9 @@ export default function AcumuladoCaja() {
                     {datos.por_dia.length === 0 ? (
                       <tr><td colSpan={7} className="py-8 text-center text-gray-400">No hay cobros en este rango</td></tr>
                     ) : datos.por_dia.map((d) => (
-                      <tr key={d.fecha} className="hover:bg-gray-50/50" data-fila-dia>
-                        <td className="py-2 px-3 text-gray-700">{formatDate(d.fecha)}</td>
+                      <tr key={d.fecha} className="cursor-pointer hover:bg-yellow-50" data-fila-dia
+                        onClick={() => setDiaAbierto(d.fecha)} title="Ver la liquidación de este día">
+                        <td className="py-2 px-3 font-semibold text-blue-700 underline-offset-2 hover:underline">{formatDate(d.fecha)}</td>
                         {celdas(d)}
                       </tr>
                     ))}
@@ -206,6 +213,7 @@ export default function AcumuladoCaja() {
           </Card>
         </>
       )}
+      <LiquidacionDiaDialog fecha={diaAbierto} onClose={() => setDiaAbierto(null)} />
     </div>
   )
 }
