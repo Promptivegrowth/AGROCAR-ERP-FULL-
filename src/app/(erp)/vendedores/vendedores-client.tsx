@@ -443,6 +443,8 @@ export default function VendedoresClient({
       .from('caja_sesiones')
       .select('id')
       .eq('estado', 'abierta')
+      // Puede haber una caja abierta por día: el pago va a la del día más reciente.
+      .order('fecha_caja' as any, { ascending: false })
       .limit(1)
       .maybeSingle()
     if (!sesion) {

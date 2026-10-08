@@ -10,10 +10,12 @@ import CajaClient, {
 export const dynamic = 'force-dynamic'
 
 // Ruta: /caja — Módulo de Caja profesional (sesiones, cobros, egresos, arqueo)
-async function getCajaData() {
+async function getCajaData(diaPedido?: string) {
   const supabase = await createClient()
 
   const today = hoyLima()
+  // El día que se mira (?dia=AAAA-MM-DD); cada día tiene su propia caja.
+  const dia = diaPedido && /^\d{4}-\d{2}-\d{2}$/.test(diaPedido) && diaPedido <= today ? diaPedido : today
 
   // 1) Sesión abierta actual (si hay)
   const { data: sesionAbiertaRaw } = await (supabase as any)
@@ -23,9 +25,14 @@ async function getCajaData() {
       profiles!caja_sesiones_cajero_id_fkey(full_name)
     `)
     .eq('estado', 'abierta')
+    .eq('fecha_caja', dia)
     .order('fecha_apertura', { ascending: false })
     .limit(1)
     .maybeSingle()
+
+  const { data: abiertasRaw } = await (supabase as any)
+    .from('caja_sesiones').select('fecha_caja').eq('estado', 'abierta')
+  const cajasAbiertas: string[] = Array.from(new Set(((abiertasRaw ?? []) as any[]).map((s) => s.fecha_caja as string))).sort()
 
   const sesionAbierta: CajaSesionData | null = sesionAbiertaRaw
     ? {
@@ -50,8 +57,8 @@ async function getCajaData() {
       clientes(razon_social, telefono),
       profiles!cobros_cobrador_id_fkey(full_name, role)
     `)
-    // Los cobros del día de la caja abierta (puede ser un día anterior, migración 137).
-    .eq('fecha', sesionAbierta?.fecha_caja ?? today)
+    // Los cobros del día elegido (migración 137: una caja por día).
+    .eq('fecha', dia)
     .order('created_at', { ascending: false })
 
   const cobros: CobroDia[] = (cobrosRaw ?? []).map((c: any) => ({
@@ -153,6 +160,8 @@ async function getCajaData() {
 
   return {
     today,
+    dia,
+    cajasAbiertas,
     sesionAbierta,
     cobros,
     cobrosPendientes,
@@ -161,11 +170,13 @@ async function getCajaData() {
   }
 }
 
-export default async function CajaPage() {
-  const data = await getCajaData()
+export default async function CajaPage({ searchParams }: { searchParams: { dia?: string } }) {
+  const data = await getCajaData(searchParams?.dia)
   return (
     <CajaClient
       today={data.today}
+      diaInicial={data.dia}
+      cajasAbiertasIniciales={data.cajasAbiertas}
       sesionInicial={data.sesionAbierta}
       cobrosIniciales={data.cobros}
       movimientosIniciales={data.movimientos}

@@ -148,9 +148,15 @@ export default function CajaClient({
   cobrosIniciales,
   movimientosIniciales,
   historialInicial,
-  pendientes = [],
+  pendientes: pendientesIniciales = [],
+  diaInicial,
+  cajasAbiertasIniciales = [],
 }: {
   today: string
+  /** Día que se está mirando (?dia=). Por defecto, hoy. */
+  diaInicial?: string
+  /** Días que tienen su caja abierta. */
+  cajasAbiertasIniciales?: string[]
   sesionInicial: CajaSesionData | null
   cobrosIniciales: CobroDia[]
   movimientosIniciales: MovimientoCaja[]
@@ -159,6 +165,12 @@ export default function CajaClient({
 }) {
   const supabase = createClient()
 
+  // El día que se mira y liquida (Daniel, 08/10): cada día tiene su propia
+  // caja y se elige aquí. Antes la pantalla mostraba solo la caja abierta, y con
+  // la del 06/10 abierta no había forma de ver ni imprimir la liquidación de hoy.
+  const [dia, setDia] = useState<string>(diaInicial ?? today)
+  const [cajasAbiertas, setCajasAbiertas] = useState<string[]>(cajasAbiertasIniciales)
+  const [pendientes, setPendientes] = useState<CobroPendiente[]>(pendientesIniciales)
   const [sesion, setSesion] = useState<CajaSesionData | null>(sesionInicial)
   const [cobros, setCobros] = useState<CobroDia[]>(cobrosIniciales)
   const [movimientos, setMovimientos] = useState<MovimientoCaja[]>(movimientosIniciales)
@@ -191,6 +203,7 @@ export default function CajaClient({
         .select(`id, cajero_id, fecha_apertura, fecha_cierre, saldo_inicial, saldo_final, estado, created_at, fecha_caja,
                  profiles!caja_sesiones_cajero_id_fkey(full_name)`)
         .eq('estado', 'abierta')
+        .eq('fecha_caja', dia)
         .order('fecha_apertura', { ascending: false })
         .limit(1)
         .maybeSingle()
@@ -218,7 +231,7 @@ export default function CajaClient({
                  cliente_externo_nombre,
                  clientes(razon_social, telefono),
                  profiles!cobros_cobrador_id_fkey(full_name, role)`)
-        .eq('fecha', nuevaSesion?.fecha_caja ?? today)
+        .eq('fecha', dia)
         .order('created_at', { ascending: false })
 
       setCobros(
@@ -285,11 +298,32 @@ export default function CajaClient({
         })),
       )
 
+      // 5) Qué días tienen caja abierta, y lo que espera caja de días anteriores
+      const { data: abiertasRaw } = await (supabase as any)
+        .from('caja_sesiones').select('fecha_caja').eq('estado', 'abierta')
+      setCajasAbiertas(Array.from(new Set(((abiertasRaw ?? []) as any[]).map((s) => s.fecha_caja as string))).sort())
+      const { data: pendRaw } = await (supabase as any).rpc('cobros_sin_liquidar')
+      setPendientes(((pendRaw ?? []) as any[]).map((c) => ({
+        id: c.id, numero: c.numero ?? null, fecha: c.fecha, total: Number(c.total ?? 0), cliente: c.cliente ?? '—',
+      })))
+
       setUltimaActualizacion(new Date())
     } finally {
       if (!silencioso) setRecargando(false)
     }
-  }, [supabase, today])
+  }, [supabase, dia])
+
+  // Al cambiar de día se recarga, y la dirección guarda el día (?dia=) para
+  // que al actualizar la página no vuelva a hoy.
+  const primerDia = useRef(true)
+  useEffect(() => {
+    if (primerDia.current) { primerDia.current = false; return }
+    const url = new URL(window.location.href)
+    if (dia === today) url.searchParams.delete('dia'); else url.searchParams.set('dia', dia)
+    window.history.replaceState(null, '', url.toString())
+    void reloadAll(false)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dia])
 
   // Recarga diferida (debounce) para eventos realtime múltiples
   const reloadDebounced = useCallback(() => {
@@ -350,8 +384,8 @@ export default function CajaClient({
     descripcion: '',
   })
 
-  // El día que se está liquidando: el de la caja abierta, o hoy.
-  const diaCaja = sesion?.fecha_caja ?? today
+  // El día que se está liquidando: el elegido arriba.
+  const diaCaja = dia
   const esDiaAnterior = diaCaja < today
 
   // ─── Cálculos de la sesión actual ────────────────────────────────────────
@@ -384,6 +418,9 @@ export default function CajaClient({
       { efectivo: 0, yape: 0, plin: 0, transferencia: 0, total: 0, count: 0 }
     )
   }, [sesion, cobros, movimientos])
+
+  // Hoy siempre se puede abrir; un día anterior, solo si le quedan cobros sin caja.
+  const puedeAbrirDia = !esDiaAnterior || pendientes.some((c) => c.fecha === dia)
 
   // Lo pendiente de días anteriores, para el aviso de arriba
   const totalPendiente = pendientes.reduce((a, c) => a + c.total, 0)
@@ -535,7 +572,9 @@ export default function CajaClient({
     setHuerfanos(null)
     setCargarHuerfanos(true)
     setFechaApertura(null)
-    await reloadAll()
+    const diaAbierto = fechaApertura ?? today
+    if (diaAbierto !== dia) setDia(diaAbierto)
+    else await reloadAll()
   }
 
   const cerrarCaja = async () => {
@@ -642,10 +681,25 @@ export default function CajaClient({
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Caja</h1>
-          <p className="text-sm text-gray-500 mt-0.5">
-            Centro financiero — {formatDate(diaCaja)}
-            {esDiaAnterior && <span className="ml-2 rounded bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-800">Caja de un día anterior</span>}
-          </p>
+          <div className="mt-1 flex flex-wrap items-center gap-2 text-sm text-gray-500">
+            <span>Centro financiero —</span>
+            <input type="date" value={dia} max={today} aria-label="Día de caja" data-dia-caja
+              onChange={(e) => e.target.value && e.target.value <= today && setDia(e.target.value)}
+              className="h-8 rounded-md border border-gray-300 bg-white px-2 text-sm font-semibold text-gray-900" />
+            {esDiaAnterior && <span className="rounded bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-800">Día anterior</span>}
+            {dia !== today && (
+              <button type="button" onClick={() => setDia(today)} data-ir-hoy
+                className="rounded-md border border-gray-300 bg-white px-2 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-50">
+                Ir a hoy ({formatDate(today).slice(0, 5)})
+              </button>
+            )}
+            {cajasAbiertas.filter((f) => f !== dia).map((f) => (
+              <button key={f} type="button" onClick={() => setDia(f)} data-caja-abierta={f}
+                className="rounded-md border border-green-300 bg-green-50 px-2 py-1 text-xs font-semibold text-green-800 hover:bg-green-100">
+                <Unlock className="mr-1 inline h-3 w-3" />Caja abierta del {formatDate(f).slice(0, 5)}
+              </button>
+            ))}
+          </div>
         </div>
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-1.5 text-xs text-gray-500">
@@ -748,18 +802,25 @@ export default function CajaClient({
                   <Lock className="w-6 h-6 text-gray-400" />
                 </div>
                 <div>
-                  <p className="font-semibold text-gray-900">No hay sesión abierta</p>
+                  <p className="font-semibold text-gray-900">
+                    {esDiaAnterior ? `No hay caja abierta del ${formatDate(dia)}` : 'No hay caja abierta de hoy'}
+                  </p>
                   <p className="text-sm text-gray-500 mt-0.5">
-                    Abre la caja para comenzar a registrar operaciones del día.
+                    {puedeAbrirDia
+                      ? 'Abre la caja de este día para hacer su arqueo y cerrarla. La liquidación ya se puede ver e imprimir abajo.'
+                      : 'Este día ya se liquidó en su caja. Abajo puedes ver e imprimir su liquidación.'}
                   </p>
                 </div>
               </div>
-              <Button
-                onClick={() => abrirCajaDe(null)}
-                className="bg-[#FBE600] hover:bg-[#E5D100] text-black font-semibold gap-2 h-11 px-6"
-              >
-                <Unlock className="w-4 h-4" /> Abrir Caja
-              </Button>
+              {puedeAbrirDia && (
+                <Button
+                  onClick={() => abrirCajaDe(esDiaAnterior ? dia : null)}
+                  data-abrir-caja
+                  className="bg-[#FBE600] hover:bg-[#E5D100] text-black font-semibold gap-2 h-11 px-6"
+                >
+                  <Unlock className="w-4 h-4" /> {esDiaAnterior ? `Abrir caja del ${formatDate(dia).slice(0, 5)}` : 'Abrir Caja'}
+                </Button>
+              )}
             </div>
           )}
         </CardContent>
@@ -880,11 +941,9 @@ export default function CajaClient({
                   {' '}de {diasPendientes} · {formatCurrency(totalPendiente)}
                 </p>
                 <p className="text-xs text-amber-800 mt-0.5">
-                  {sesion
-                    ? 'Cada día se cierra en su propia caja: cierra la caja abierta y luego abre la del día pendiente.'
-                    : 'Cada día se cierra por separado: abre la caja de ese día, haz su arqueo y ciérrala.'}
+                  Cada día se cierra en su propia caja: abre la caja de ese día, haz su arqueo y ciérrala.
                 </p>
-                {!sesion && (
+                {(
                   <div className="mt-2 flex flex-wrap gap-2" data-dias-pendientes>
                     {Array.from(new Set(pendientes.map((c) => c.fecha))).sort().map((f) => {
                       const delDia = pendientes.filter((c) => c.fecha === f)
