@@ -53,6 +53,8 @@ const BREADCRUMB_MAP: Record<string, string> = {
   gerencia: 'Gerencia',
   utilidad: 'Utilidad',
   liquidacion: 'Liquidación de internos',
+  'registro-ventas': 'Registro de ventas',
+  'registro-compras': 'Registro de compras',
   contabilidad: 'Contabilidad',
   configuracion: 'Configuración',
 }

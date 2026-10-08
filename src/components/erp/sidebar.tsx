@@ -168,11 +168,15 @@ const NAV_ITEMS: NavItem[] = [
     roles: ['gerente', 'administrador', 'contador'],
   },
   {
-    // Reporte gerencial de utilidad: ni el contador lo ve (pedido de Daniel).
-    label: 'Utilidad',
-    href: '/gerencia/utilidad',
+    // Reportes gerenciales: ni el contador los ve (pedido de Daniel).
+    label: 'Gerencia',
     icon: TrendingUp,
     roles: ['gerente', 'administrador'],
+    children: [
+      { label: 'Utilidad', href: '/gerencia/utilidad', icon: TrendingUp },
+      { label: 'Registro de ventas', href: '/gerencia/registro-ventas', icon: FileText },
+      { label: 'Registro de compras', href: '/gerencia/registro-compras', icon: ShoppingCart },
+    ],
   },
   {
     label: 'Contabilidad',
@@ -201,7 +205,16 @@ interface SidebarProps {
 
 export default function Sidebar({ userRole, onNavigate }: SidebarProps) {
   const pathname = usePathname()
-  const [openMenus, setOpenMenus] = useState<string[]>(['Maestros', 'Almacén'])
+  // Abiertos al entrar: los de siempre y el grupo de la página en la que se está.
+  const [openMenus, setOpenMenus] = useState<string[]>(() => {
+    const abiertos = ['Maestros', 'Almacén']
+    for (const item of NAV_ITEMS) {
+      if (item.children?.some((c) => pathname === c.href || pathname.startsWith(c.href + '/')) && !abiertos.includes(item.label)) {
+        abiertos.push(item.label)
+      }
+    }
+    return abiertos
+  })
 
   const toggleMenu = (label: string) => {
     setOpenMenus((prev) =>
