@@ -36,6 +36,8 @@ export interface CajaSesionData {
   saldo_inicial: number
   saldo_final: number | null
   estado: 'abierta' | 'cerrada'
+  /** Día que liquida esta caja (migración 137): solo lleva cobros de ese día. */
+  fecha_caja?: string | null
 }
 
 export interface CobroDia {
@@ -184,9 +186,9 @@ export default function CajaClient({
     if (!silencioso) setRecargando(true)
     try {
       // 1) Sesión abierta
-      const { data: sesRaw } = await supabase
+      const { data: sesRaw } = await (supabase as any)
         .from('caja_sesiones')
-        .select(`id, cajero_id, fecha_apertura, fecha_cierre, saldo_inicial, saldo_final, estado, created_at,
+        .select(`id, cajero_id, fecha_apertura, fecha_cierre, saldo_inicial, saldo_final, estado, created_at, fecha_caja,
                  profiles!caja_sesiones_cajero_id_fkey(full_name)`)
         .eq('estado', 'abierta')
         .order('fecha_apertura', { ascending: false })
@@ -203,18 +205,20 @@ export default function CajaClient({
             saldo_inicial: Number(sesRaw.saldo_inicial ?? 0),
             saldo_final: sesRaw.saldo_final !== null ? Number(sesRaw.saldo_final) : null,
             estado: sesRaw.estado,
+            fecha_caja: (sesRaw as any).fecha_caja ?? null,
           }
         : null
       setSesion(nuevaSesion)
 
-      // 2) Cobros del día
+      // 2) Cobros del día de la caja abierta (o de hoy si no hay caja). Una caja
+      // de un día pasado muestra y cuadra los cobros de ESE día (Daniel, 07/10).
       const { data: cobrosRaw } = await supabase
         .from('cobros')
         .select(`id, numero, cliente_id, cobrador_id, fecha, efectivo, yape, plin, transferencia, total, tipo, notas, created_at,
                  cliente_externo_nombre,
                  clientes(razon_social, telefono),
                  profiles!cobros_cobrador_id_fkey(full_name, role)`)
-        .eq('fecha', today)
+        .eq('fecha', nuevaSesion?.fecha_caja ?? today)
         .order('created_at', { ascending: false })
 
       setCobros(
@@ -336,12 +340,19 @@ export default function CajaClient({
     cobros: Array<{ id: string; numero: string; total: number; efectivo: number; cliente: string | null; cobrador: string | null; created_at: string }>
   } | null>(null)
   const [cargarHuerfanos, setCargarHuerfanos] = useState(true)
+  // Día de la caja que se abre: null = hoy; una fecha = un día que quedó sin cerrar.
+  const [fechaApertura, setFechaApertura] = useState<string | null>(null)
+  const abrirCajaDe = (fecha: string | null) => { setFechaApertura(fecha); setAbrirOpen(true) }
   const [formCierre, setFormCierre] = useState({ monto: '', notas: '' })
   const [formEgreso, setFormEgreso] = useState({
     categoria: 'gasto_operativo' as CategoriaCajaMovimiento | 'gasto_operativo' | 'pago_proveedor',
     monto: '',
     descripcion: '',
   })
+
+  // El día que se está liquidando: el de la caja abierta, o hoy.
+  const diaCaja = sesion?.fecha_caja ?? today
+  const esDiaAnterior = diaCaja < today
 
   // ─── Cálculos de la sesión actual ────────────────────────────────────────
   // Usamos caja_movimientos.sesion_id como fuente de verdad (incluye los
@@ -476,11 +487,11 @@ export default function CajaClient({
     if (!abrirOpen) return
     let cancel = false
     ;(async () => {
-      const { data } = await (supabase.rpc as any)('contar_cobros_huerfanos')
+      const { data } = await (supabase.rpc as any)('contar_cobros_huerfanos', { p_fecha: fechaApertura ?? today })
       if (!cancel && data) setHuerfanos(data as any)
     })()
     return () => { cancel = true }
-  }, [abrirOpen, supabase])
+  }, [abrirOpen, supabase, fechaApertura, today])
 
   const abrirCaja = async () => {
     const monto = parseFloat(formApertura.monto)
@@ -498,6 +509,7 @@ export default function CajaClient({
         p_saldo_inicial: monto,
         p_cargar_huerfanos: cargarHuerfanos && (huerfanos?.count ?? 0) > 0,
         p_notas: formApertura.notas || null,
+        p_fecha: fechaApertura,
       },
     )
 
@@ -522,6 +534,7 @@ export default function CajaClient({
     setFormApertura({ monto: '', notas: '' })
     setHuerfanos(null)
     setCargarHuerfanos(true)
+    setFechaApertura(null)
     await reloadAll()
   }
 
@@ -630,7 +643,8 @@ export default function CajaClient({
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Caja</h1>
           <p className="text-sm text-gray-500 mt-0.5">
-            Centro financiero — {formatDate(today)}
+            Centro financiero — {formatDate(diaCaja)}
+            {esDiaAnterior && <span className="ml-2 rounded bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-800">Caja de un día anterior</span>}
           </p>
         </div>
         <div className="flex items-center gap-3">
@@ -741,7 +755,7 @@ export default function CajaClient({
                 </div>
               </div>
               <Button
-                onClick={() => setAbrirOpen(true)}
+                onClick={() => abrirCajaDe(null)}
                 className="bg-[#FBE600] hover:bg-[#E5D100] text-black font-semibold gap-2 h-11 px-6"
               >
                 <Unlock className="w-4 h-4" /> Abrir Caja
@@ -819,7 +833,7 @@ export default function CajaClient({
             <div className="flex items-start justify-between">
               <div>
                 <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">
-                  Cobros de Hoy
+                  {esDiaAnterior ? `Cobros del ${formatDate(diaCaja).slice(0, 5)}` : 'Cobros de Hoy'}
                 </p>
                 <p className="text-2xl font-bold text-gray-900 mt-1">{cobros.length}</p>
                 <p className="text-xs text-gray-400 mt-1">transacciones</p>
@@ -836,7 +850,7 @@ export default function CajaClient({
       <Tabs defaultValue="cobros" className="w-full">
         <TabsList className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 w-full h-auto">
           <TabsTrigger value="cobros" className="text-xs sm:text-sm">
-            Cobros de hoy
+            {esDiaAnterior ? `Cobros del ${formatDate(diaCaja).slice(0, 5)}` : 'Cobros de hoy'}
           </TabsTrigger>
           <TabsTrigger value="liquidacion" className="text-xs sm:text-sm">
             Liquidación
@@ -867,9 +881,22 @@ export default function CajaClient({
                 </p>
                 <p className="text-xs text-amber-800 mt-0.5">
                   {sesion
-                    ? 'Ya están cargados en esta caja: aparecen en Movimientos como cobros retroactivos.'
-                    : 'Al abrir caja se cargan solos, no hay que hacer nada más.'}
+                    ? 'Cada día se cierra en su propia caja: cierra la caja abierta y luego abre la del día pendiente.'
+                    : 'Cada día se cierra por separado: abre la caja de ese día, haz su arqueo y ciérrala.'}
                 </p>
+                {!sesion && (
+                  <div className="mt-2 flex flex-wrap gap-2" data-dias-pendientes>
+                    {Array.from(new Set(pendientes.map((c) => c.fecha))).sort().map((f) => {
+                      const delDia = pendientes.filter((c) => c.fecha === f)
+                      return (
+                        <Button key={f} size="sm" onClick={() => abrirCajaDe(f)} data-abrir-dia={f}
+                          className="h-8 gap-1 bg-amber-500 text-xs font-semibold text-white hover:bg-amber-600">
+                          <Unlock className="h-3.5 w-3.5" /> Abrir caja del {formatDate(f)} · {delDia.length} cobros · {formatCurrency(delDia.reduce((a, c) => a + c.total, 0))}
+                        </Button>
+                      )
+                    })}
+                  </div>
+                )}
               </div>
               <div className="text-[11px] text-amber-900 text-right">
                 {pendientes.slice(0, 3).map((c) => (
@@ -893,7 +920,7 @@ export default function CajaClient({
             <CardContent className="p-0">
               {cobros.length === 0 ? (
                 <div className="text-center py-12 text-gray-400 text-sm">
-                  No hay cobros registrados hoy
+                  No hay cobros registrados {esDiaAnterior ? `el ${formatDate(diaCaja)}` : 'hoy'}
                   {pendientes.length > 0 && (
                     <p className="text-amber-700 mt-1">
                       Pero quedan {pendientes.length} de días anteriores por liquidar,
@@ -1190,7 +1217,7 @@ export default function CajaClient({
                                   cuando entrega su cobranza (pedido de Daniel) */}
                               {l.cobrador_id && (
                                 <a
-                                  href={`/rendicion/${l.cobrador_id}?fecha=${today}`}
+                                  href={`/rendicion/${l.cobrador_id}?fecha=${diaCaja}`}
                                   target="_blank"
                                   rel="noopener noreferrer"
                                   onClick={(e) => e.stopPropagation()}
@@ -1350,7 +1377,7 @@ export default function CajaClient({
           <Card className="border-gray-200 shadow-sm print:shadow-none">
             <CardHeader className="pb-2 flex-row items-center justify-between">
               <CardTitle className="text-base font-semibold text-gray-800">
-                Arqueo del día — {formatDate(today)}
+                Arqueo del día — {formatDate(diaCaja)}
               </CardTitle>
               <Button
                 onClick={imprimirArqueo}
@@ -1677,8 +1704,14 @@ export default function CajaClient({
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <Unlock className="w-5 h-5 text-green-600" /> Abrir Caja
+              <Unlock className="w-5 h-5 text-green-600" /> {fechaApertura ? `Abrir caja del ${formatDate(fechaApertura)}` : 'Abrir Caja'}
             </DialogTitle>
+            {fechaApertura && (
+              <p className="text-xs text-amber-800">
+                Caja de un día que quedó sin cerrar: solo lleva los cobros del {formatDate(fechaApertura)}. Haz su arqueo y ciérrala;
+                después abres la del día siguiente.
+              </p>
+            )}
           </DialogHeader>
           <div className="space-y-4 mt-2">
             <div>

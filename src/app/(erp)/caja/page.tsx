@@ -16,10 +16,10 @@ async function getCajaData() {
   const today = hoyLima()
 
   // 1) Sesión abierta actual (si hay)
-  const { data: sesionAbiertaRaw } = await supabase
+  const { data: sesionAbiertaRaw } = await (supabase as any)
     .from('caja_sesiones')
     .select(`
-      id, cajero_id, fecha_apertura, fecha_cierre, saldo_inicial, saldo_final, estado, created_at,
+      id, cajero_id, fecha_apertura, fecha_cierre, saldo_inicial, saldo_final, estado, created_at, fecha_caja,
       profiles!caja_sesiones_cajero_id_fkey(full_name)
     `)
     .eq('estado', 'abierta')
@@ -37,6 +37,7 @@ async function getCajaData() {
         saldo_inicial: sesionAbiertaRaw.saldo_inicial ?? 0,
         saldo_final: sesionAbiertaRaw.saldo_final,
         estado: sesionAbiertaRaw.estado,
+        fecha_caja: (sesionAbiertaRaw as any).fecha_caja ?? null,
       }
     : null
 
@@ -49,7 +50,8 @@ async function getCajaData() {
       clientes(razon_social, telefono),
       profiles!cobros_cobrador_id_fkey(full_name, role)
     `)
-    .eq('fecha', today)
+    // Los cobros del día de la caja abierta (puede ser un día anterior, migración 137).
+    .eq('fecha', sesionAbierta?.fecha_caja ?? today)
     .order('created_at', { ascending: false })
 
   const cobros: CobroDia[] = (cobrosRaw ?? []).map((c: any) => ({
