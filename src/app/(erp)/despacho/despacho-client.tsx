@@ -389,6 +389,12 @@ export default function DespachoClient({ pedidosIniciales, vehiculos, almacen, p
     }
     const pedidosVeh = ids.map((id) => pedidosById.get(id)).filter(Boolean) as PedidoListo[]
     const pesoTotal = pedidosVeh.reduce((a, p) => a + p.peso_kg, 0)
+    // Daniel, 07/10: un carro salió sin repartidor por descuido. Se puede
+    // asignar después en el Historial, pero mejor avisar antes.
+    if (repartidores.length > 0 && !repartidorPorVehiculo[vehiculoId]
+      && !confirm(`El vehículo ${vehiculo.placa} no tiene repartidor asignado: nadie verá este reparto en su celular.\n\n¿Consolidar igual? (Se puede asignar después en el Historial de despachos.)`)) {
+      return
+    }
 
     // Calcular orden de entrega optimizado
     const paradas = ordenarPorCercania(

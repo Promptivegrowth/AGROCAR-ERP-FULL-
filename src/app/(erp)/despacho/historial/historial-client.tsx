@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import { createClient } from '@/lib/supabase/client'
 import { formatCurrency, formatDate } from '@/lib/utils'
+import { horaLima } from '@/lib/fechas-pe'
 import { Truck, FileText, Play, CheckCircle, Clock, MapPin, Package, Activity } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -33,7 +34,66 @@ function formatDuracion(minutos: number | null | undefined) {
   return `${h}h ${mm}m`
 }
 
-export default function HistorialClient({ despachosIniciales }: { despachosIniciales: any[] }) {
+/**
+ * Quién reparte este despacho: es quien lo ve en su celular (pwa_mi_reparto).
+ * Daniel, 07/10: un carro se consolidó sin repartidor y no había cómo
+ * asignárselo después. Se puede mientras esté listo para salir o en ruta.
+ */
+function RepartidorDespacho({ despacho, repartidores, onCambio }: {
+  despacho: any
+  repartidores: { id: string; nombre: string }[]
+  onCambio: (repartidorId: string) => void
+}) {
+  const supabase = createClient()
+  const [editando, setEditando] = useState(false)
+  const [elegido, setElegido] = useState<string>(despacho.repartidor_id ?? '')
+  const [guardando, setGuardando] = useState(false)
+  const actual = repartidores.find((r) => r.id === despacho.repartidor_id)
+
+  const guardar = async () => {
+    if (!elegido || elegido === despacho.repartidor_id) { setEditando(false); return }
+    setGuardando(true)
+    const { data, error } = await (supabase.rpc as any)('asignar_repartidor_despacho', {
+      p_despacho_id: despacho.id, p_repartidor_id: elegido,
+    })
+    setGuardando(false)
+    if (error) { toast.error('No se pudo asignar el repartidor', { description: error.message, duration: 8000 }); return }
+    toast.success(`${despacho.placa}: reparte ${data?.ahora ?? ''}`, { description: 'Ya lo ve en su celular.' })
+    onCambio(elegido)
+    setEditando(false)
+  }
+
+  if (editando) {
+    return (
+      <div className="mt-2 flex flex-wrap items-center gap-1.5" data-repartidor-despacho>
+        <select value={elegido} onChange={(e) => setElegido(e.target.value)} disabled={guardando} aria-label="Repartidor"
+          className="h-7 min-w-0 flex-1 rounded border border-gray-300 bg-white px-1.5 text-[11px]">
+          <option value="">Elegir repartidor…</option>
+          {repartidores.map((r) => <option key={r.id} value={r.id}>{r.nombre}</option>)}
+        </select>
+        <Button size="sm" onClick={guardar} disabled={guardando || !elegido}
+          className="h-7 bg-[#FBE600] px-2 text-[11px] font-semibold text-black hover:bg-[#E5D100]">
+          {guardando ? 'Guardando…' : 'Guardar'}
+        </Button>
+        <button type="button" onClick={() => setEditando(false)} className="text-[11px] text-gray-500 hover:underline">cancelar</button>
+      </div>
+    )
+  }
+  return (
+    <p className={`mt-2 text-[11px] ${actual ? 'text-gray-600' : 'font-semibold text-amber-700'}`} data-repartidor-despacho>
+      {actual ? <>Reparte: <strong>{actual.nombre}</strong></> : 'Sin repartidor: nadie lo ve en su celular'}
+      <button type="button" onClick={() => { setElegido(despacho.repartidor_id ?? ''); setEditando(true) }}
+        className="ml-2 font-semibold text-blue-700 hover:underline" data-asignar-repartidor>
+        {actual ? 'Cambiar' : 'Asignar'}
+      </button>
+    </p>
+  )
+}
+
+export default function HistorialClient({ despachosIniciales, repartidores = [] }: {
+  despachosIniciales: any[]
+  repartidores?: { id: string; nombre: string }[]
+}) {
   const supabase = createClient()
   const router = useRouter()
   const [despachos, setDespachos] = useState<any[]>(despachosIniciales)
@@ -154,12 +214,12 @@ export default function HistorialClient({ despachosIniciales }: { despachosInici
                     <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
                       <div className="bg-gray-50 rounded-lg p-2">
                         <p className="text-[10px] text-gray-500 uppercase flex items-center gap-1"><Clock className="w-3 h-3" /> Tiempo</p>
-                        <p className="text-sm font-bold font-mono text-blue-700">{formatDuracion(mins)}</p>
+                        <p className="text-sm font-bold font-mono text-blue-700" suppressHydrationWarning>{formatDuracion(mins)}</p>
                       </div>
                       <div className="bg-gray-50 rounded-lg p-2">
                         <p className="text-[10px] text-gray-500 uppercase">Salida</p>
                         <p className="text-xs font-mono text-gray-700">
-                          {new Date(d.hora_salida).toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit' })}
+                          {horaLima(d.hora_salida)}
                         </p>
                       </div>
                     </div>
@@ -174,6 +234,8 @@ export default function HistorialClient({ despachosIniciales }: { despachosInici
                       </div>
                     </div>
 
+                    <RepartidorDespacho despacho={d} repartidores={repartidores}
+                      onCambio={(rid) => setDespachos((prev) => prev.map((x) => x.id === d.id ? { ...x, repartidor_id: rid } : x))} />
                     <div className="mt-3 flex items-center gap-1.5">
                       <Button onClick={() => abrirFinalizar(d)} disabled={saving} size="sm" className="flex-1 bg-green-600 hover:bg-green-700 text-white gap-1 h-7 text-xs">
                         <CheckCircle className="w-3 h-3" /> Finalizar
@@ -213,6 +275,8 @@ export default function HistorialClient({ despachosIniciales }: { despachosInici
                   </div>
                   <Badge className="text-[10px] bg-yellow-100 text-yellow-700 border-yellow-200">Listo</Badge>
                 </div>
+                <RepartidorDespacho despacho={d} repartidores={repartidores}
+                  onCambio={(rid) => setDespachos((prev) => prev.map((x) => x.id === d.id ? { ...x, repartidor_id: rid } : x))} />
                 <div className="mt-3 flex items-center gap-1.5">
                   <Button onClick={() => iniciarRuta(d)} disabled={saving} size="sm" className="flex-1 bg-[#FBE600] hover:bg-[#E5D100] text-black font-semibold gap-1 h-7 text-xs">
                     <Play className="w-3 h-3" /> Iniciar ruta
@@ -265,10 +329,10 @@ export default function HistorialClient({ despachosIniciales }: { despachosInici
                       <td className="py-2.5 px-3 text-xs font-mono">{Number(d.peso_total_kg ?? 0).toFixed(1)} kg</td>
                       <td className="py-2.5 px-3 text-xs font-semibold">{formatCurrency(d.total_monto ?? 0)}</td>
                       <td className="py-2.5 px-3 text-xs text-gray-600 font-mono">
-                        {d.hora_salida ? new Date(d.hora_salida).toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit' }) : '—'}
+                        {d.hora_salida ? horaLima(d.hora_salida) : '—'}
                       </td>
                       <td className="py-2.5 px-3 text-xs text-gray-600 font-mono">
-                        {d.hora_retorno ? new Date(d.hora_retorno).toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit' }) : '—'}
+                        {d.hora_retorno ? horaLima(d.hora_retorno) : '—'}
                       </td>
                       <td className="py-2.5 px-3 text-xs font-mono text-gray-700">{formatDuracion(d.duracion_minutos)}</td>
                       <td className="py-2.5 px-3 text-xs font-mono">{d.km_recorridos ? `${Number(d.km_recorridos).toFixed(1)} km` : '—'}</td>

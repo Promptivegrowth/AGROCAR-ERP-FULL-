@@ -95,15 +95,10 @@ async function getInitialData() {
 
   // Quiénes pueden salir a repartir: el despacho se les asigna para que el
   // reparto del día les aparezca en el celular.
-  const { data: repartidoresRaw } = await supabase
-    .from('profiles')
-    .select('id, full_name, email')
-    .in('role', ['repartidor', 'chofer'])
-    .eq('activo', true)
-    .order('full_name')
-  const repartidores = (repartidoresRaw ?? []).map((r: any) => ({
-    id: r.id, nombre: r.full_name || r.email,
-  }))
+  // Por RPC: los permisos de profiles no dejan al facturador (que también
+  // consolida) ver a otros usuarios, y la lista le salía vacía (migración 134).
+  const { data: repartidoresRaw } = await (supabase.rpc as any)('repartidores_activos')
+  const repartidores = ((repartidoresRaw ?? []) as any[]).map((r) => ({ id: r.id, nombre: r.nombre }))
 
   const vehiculos: VehiculoDisponible[] = (vehiculosRaw ?? []).map((v: any) => ({
     id: v.id,

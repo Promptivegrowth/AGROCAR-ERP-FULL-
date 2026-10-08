@@ -58,3 +58,21 @@ export function rangoDiaLima(fecha: string): { desde: string; hasta: string } {
     hasta: `${siguiente.toISOString().slice(0, 10)}T00:00:00-05:00`,
   }
 }
+
+/**
+ * Hora de Lima, "05:21 p. m.", igual en el servidor y en el navegador.
+ *
+ * toLocaleTimeString('es-PE') sin timeZone escribe la hora del servidor (UTC,
+ * cinco horas más) y, aun con timeZone, Node y el navegador no ponen los mismos
+ * espacios en "p. m."; la diferencia hace que React redibuje la página entera
+ * al abrirla. Las horas y minutos en números sí salen iguales.
+ */
+const HORA_LIMA = new Intl.DateTimeFormat('en-US', {
+  timeZone: 'America/Lima', hour: '2-digit', minute: '2-digit', hour12: false,
+})
+export function horaLima(d: Date | string): string {
+  const partes = HORA_LIMA.formatToParts(typeof d === 'string' ? new Date(d) : d)
+  const h = Number(partes.find((p) => p.type === 'hour')?.value ?? 0) % 24
+  const m = partes.find((p) => p.type === 'minute')?.value ?? '00'
+  return `${String(h % 12 || 12).padStart(2, '0')}:${m} ${h < 12 ? 'a. m.' : 'p. m.'}`
+}

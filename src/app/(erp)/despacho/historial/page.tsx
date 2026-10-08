@@ -14,11 +14,21 @@ async function getData() {
     .select('*')
     .order('fecha_despacho', { ascending: false })
     .limit(80)
-  return { despachos: despachos ?? [] }
+  // La vista no trae el repartidor: se lee aparte (es quien ve el reparto en el celular).
+  const ids = (despachos ?? []).map((d: any) => d.id)
+  const [{ data: reps }, { data: lista }] = await Promise.all([
+    ids.length ? (supabase as any).from('despachos').select('id, repartidor_id').in('id', ids) : Promise.resolve({ data: [] }),
+    (supabase.rpc as any)('repartidores_activos'),
+  ])
+  const repDe = new Map(((reps ?? []) as any[]).map((r) => [r.id, r.repartidor_id]))
+  return {
+    despachos: (despachos ?? []).map((d: any) => ({ ...d, repartidor_id: repDe.get(d.id) ?? null })),
+    repartidores: ((lista ?? []) as any[]).map((r) => ({ id: r.id, nombre: r.nombre })) as { id: string; nombre: string }[],
+  }
 }
 
 export default async function HistorialDespachosPage() {
-  const { despachos } = await getData()
+  const { despachos, repartidores } = await getData()
 
   return (
     <div className="space-y-4">
@@ -42,7 +52,7 @@ export default async function HistorialDespachosPage() {
           </CardContent>
         </Card>
       ) : (
-        <HistorialClient despachosIniciales={despachos} />
+        <HistorialClient despachosIniciales={despachos} repartidores={repartidores} />
       )}
     </div>
   )
