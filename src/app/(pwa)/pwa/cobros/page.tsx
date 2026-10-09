@@ -174,8 +174,21 @@ export default function CobrosPage() {
       const cobrado = cobros.reduce((acc, c: any) => acc + Number(c.total ?? 0), 0)
       const saldo = Math.max(0, facturado - cobrado)
 
-      // Aplicar FIFO informativo para saber cuánto queda por cobrar por comprobante
-      let remanente = cobrado
+      // Lo que ya se aplicó de verdad a cada comprobante. Antes se repartía el
+      // total cobrado con un FIFO "informativo", y si un pago se había aplicado a
+      // un comprobante más nuevo (una venta directa, una aplicación a mano), la
+      // app volvía a ofrecer como pendiente uno ya pagado (Daniel, 09/10).
+      const ids = (comprobantes as any[]).map((c) => c.id)
+      const aplicadoPorComp = new Map<string, number>()
+      if (ids.length > 0) {
+        const { data: aps } = await (supabase as any)
+          .from('cobros_aplicaciones')
+          .select('comprobante_id, monto_aplicado')
+          .in('comprobante_id', ids)
+        for (const a of (aps ?? []) as any[]) {
+          aplicadoPorComp.set(a.comprobante_id, (aplicadoPorComp.get(a.comprobante_id) ?? 0) + Number(a.monto_aplicado ?? 0))
+        }
+      }
       const hoy = new Date()
       hoy.setHours(0, 0, 0, 0)
       const creditoDias = cliente.credito_dias ?? 0
@@ -184,9 +197,7 @@ export default function CobrosPage() {
       const compPendientes: ComprobantePendiente[] = []
       for (const comp of comprobantes as any[]) {
         const totalComp = Number(comp.total ?? 0)
-        const aplicado = Math.min(remanente, totalComp)
-        remanente -= aplicado
-        const saldoComp = totalComp - aplicado
+        const saldoComp = Math.round((totalComp - (aplicadoPorComp.get(comp.id) ?? 0)) * 100) / 100
         if (saldoComp <= 0.0001) continue
 
         const fechaEmi = new Date(comp.fecha_emision + 'T00:00:00')
@@ -288,6 +299,18 @@ export default function CobrosPage() {
           const msg = 'Selecciona al menos una factura con monto a aplicar, o cambia a modo automático FIFO.'
           setMensajeError(msg)
           toast.error('Sin facturas seleccionadas', { description: msg })
+          return
+        }
+        // Ningún comprobante puede recibir más que lo que debe.
+        const excedido = aps.find((a) => {
+          const comp = estadoCuenta?.comprobantes.find((c) => c.id === a.comprobante_id)
+          return comp && a.monto_aplicado > comp.saldo + 0.001
+        })
+        if (excedido) {
+          const comp = estadoCuenta!.comprobantes.find((c) => c.id === excedido.comprobante_id)!
+          const msg = `${comp.serie}-${comp.numero} solo debe ${formatCurrency(comp.saldo)}: no se le puede aplicar ${formatCurrency(excedido.monto_aplicado)}. Aplica el resto a otro comprobante.`
+          setMensajeError(msg)
+          toast.error('Monto mayor que la deuda', { description: msg })
           return
         }
         const sumaAplic = aps.reduce((acc, a) => acc + a.monto_aplicado, 0)

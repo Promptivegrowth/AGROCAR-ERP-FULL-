@@ -83,7 +83,9 @@ export function totalesVentas(filas: FilaVenta[]) {
   const porTipo: Record<TipoVenta, TotalTipo> = {
     factura: vacio(), boleta: vacio(), nota_pedido_interna: vacio(), nota_credito: vacio(),
   }
-  let total = 0, cobrado = 0, contado = 0, credito = 0, vigentes = 0
+  // Por cobrar, comprobante por comprobante, como en Cuentas por cobrar: un
+  // comprobante cobrado de más no descuenta la deuda de otro (Daniel, 09/10).
+  let total = 0, cobrado = 0, contado = 0, credito = 0, vigentes = 0, porCobrar = 0
   const anulados = { cantidad: 0, total: 0 }
   for (const f of filas) {
     if (anuladaVenta(f)) { anulados.cantidad++; anulados.total += f.total; continue }
@@ -93,6 +95,7 @@ export function totalesVentas(filas: FilaVenta[]) {
     if (f.tipo !== 'nota_credito') {
       vigentes++
       cobrado += f.cobrado
+      porCobrar += Math.max(0, f.total - f.cobrado)
       if (f.condicion === 'credito') credito += f.total; else contado += f.total
     }
   }
@@ -102,7 +105,7 @@ export function totalesVentas(filas: FilaVenta[]) {
   return {
     porTipo, total: r2(total), vigentes, anulados,
     valorVentaDeclarable: r2(declarable), igvDeclarable: r2(igv),
-    cobrado: r2(cobrado), porCobrar: r2(Math.max(0, ventasBrutas - cobrado)),
+    cobrado: r2(cobrado), porCobrar: r2(porCobrar),
     contado: r2(contado), credito: r2(credito),
     ticketPromedio: vigentes > 0 ? r2(ventasBrutas / vigentes) : 0,
   }

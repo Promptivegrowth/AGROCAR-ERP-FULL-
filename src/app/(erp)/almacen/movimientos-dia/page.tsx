@@ -4,6 +4,7 @@ import { useEffect, useState, useMemo, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { hoyLima } from '@/lib/fechas-pe'
+import { traerTodo } from '@/lib/supabase/paginar'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -165,50 +166,58 @@ export default function MovimientosDiaPage() {
         }
       }
 
-      let q = (supabase as any)
-        .from('comprobantes_items')
-        .select(`
-          cantidad, precio_unitario, subtotal, descripcion, producto_id,
-          productos(id, codigo, nombre, descripcion, peso_kg, familias(nombre)),
-          comprobantes!inner(
-            id, serie, numero, tipo, fecha_emision, fecha_despacho, created_at, estado,
-            clientes(razon_social, ruc, dni),
-            cliente_externo_nombre,
-            pedidos(vendedor_id, profiles!pedidos_vendedor_id_fkey(full_name))
-          )
-        `)
-        .neq('comprobantes.estado', 'anulado')
+      // Una consulta nueva por página: Supabase entrega como mucho mil filas y
+      // nueve días ya pasan de 1.500 ítems. Sin paginar, el total del rango
+      // salía cortado (Daniel, 09/10: S/ 128,057.38 contra S/ 171,868.59).
+      const consulta = () => {
+        let q = (supabase as any)
+          .from('comprobantes_items')
+          .select(`
+            cantidad, precio_unitario, subtotal, descripcion, producto_id,
+            productos(id, codigo, nombre, descripcion, peso_kg, familias(nombre)),
+            comprobantes!inner(
+              id, serie, numero, tipo, fecha_emision, fecha_despacho, created_at, estado,
+              clientes(razon_social, ruc, dni),
+              cliente_externo_nombre,
+              pedidos(vendedor_id, profiles!pedidos_vendedor_id_fkey(full_name))
+            )
+          `)
+          .neq('comprobantes.estado', 'anulado')
 
-      if (pedidosDelDespacho) {
-        q = q.in('comprobantes.pedido_id', pedidosDelDespacho)
-      } else {
-        /*
-         * Se agrupa por la fecha de DESPACHO.
-         *
-         * AGROCAR imprime la noche anterior lo que reparte al dia siguiente: el
-         * camion sale 3:30 de la manana y a esa hora no hay nadie en la oficina.
-         * El consolidado tiene que contar esa mercaderia el dia que sale del
-         * almacen, que es lo que el almacenero esta cuadrando.
-         *
-         * Desde la migracion 108 la fecha de emision es la del reparto, asi que
-         * las dos coinciden. Se sigue leyendo `fecha_despacho` a proposito: es
-         * la fecha operativa, y este reporte es operativo. Si algun dia vuelven
-         * a separarse -un comprobante corregido, una entrega que se movio-, el
-         * consolidado tiene que seguir el movimiento de la mercaderia y no el
-         * papel.
-         *
-         * No hay tope hacia adelante. El reparto de manana ya esta facturado
-         * esta noche, y el almacen necesita verlo para prepararlo.
-         */
-        q = q
-          .gte('comprobantes.fecha_despacho', desde)
-          .lte('comprobantes.fecha_despacho', hasta)
+        if (pedidosDelDespacho) {
+          q = q.in('comprobantes.pedido_id', pedidosDelDespacho)
+        } else {
+          /*
+           * Se agrupa por la fecha de DESPACHO.
+           *
+           * AGROCAR imprime la noche anterior lo que reparte al dia siguiente: el
+           * camion sale 3:30 de la manana y a esa hora no hay nadie en la oficina.
+           * El consolidado tiene que contar esa mercaderia el dia que sale del
+           * almacen, que es lo que el almacenero esta cuadrando.
+           *
+           * Desde la migracion 108 la fecha de emision es la del reparto, asi que
+           * las dos coinciden. Se sigue leyendo `fecha_despacho` a proposito: es
+           * la fecha operativa, y este reporte es operativo. Si algun dia vuelven
+           * a separarse -un comprobante corregido, una entrega que se movio-, el
+           * consolidado tiene que seguir el movimiento de la mercaderia y no el
+           * papel.
+           *
+           * No hay tope hacia adelante. El reparto de manana ya esta facturado
+           * esta noche, y el almacen necesita verlo para prepararlo.
+           */
+          q = q
+            .gte('comprobantes.fecha_despacho', desde)
+            .lte('comprobantes.fecha_despacho', hasta)
+        }
+
+        if (tipoComp !== 'todos') q = q.eq('comprobantes.tipo', tipoComp)
+        return q.order('id')
       }
 
-      if (tipoComp !== 'todos') q = q.eq('comprobantes.tipo', tipoComp)
-      const { data, error } = await q
-
-      if (error) {
+      let data: any[]
+      try {
+        data = await traerTodo<any>((a, b) => consulta().range(a, b))
+      } catch (error) {
         console.error(error)
         setItems([])
         return
