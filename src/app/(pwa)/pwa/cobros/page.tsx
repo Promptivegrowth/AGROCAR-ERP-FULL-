@@ -301,26 +301,24 @@ export default function CobrosPage() {
           toast.error('Sin facturas seleccionadas', { description: msg })
           return
         }
-        // Ningún comprobante puede recibir más que lo que debe.
-        const excedido = aps.find((a) => {
+        // Se reparte lo cobrado entre los comprobantes marcados, del más antiguo
+        // al más nuevo: ninguno recibe más de lo que debe, y si lo marcado suma
+        // más que lo cobrado, el último queda pagado en parte. Antes se
+        // bloqueaba el cobro con "la suma de aplicaciones excede el total"
+        // (Daniel, 09/10) y el repartidor no podía cobrar.
+        const orden = new Map((estadoCuenta?.comprobantes ?? []).map((c, i) => [c.id, i]))
+        let restante = Math.round(totalCobro * 100) / 100
+        const repartidas: typeof aps = []
+        for (const a of [...aps].sort((x, y) => (orden.get(x.comprobante_id) ?? 0) - (orden.get(y.comprobante_id) ?? 0))) {
+          if (restante <= 0.001) break
           const comp = estadoCuenta?.comprobantes.find((c) => c.id === a.comprobante_id)
-          return comp && a.monto_aplicado > comp.saldo + 0.001
-        })
-        if (excedido) {
-          const comp = estadoCuenta!.comprobantes.find((c) => c.id === excedido.comprobante_id)!
-          const msg = `${comp.serie}-${comp.numero} solo debe ${formatCurrency(comp.saldo)}: no se le puede aplicar ${formatCurrency(excedido.monto_aplicado)}. Aplica el resto a otro comprobante.`
-          setMensajeError(msg)
-          toast.error('Monto mayor que la deuda', { description: msg })
-          return
+          const tope = Math.min(a.monto_aplicado, comp ? comp.saldo : a.monto_aplicado, restante)
+          const monto = Math.round(tope * 100) / 100
+          if (monto <= 0) continue
+          repartidas.push({ comprobante_id: a.comprobante_id, monto_aplicado: monto })
+          restante = Math.round((restante - monto) * 100) / 100
         }
-        const sumaAplic = aps.reduce((acc, a) => acc + a.monto_aplicado, 0)
-        if (sumaAplic > totalCobro + 0.001) {
-          const msg = `La suma de aplicaciones (${formatCurrency(sumaAplic)}) excede el total cobrado (${formatCurrency(totalCobro)}).`
-          setMensajeError(msg)
-          toast.error('Aplicaciones inválidas', { description: msg })
-          return
-        }
-        aplicacionesPayload = aps
+        aplicacionesPayload = repartidas
       }
 
       const { data: cobroData, error: cobroError } = await (supabase.rpc as any)(
@@ -831,9 +829,9 @@ export default function CobrosPage() {
                                 </div>
                                 {Math.abs(diferencia) > 0.001 && (
                                   <div className={`flex justify-between font-semibold ${
-                                    diferencia > 0 ? 'text-amber-700' : 'text-red-700'
+                                    diferencia > 0 ? 'text-amber-700' : 'text-gray-600'
                                   }`}>
-                                    <span>{diferencia > 0 ? 'A cuenta:' : '⚠ Sobra-aplicado:'}</span>
+                                    <span>{diferencia > 0 ? 'A cuenta:' : 'Queda pendiente en el último:'}</span>
                                     <span className="font-mono">{formatCurrency(Math.abs(diferencia))}</span>
                                   </div>
                                 )}
