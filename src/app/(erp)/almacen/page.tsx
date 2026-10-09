@@ -8,6 +8,7 @@ import { createClient } from '@/lib/supabase/client'
 import { useDebounce } from '@/lib/hooks/use-debounce'
 import { formatCurrency, formatDate, formatDatetime } from '@/lib/utils'
 import { hoyLima } from '@/lib/fechas-pe'
+import { traerTodo } from '@/lib/supabase/paginar'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -73,11 +74,13 @@ export default function AlmacenPage() {
             unidades_medida(simbolo, nombre)
           )
         `),
-      (supabase as any)
+      // Paginado: en 30 días hay más de mil ítems vendidos y Supabase corta en mil.
+      traerTodo<any>((a, b) => (supabase as any)
         .from('comprobantes_items')
         .select('producto_id, cantidad, precio_unitario, subtotal, comprobantes!inner(fecha_emision, estado)')
         .gte('comprobantes.fecha_emision', desde30)
-        .neq('comprobantes.estado', 'anulado'),
+        .neq('comprobantes.estado', 'anulado')
+        .order('id').range(a, b)).then((data) => ({ data }), () => ({ data: [] as any[] })),
     ])
 
     if (error) toast.error('Error al cargar inventario', { description: error.message })
@@ -395,18 +398,26 @@ export default function AlmacenPage() {
 
       // 3) Ventas reales en el rango — calcular precio promedio ponderado por producto
       // Σ(cantidad × precio_unitario) / Σ(cantidad) — solo comprobantes NO anulados
-      const { data: ventasRaw, error: ventasErr } = await (supabase as any)
-        .from('comprobantes_items')
-        .select(`
-          producto_id,
-          cantidad,
-          precio_unitario,
-          subtotal,
-          comprobantes!inner(fecha_emision, estado)
-        `)
-        .gte('comprobantes.fecha_emision', rangoDesde)
-        .lte('comprobantes.fecha_emision', rangoHasta)
-        .neq('comprobantes.estado', 'anulado')
+      // Paginado: con más de mil ítems en el rango, Supabase cortaba sin avisar.
+      let ventasRaw: any[] | null = null
+      let ventasErr: any = null
+      try {
+        ventasRaw = await traerTodo<any>((a, b) => (supabase as any)
+          .from('comprobantes_items')
+          .select(`
+            producto_id,
+            cantidad,
+            precio_unitario,
+            subtotal,
+            comprobantes!inner(fecha_emision, estado)
+          `)
+          .gte('comprobantes.fecha_emision', rangoDesde)
+          .lte('comprobantes.fecha_emision', rangoHasta)
+          .neq('comprobantes.estado', 'anulado')
+          .order('id').range(a, b))
+      } catch (e) {
+        ventasErr = e
+      }
 
       if (ventasErr) throw new Error('No se pudieron leer las ventas: ' + ventasErr.message)
 

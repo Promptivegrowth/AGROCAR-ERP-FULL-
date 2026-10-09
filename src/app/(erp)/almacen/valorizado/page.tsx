@@ -4,6 +4,7 @@ import { useEffect, useState, useMemo, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { hoyLima } from '@/lib/fechas-pe'
+import { traerTodo } from '@/lib/supabase/paginar'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -88,12 +89,13 @@ export default function ValorizadoPage() {
         .select(`
           id, codigo, nombre, descripcion, activo,
           familias(id, nombre),
-          stock(cantidad)
+          stock(cantidad, costo_promedio)
         `)
         .order('codigo')
 
       // 2) Compras del rango con join a fecha
-      const { data: comprasItems } = await (supabase as any)
+      // (paginado: Supabase corta en mil filas sin avisar)
+      const comprasItems = await traerTodo<any>((a, b) => (supabase as any)
         .from('compras_items')
         .select(`
           producto_id, cantidad, precio_unitario,
@@ -102,9 +104,11 @@ export default function ValorizadoPage() {
         .gte('compras.fecha', desde)
         .lte('compras.fecha', hasta)
         .neq('compras.estado', 'anulado')
+        .order('id').range(a, b))
 
       // 3) Ventas del rango (comprobantes_items con join a comprobantes)
-      const { data: ventasItems } = await (supabase as any)
+      // (paginado: desde julio ya pasan de mil ítems vendidos)
+      const ventasItems = await traerTodo<any>((a, b) => (supabase as any)
         .from('comprobantes_items')
         .select(`
           producto_id, cantidad, precio_unitario,
@@ -113,6 +117,7 @@ export default function ValorizadoPage() {
         .gte('comprobantes.fecha_emision', desde)
         .lte('comprobantes.fecha_emision', hasta)
         .neq('comprobantes.estado', 'anulado')
+        .order('id').range(a, b))
 
       // Calcular promedios ponderados por producto
       type Promedio = { total_cant: number; total_monto: number }
@@ -140,7 +145,13 @@ export default function ValorizadoPage() {
       const resultado: ProductoValorizado[] = (prods ?? []).map((p: any) => {
         const compra = compraPorProd.get(p.id)
         const venta = ventaPorProd.get(p.id)
-        const costo = compra && compra.total_cant > 0 ? compra.total_monto / compra.total_cant : null
+        // El valor del inventario usa el costo promedio del kárdex (stock.costo_promedio),
+        // el mismo de la pantalla de Inventario. Antes se recalculaba con las compras del
+        // rango y daba unos soles distinto (Daniel, 09/10: S/ 415,546.87 vs 415,471.86).
+        // El promedio de compras del rango queda solo para productos sin costo en stock.
+        const st = Array.isArray(p.stock) ? p.stock[0] : p.stock
+        const costoKardex = st?.costo_promedio != null && Number(st.costo_promedio) > 0 ? Number(st.costo_promedio) : null
+        const costo = costoKardex ?? (compra && compra.total_cant > 0 ? compra.total_monto / compra.total_cant : null)
         const precioVenta = venta && venta.total_cant > 0 ? venta.total_monto / venta.total_cant : null
         const margen = (costo !== null && precioVenta !== null) ? precioVenta - costo : null
         const utilidadPct = (costo !== null && costo > 0 && margen !== null) ? (margen / costo) * 100 : null

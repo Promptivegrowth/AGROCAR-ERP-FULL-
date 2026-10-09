@@ -4,6 +4,7 @@ import {
   crearExcelBranded, seccionTitulo, seccionTabla, excelResponse, footerReporte,
 } from '@/lib/excel-export'
 import { hoyLima } from '@/lib/fechas-pe'
+import { traerTodo } from '@/lib/supabase/paginar'
 
 export const dynamic = 'force-dynamic'
 
@@ -23,19 +24,22 @@ export async function GET(req: NextRequest) {
     .select(`
       id, codigo, nombre, descripcion, activo,
       familias(id, nombre),
-      stock(cantidad)
+      stock(cantidad, costo_promedio)
     `)
     .order('codigo')
 
-  const [{ data: comprasItems }, { data: ventasItems }] = await Promise.all([
-    (supabase as any).from('compras_items')
+  // Paginado: Supabase corta en mil filas sin avisar.
+  const [comprasItems, ventasItems] = await Promise.all([
+    traerTodo<any>((a, b) => (supabase as any).from('compras_items')
       .select('producto_id, cantidad, precio_unitario, compras!inner(fecha, estado)')
       .gte('compras.fecha', desde).lte('compras.fecha', hasta)
-      .neq('compras.estado', 'anulado'),
-    (supabase as any).from('comprobantes_items')
+      .neq('compras.estado', 'anulado')
+      .order('id').range(a, b)),
+    traerTodo<any>((a, b) => (supabase as any).from('comprobantes_items')
       .select('producto_id, cantidad, precio_unitario, comprobantes!inner(fecha_emision, estado)')
       .gte('comprobantes.fecha_emision', desde).lte('comprobantes.fecha_emision', hasta)
-      .neq('comprobantes.estado', 'anulado'),
+      .neq('comprobantes.estado', 'anulado')
+      .order('id').range(a, b)),
   ])
 
   type Prom = { cant: number; monto: number }
@@ -59,7 +63,11 @@ export async function GET(req: NextRequest) {
   let productos = (prods ?? []).map((p: any) => {
     const compra = compraMap.get(p.id)
     const venta = ventaMap.get(p.id)
-    const costo = compra && compra.cant > 0 ? compra.monto / compra.cant : null
+    // Costo del kárdex, igual que la pantalla de Inventario; el promedio de
+    // compras del rango solo si el producto no tiene costo en stock.
+    const st = Array.isArray(p.stock) ? p.stock[0] : p.stock
+    const costoKardex = st?.costo_promedio != null && Number(st.costo_promedio) > 0 ? Number(st.costo_promedio) : null
+    const costo = costoKardex ?? (compra && compra.cant > 0 ? compra.monto / compra.cant : null)
     const precioVenta = venta && venta.cant > 0 ? venta.monto / venta.cant : null
     const margen = (costo !== null && precioVenta !== null) ? precioVenta - costo : null
     const utilPct = (costo !== null && costo > 0 && margen !== null) ? (margen / costo) * 100 : null
