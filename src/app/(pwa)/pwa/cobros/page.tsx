@@ -236,6 +236,10 @@ export default function CobrosPage() {
   }, [supabase])
 
   useEffect(() => {
+    // Lo marcado es de un cliente: al cambiar de cliente se borra. Antes quedaba
+    // oculto y se sumaba al siguiente (Daniel, 09/10: "la suma de aplicaciones
+    // S/ 1,869 excede S/ 1,513", con S/ 356 de una boleta de otro cliente).
+    setAplicacionesManuales({})
     if (clienteSeleccionado) {
       cargarEstadoCuenta(clienteSeleccionado)
     } else {
@@ -289,7 +293,10 @@ export default function CobrosPage() {
       // Construir aplicaciones manuales si el vendedor las eligió
       let aplicacionesPayload: Array<{ comprobante_id: string; monto_aplicado: number }> | null = null
       if (modoAplicacion === 'manual') {
+        // Solo comprobantes del cliente en pantalla.
+        const idsCliente = new Set((estadoCuenta?.comprobantes ?? []).map((c) => c.id))
         const aps = Object.entries(aplicacionesManuales)
+          .filter(([compId]) => idsCliente.has(compId))
           .map(([compId, montoStr]) => ({
             comprobante_id: compId,
             monto_aplicado: parseFloat(montoStr) || 0,
@@ -814,8 +821,8 @@ export default function CobrosPage() {
 
                           {/* Resumen aplicación manual */}
                           {modoAplicacion === 'manual' && Object.keys(aplicacionesManuales).length > 0 && (() => {
-                            const sumaAplic = Object.values(aplicacionesManuales)
-                              .reduce((acc, v) => acc + (parseFloat(v) || 0), 0)
+                            const sumaAplic = (estadoCuenta?.comprobantes ?? [])
+                              .reduce((acc, c) => acc + (parseFloat(aplicacionesManuales[c.id] ?? '') || 0), 0)
                             const diferencia = totalCobro - sumaAplic
                             return (
                               <div className="mt-2 p-2 bg-gray-50 rounded-lg text-xs space-y-0.5">
