@@ -12,7 +12,7 @@ import { toast } from 'sonner'
 import { createClient } from '@/lib/supabase/client'
 import { useDebounce } from '@/lib/hooks/use-debounce'
 import { formatCurrency, formatDate } from '@/lib/utils'
-import { hoyLima } from '@/lib/fechas-pe'
+import { hoyLima, horaLima } from '@/lib/fechas-pe'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
@@ -576,6 +576,7 @@ export default function PedidosClient({ pedidosIniciales, desde, hasta }: {
                           <p className="font-semibold text-gray-900 truncate">{p.clientes?.razon_social ?? '—'}</p>
                           <p className="text-xs text-gray-500 mt-0.5">
                             {p.profiles?.full_name ?? 'sin vendedor'} · {formatDate(p.fecha_pedido)}
+                            {(p as any).created_at ? ` · ${horaLima((p as any).created_at)}` : ''}
                           </p>
                         </div>
                         <div className="text-right shrink-0 ml-3">
@@ -616,7 +617,11 @@ export default function PedidosClient({ pedidosIniciales, desde, hasta }: {
                       return (
                         <tr key={p.id} className="hover:bg-gray-50/50 transition-colors">
                           <td className="py-3 px-4 font-mono text-xs text-gray-600">{p.numero}</td>
-                          <td className="py-3 px-4 text-gray-500 text-xs">{formatDate(p.fecha_pedido)}</td>
+                          <td className="py-3 px-4 text-gray-500 text-xs whitespace-nowrap">
+                            {formatDate(p.fecha_pedido)}
+                            {/* La hora en que se registró (Daniel, 10/10). */}
+                            {(p as any).created_at && <div className="text-[11px] text-gray-400">{horaLima((p as any).created_at)}</div>}
+                          </td>
                           <td className="py-3 px-4 font-medium text-gray-900 max-w-[260px]">
                             <div className="truncate">{p.clientes?.razon_social ?? '—'}</div>
                             <div className="flex items-center gap-1 flex-wrap mt-0.5">
@@ -709,7 +714,8 @@ export default function PedidosClient({ pedidosIniciales, desde, hasta }: {
                     vendedorNombre={selected.profiles?.full_name ?? null}
                     onCambio={recargarPedidoActual}
                   />
-                  <InfoRow icon={Calendar} label="Fecha pedido" value={formatDate(selected.fecha_pedido)} />
+                  <InfoRow icon={Calendar} label="Fecha pedido"
+                    value={`${formatDate(selected.fecha_pedido)}${(selected as any).created_at ? ` · ${horaLima((selected as any).created_at)}` : ''}`} />
                   {editMode ? (
                     <div className="flex items-start gap-2">
                       <Truck className="w-4 h-4 mt-2 shrink-0 text-gray-400" />

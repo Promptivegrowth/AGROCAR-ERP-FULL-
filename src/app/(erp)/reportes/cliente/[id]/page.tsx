@@ -24,7 +24,7 @@ async function getData(clienteId: string, desde: string, hasta: string) {
         id, serie, numero, tipo, fecha_emision, subtotal, igv, total, estado, created_at,
         comprobantes_items(
           id, descripcion, cantidad, precio_unitario, subtotal,
-          productos(id, codigo, nombre, familias(nombre))
+          productos(id, codigo, nombre, descripcion, familias(nombre))
         )
       `)
       .eq('cliente_id', clienteId)
@@ -55,7 +55,9 @@ async function getData(clienteId: string, desde: string, hasta: string) {
       const key = it.productos?.id ?? it.descripcion ?? 'desconocido'
       const acc = productosMap.get(key) ?? {
         codigo: it.productos?.codigo ?? '—',
-        nombre: it.productos?.nombre ?? it.descripcion ?? '—',
+        // El nombre completo (con marca y presentación), no solo la categoría
+        // corta: "SALCHICHAS" no decía cuál compró (Daniel, 10/10).
+        nombre: it.productos?.descripcion?.trim() || it.productos?.nombre || it.descripcion || '—',
         familia: it.productos?.familias?.nombre ?? '—',
         cantidad: 0, monto: 0, veces: 0,
       }
@@ -239,7 +241,7 @@ export default async function ClienteReportePage({
                   {topProductos.map((p, i) => (
                     <tr key={i} className="border-b border-gray-100">
                       <td className="p-2 font-mono text-[10px]">{p.codigo}</td>
-                      <td className="p-2 truncate max-w-[260px]">{p.nombre}</td>
+                      <td className="p-2">{p.nombre}</td>
                       <td className="p-2 text-gray-600 truncate max-w-[140px]">{p.familia}</td>
                       <td className="p-2 text-right">{p.veces}</td>
                       <td className="p-2 text-right font-mono">{p.cantidad.toFixed(2)}</td>

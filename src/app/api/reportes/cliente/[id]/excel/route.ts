@@ -27,7 +27,7 @@ export async function GET(
       .select(`
         id, serie, numero, tipo, fecha_emision, subtotal, igv, total,
         comprobantes_items(cantidad, precio_unitario, subtotal, descripcion,
-          productos(codigo, nombre, familias(nombre)))
+          productos(codigo, nombre, descripcion, familias(nombre)))
       `)
       .eq('cliente_id', id)
       .gte('fecha_emision', desde).lte('fecha_emision', hasta)
@@ -49,7 +49,7 @@ export async function GET(
       const key = it.productos?.codigo ?? it.descripcion
       const acc = productosMap.get(key) ?? {
         codigo: it.productos?.codigo ?? '—',
-        nombre: it.productos?.nombre ?? it.descripcion ?? '—',
+        nombre: it.productos?.descripcion?.trim() || it.productos?.nombre || it.descripcion || '—',
         familia: it.productos?.familias?.nombre ?? '—',
         cantidad: 0, monto: 0, veces: 0,
       }
