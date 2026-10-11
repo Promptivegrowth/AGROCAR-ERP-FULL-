@@ -4,6 +4,8 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { configuracionSunat, type ConfiguracionSunat } from '@/lib/sunat/config'
 import { declararComprobante, comprobantesPendientes } from '@/lib/sunat/declarar'
 import { consultarEnSunat } from '@/lib/sunat/consulta'
+import { configuracionGre } from '@/lib/sunat/gre-config'
+import { consultarGuia } from '@/lib/sunat/gre-declarar'
 import { hoyLima } from '@/lib/fechas-pe'
 import { sumarDias } from '@/lib/sunat/plazo'
 
@@ -81,11 +83,20 @@ async function anotarBarrido(resumen: Record<string, unknown>) {
 async function verificarDeclarados(conf: ConfiguracionSunat, hastaMs: number) {
   if (conf.modo !== 'produccion') return { verificados: 0, diferencias: [] as string[] }
   const admin = createAdminClient() as any
+  /*
+   * Lo nunca verificado, y también lo que SUNAT dijo que no tenía hace más de
+   * tres horas: su consulta puede ir atrasada (10/10/2026: 68 comprobantes con
+   * constancia de aceptado que la consulta seguía sin mostrar). Antes se
+   * verificaba una sola vez y quedaban en "Revisar" aunque SUNAT se pusiera al
+   * día. Primero lo nunca verificado.
+   */
+  const hace3h = new Date(Date.now() - 3 * 3600_000).toISOString()
   const { data } = await admin.from('comprobantes')
-    .select('id, tipo, serie, numero')
+    .select('id, tipo, serie, numero, sunat_verificado_at')
     .eq('enviado_sunat', true).eq('sunat_modo', 'produccion')
-    .is('sunat_verificado_at', null)
+    .or(`sunat_verificado_at.is.null,and(sunat_verificacion.in.(no_existe,error),sunat_verificado_at.lt.${hace3h})`)
     .gte('fecha_emision', sumarDias(hoyLima(), -10))
+    .order('sunat_verificado_at', { ascending: true, nullsFirst: true })
     .order('fecha_emision', { ascending: true })
     .limit(150)
   let verificados = 0
@@ -104,6 +115,40 @@ async function verificarDeclarados(conf: ConfiguracionSunat, hastaMs: number) {
     await new Promise((res) => setTimeout(res, 300))
   }
   return { verificados, diferencias }
+}
+
+/**
+ * Guías que quedaron "procesando" en SUNAT: se vuelve a consultar su ticket.
+ *
+ * La guía se consulta al enviarla; si SUNAT todavía no tenía el veredicto, nada
+ * la volvía a mirar hasta que alguien la reenviara a mano. Cada una por
+ * separado y con su propio try: un corte de SUNAT en una no frena a las demás
+ * (lo mismo que Happy SAC corrigió en sus tickets el 11/10/2026).
+ */
+async function reconsultarGuias(hastaMs: number) {
+  let consultadas = 0
+  let aceptadas = 0
+  try {
+    const conf = await configuracionGre()
+    if (!conf.listo) return { consultadas, aceptadas }
+    const admin = createAdminClient() as any
+    const { data } = await admin.from('guias_remision')
+      .select('id').eq('sunat_estado', 'procesando').not('sunat_ticket', 'is', null).limit(50)
+    for (const g of (data ?? []) as { id: string }[]) {
+      if (Date.now() > hastaMs) break
+      try {
+        const r = await consultarGuia(g.id, conf)
+        consultadas++
+        if (r.ok) aceptadas++
+      } catch {
+        // Esta no se pudo consultar: queda procesando para el próximo barrido.
+      }
+      await new Promise((res) => setTimeout(res, 500))
+    }
+  } catch {
+    // Sin configuración de guías: no hay nada que reconsultar.
+  }
+  return { consultadas, aceptadas }
 }
 
 export async function GET(req: Request) {
@@ -187,6 +232,7 @@ export async function GET(req: Request) {
   }
 
   const verificacion = await verificarDeclarados(conf, LIMITE_TOTAL_MS)
+  const guias = await reconsultarGuias(LIMITE_TOTAL_MS)
 
   const resumen = {
     origen: quien,
@@ -199,6 +245,8 @@ export async function GET(req: Request) {
     quedaron_para_despues: quedaron,
     verificados: verificacion.verificados,
     diferencias: verificacion.diferencias.length,
+    guias_reconsultadas: guias.consultadas,
+    guias_aceptadas: guias.aceptadas,
     segundos: Math.round((Date.now() - inicio) / 1000),
   }
   await anotarBarrido({
