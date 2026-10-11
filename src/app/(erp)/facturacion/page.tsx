@@ -586,6 +586,11 @@ export default function FacturacionPage() {
       toast.error('Bloqueado', { description: 'El comprobante ya fue enviado a SUNAT y no puede editarse.' })
       return
     }
+    // SUNAT puede tenerlo en su cola: la base no deja editarlo (migración 142).
+    if (comp.sunat_estado === 'en_proceso') {
+      toast.error('En proceso en SUNAT', { description: 'SUNAT todavía no respondió por este comprobante y se reintenta solo. No se puede editar hasta que responda.' })
+      return
+    }
     setEditComp(comp)
     setEditNota('')
     setEditarOpen(true)
@@ -1791,7 +1796,7 @@ export default function FacturacionPage() {
                                 {/* Corregir la fecha del comprobante: la de
                                     salida y la de emision son la misma. Solo
                                     administracion y solo si no se declaro. */}
-                                {puedeCorregirFecha && c.estado !== 'anulado' && !c.enviado_sunat && (
+                                {puedeCorregirFecha && c.estado !== 'anulado' && !c.enviado_sunat && c.sunat_estado !== 'en_proceso' && (
                                   <button
                                     type="button"
                                     onClick={() => corregirFechaDespacho(c)}
@@ -1805,22 +1810,34 @@ export default function FacturacionPage() {
                                 )}
                                 {puedeEditar && !c.enviado_sunat && c.estado !== 'anulado' && (
                                   <>
-                                    <button
-                                      type="button"
-                                      onClick={() => abrirEditar(c)}
-                                      className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-amber-700 hover:text-amber-900 hover:bg-amber-50 rounded transition-colors"
-                                      title="Editar comprobante (con auditoría)"
-                                    >
-                                      ✏️ Editar
-                                    </button>
-                                    <button
-                                      type="button"
-                                      onClick={() => abrirAnular(c)}
-                                      className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-red-700 hover:text-red-900 hover:bg-red-50 rounded transition-colors"
-                                      title="Anular comprobante (mantiene correlativo)"
-                                    >
-                                      🚫 Anular
-                                    </button>
+                                    {/* En proceso en SUNAT: puede estar en su cola, no se edita ni anula (142). */}
+                                    {c.sunat_estado === 'en_proceso' ? (
+                                      <span
+                                        className="inline-flex items-center px-2 py-1 text-[10px] font-medium text-amber-800 bg-amber-50 border border-amber-200 rounded"
+                                        title="SUNAT todavía no respondió y se reintenta solo. Hasta que responda no se puede editar ni anular."
+                                      >
+                                        En proceso en SUNAT · no se edita
+                                      </span>
+                                    ) : (
+                                      <>
+                                        <button
+                                          type="button"
+                                          onClick={() => abrirEditar(c)}
+                                          className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-amber-700 hover:text-amber-900 hover:bg-amber-50 rounded transition-colors"
+                                          title="Editar comprobante (con auditoría)"
+                                        >
+                                          ✏️ Editar
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() => abrirAnular(c)}
+                                          className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-red-700 hover:text-red-900 hover:bg-red-50 rounded transition-colors"
+                                          title="Anular comprobante (mantiene correlativo)"
+                                        >
+                                          🚫 Anular
+                                        </button>
+                                      </>
+                                    )}
                                     <button
                                       type="button"
                                       onClick={() => abrirGuia(c)}
