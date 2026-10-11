@@ -67,6 +67,18 @@ async function recuperarDeSunat(
   }
 }
 
+/**
+ * Lo que SUNAT contestó no es un rechazo del comprobante sino una falla suya:
+ * "0140 - Existe un documento igual en proceso", "0100 - El sistema no puede
+ * responder su solicitud", un Fault sin código de cuatro dígitos (el servidor
+ * fallando) o ninguna respuesta. Queda "en proceso" y se reintenta.
+ */
+export function quedaEnProceso(r: { tipo: string; codigo: string | null }): boolean {
+  return r.tipo === 'sin_respuesta'
+    || /(^|\.)01[04]0$/.test(r.codigo ?? '')
+    || (r.tipo === 'fault' && !/\d{4}$/.test(r.codigo ?? ''))
+}
+
 export interface ResultadoDeclaracion {
   ok: boolean
   /** Por qué no se envió, cuando no se envió. Vacío si se llegó a SUNAT. */
@@ -291,7 +303,7 @@ export async function declararComprobante(
      * en su cola. Queda "en proceso" y el siguiente barrido primero le pregunta
      * a SUNAT (10 y 11/10/2026: se veían como "Rechazado").
      */
-    const enProceso = !aceptado && (r.tipo === 'sin_respuesta' || /(^|\.)01[04]0$/.test(r.codigo ?? ''))
+    const enProceso = !aceptado && quedaEnProceso(r)
 
     await (admin as any).from('comprobantes').update({
       enviado_sunat: aceptado,

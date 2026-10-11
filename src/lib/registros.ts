@@ -44,6 +44,13 @@ export function normalizarCompras(data: any[]): FilaCompra[] {
 }
 
 export const anuladaVenta = (f: FilaVenta) => f.estado === 'anulado'
+
+/** El estado SUNAT en palabras (sunat_estado guarda claves como 'en_proceso'). */
+const ESTADO_SUNAT: Record<string, string> = {
+  aceptado: 'Aceptado', rechazado: 'Rechazado', error: 'Error al enviar',
+  en_proceso: 'En proceso en SUNAT', enviando: 'Enviando',
+}
+export const estadoSunatTexto = (e: string | null) => (e ? ESTADO_SUNAT[e] ?? e : 'Pendiente')
 export const anuladaCompra = (f: FilaCompra) => f.estado === 'anulada'
 /** Signo con que suma: las notas de crédito restan. */
 export const signo = (f: FilaVenta) => (f.tipo === 'nota_credito' ? -1 : 1)

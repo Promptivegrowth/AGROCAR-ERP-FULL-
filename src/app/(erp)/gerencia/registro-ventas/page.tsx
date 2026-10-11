@@ -9,7 +9,7 @@ import { hoyLima } from '@/lib/fechas-pe'
 import { EMPRESA } from '@/lib/empresa'
 import {
   type FilaVenta, TIPO_VENTA, normalizarVentas, filtrarVentas, totalesVentas, ventasPorDia, ventasPor,
-  anuladaVenta, restarDias, mesAnterior,
+  anuladaVenta, restarDias, mesAnterior, estadoSunatTexto,
 } from '@/lib/registros'
 
 /**
@@ -198,7 +198,7 @@ export default function RegistroVentasPage() {
                     <td className="p-2 text-right font-mono text-emerald-700">{f.tipo === 'nota_credito' ? '—' : S(f.cobrado)}</td>
                     <td className={`p-2 text-right font-mono ${f.total - f.cobrado > 0.005 && f.tipo !== 'nota_credito' && !anulado ? 'text-red-700' : 'text-gray-400'}`}>
                       {f.tipo === 'nota_credito' ? '—' : S(Math.max(0, f.total - f.cobrado))}</td>
-                    <td className="p-2 text-[10px]">{interno ? 'No aplica' : anulado ? 'Anulado' : (f.sunat_estado ?? 'Pendiente')}</td>
+                    <td className="p-2 text-[10px]">{interno ? 'No aplica' : anulado ? 'Anulado' : estadoSunatTexto(f.sunat_estado)}</td>
                   </tr>
                 )
               })}

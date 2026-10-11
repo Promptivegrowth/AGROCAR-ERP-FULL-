@@ -3,7 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import { crearExcelBranded, seccionTitulo, seccionTabla, excelResponse, footerReporte } from '@/lib/excel-export'
 import { hoyLima } from '@/lib/fechas-pe'
 import {
-  TIPO_VENTA, normalizarVentas, filtrarVentas, totalesVentas, ventasPorDia, ventasPor, anuladaVenta,
+  TIPO_VENTA, normalizarVentas, filtrarVentas, totalesVentas, ventasPorDia, ventasPor, anuladaVenta, estadoSunatTexto,
 } from '@/lib/registros'
 
 /** Excel del registro de ventas (gerencia). Mismos filtros y totales que la pantalla (lib/registros). */
@@ -58,7 +58,7 @@ export async function GET(req: NextRequest) {
       return [f.fecha.split('-').reverse().join('/'), TIPO_VENTA[f.tipo] ?? f.tipo, `${f.serie}-${f.numero}`, f.cliente, f.doc, f.vendedor || '',
         f.condicion === 'credito' ? 'Crédito' : 'Contado', interno ? null : s * f.base, interno ? null : s * f.igv, s * f.total,
         f.tipo === 'nota_credito' ? null : f.cobrado, f.tipo === 'nota_credito' ? null : Math.max(0, f.total - f.cobrado),
-        anuladaVenta(f) ? 'ANULADO' : interno ? 'No va a SUNAT' : (f.sunat_estado ?? 'Pendiente')]
+        anuladaVenta(f) ? 'ANULADO' : interno ? 'No va a SUNAT' : estadoSunatTexto(f.sunat_estado)]
     }),
     { columnasMoneda: [7, 8, 9, 10, 11] })
 
