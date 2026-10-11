@@ -1813,10 +1813,10 @@ export default function FacturacionPage() {
                                     {/* En proceso en SUNAT: puede estar en su cola, no se edita ni anula (142). */}
                                     {c.sunat_estado === 'en_proceso' ? (
                                       <span
-                                        className="inline-flex items-center px-2 py-1 text-[10px] font-medium text-amber-800 bg-amber-50 border border-amber-200 rounded"
+                                        className="inline-flex items-center whitespace-nowrap px-2 py-1 text-[10px] font-medium text-amber-800 bg-amber-50 border border-amber-200 rounded"
                                         title="SUNAT todavía no respondió y se reintenta solo. Hasta que responda no se puede editar ni anular."
                                       >
-                                        En proceso en SUNAT · no se edita
+                                        🔒 No se edita
                                       </span>
                                     ) : (
                                       <>
