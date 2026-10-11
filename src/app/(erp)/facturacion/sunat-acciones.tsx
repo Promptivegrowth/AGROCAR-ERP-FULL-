@@ -118,6 +118,17 @@ export function ChipSunat({ comp }: { comp: ComprobanteSunat }) {
     )
   }
 
+  if (comp.sunat_estado === 'en_proceso') {
+    return (
+      <span
+        className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-800"
+        title={comp.sunat_mensaje ?? undefined}
+      >
+        En proceso en SUNAT
+      </span>
+    )
+  }
+
   if (comp.sunat_estado === 'rechazado' || comp.sunat_estado === 'error') {
     return (
       <span

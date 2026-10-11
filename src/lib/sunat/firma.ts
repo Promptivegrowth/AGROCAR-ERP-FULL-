@@ -151,15 +151,23 @@ export interface RespuestaSunat {
  * de facturación electrónica.
  */
 /**
- * Códigos HTTP que valen la pena reintentar.
+ * Códigos HTTP que valen la pena reintentar en el momento.
  *
  * El 401 no es una credencial mal puesta: el servicio de SUNAT lo devuelve
  * cuando lo apuran, y beta avisa en su propia documentación que no admite
- * envíos masivos ni simultáneos. Un 401 aislado en medio de una tanda que
- * funciona es eso, no una clave equivocada. Los 5xx y los tiempos agotados
- * son de la misma familia: el comprobante está bien, el servicio no contestó.
+ * envíos masivos ni simultáneos. Un 401 o un 429 son un "todavía no": SUNAT no
+ * tomó el comprobante.
+ *
+ * Los 5xx y los tiempos agotados NO se reintentan en el momento. Con el
+ * servidor de SUNAT fallando (502, 10 y 11/10/2026) el comprobante a veces sí
+ * le llega y queda en su cola; reenviarlo al segundo choca con ese primero:
+ * "0140 - Existe un documento igual en proceso", y queda trabado horas. Lo
+ * encontró también Happy SAC con sus resúmenes. Se deja para el siguiente
+ * barrido, que antes de reenviar le pregunta a SUNAT si ya lo tiene.
  */
-const REINTENTABLES = [401, 429, 500, 502, 503, 504]
+const REINTENTABLES = [401, 429]
+/** El servidor de SUNAT falló: puede haber recibido el comprobante. */
+const FALLA_DEL_SERVIDOR = [500, 502, 503, 504]
 
 const esperar = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
@@ -222,7 +230,10 @@ export async function enviarASunat(
       if (/<faultcode>[^<]*\b\d{4}<\/faultcode>/.test(texto)) break
       ultimoFallo = `HTTP ${res.status}`
     } catch (e) {
+      // Sin respuesta (red, tiempo agotado): el envío pudo haber llegado. No se
+      // reintenta en el momento, por lo mismo que un 5xx.
       ultimoFallo = e instanceof Error ? e.message : String(e)
+      break
     }
     // Espera creciente: 1s, 2s, 4s. Sin apurar a un servicio que ya avisó
     // que no quiere ser apurado.
@@ -252,7 +263,8 @@ export async function enviarASunat(
     return {
       ok: false, tipo: 'sin_respuesta',
       codigo: null,
-      mensaje: `HTTP ${res.status}${REINTENTABLES.includes(res.status) ? ` tras ${intentos} intentos` : ''}`,
+      mensaje: `HTTP ${res.status}${REINTENTABLES.includes(res.status) ? ` tras ${intentos} intentos` : ''}`
+        + (FALLA_DEL_SERVIDOR.includes(res.status) ? ' (falla del servidor de SUNAT)' : ''),
       crudo: texto.slice(0, 4000),
     }
   }

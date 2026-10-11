@@ -284,12 +284,22 @@ export async function declararComprobante(
 
     // 4000 es "ya fue presentado": el comprobante está en SUNAT igual.
     const aceptado = r.codigo === '0' || r.codigo === '4000'
+    /*
+     * "0140 - Existe un documento igual en proceso", "0100 - El sistema no puede
+     * responder su solicitud" o un servidor de SUNAT que no contestó no son
+     * rechazos: SUNAT no dijo nada malo del comprobante, y puede que ya lo tenga
+     * en su cola. Queda "en proceso" y el siguiente barrido primero le pregunta
+     * a SUNAT (10 y 11/10/2026: se veían como "Rechazado").
+     */
+    const enProceso = !aceptado && (r.tipo === 'sin_respuesta' || /(^|\.)01[04]0$/.test(r.codigo ?? ''))
 
     await (admin as any).from('comprobantes').update({
       enviado_sunat: aceptado,
-      sunat_estado: aceptado ? 'aceptado' : 'rechazado',
+      sunat_estado: aceptado ? 'aceptado' : enProceso ? 'en_proceso' : 'rechazado',
       sunat_codigo: r.codigo,
-      sunat_mensaje: r.mensaje,
+      sunat_mensaje: enProceso
+        ? `En proceso en SUNAT, se reintenta solo: ${r.mensaje ?? 'sin respuesta'}`
+        : r.mensaje,
       sunat_observaciones: r.observaciones ?? null,
       sunat_cdr: r.cdrZipBase64 ?? null,
       sunat_xml: firmado,

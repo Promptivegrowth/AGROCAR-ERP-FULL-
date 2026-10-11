@@ -79,7 +79,7 @@ interface Comp {
 }
 
 type Clave =
-  | 'aceptado' | 'observado' | 'alerta' | 'rechazado' | 'error'
+  | 'aceptado' | 'observado' | 'alerta' | 'rechazado' | 'error' | 'en_proceso'
   | 'pendiente' | 'programado' | 'pruebas' | 'historico' | 'anulado' | 'no_declara'
 
 const ESTILO: Record<Clave, { label: string; className: string }> = {
@@ -87,6 +87,7 @@ const ESTILO: Record<Clave, { label: string; className: string }> = {
   observado:  { label: 'Aceptado con observaciones', className: 'bg-lime-100 text-lime-800' },
   alerta:     { label: 'Revisar: SUNAT no coincide', className: 'bg-orange-100 text-orange-800' },
   rechazado:  { label: 'Rechazado', className: 'bg-red-100 text-red-800' },
+  en_proceso: { label: 'En proceso en SUNAT · se reintenta solo', className: 'bg-amber-100 text-amber-800' },
   error:      { label: 'Error al enviar', className: 'bg-red-100 text-red-800' },
   pendiente:  { label: 'Pendiente de envío', className: 'bg-amber-100 text-amber-800' },
   programado: { label: 'Programado', className: 'bg-sky-100 text-sky-800' },
@@ -108,6 +109,7 @@ function claveDe(c: Comp, conf: EstadoSunat | null, hoy: string): Clave {
     return obs ? 'observado' : 'aceptado'
   }
   if (c.sunat_verificacion === 'aceptado') return 'aceptado'
+  if (c.sunat_estado === 'en_proceso') return 'en_proceso'
   if (c.sunat_estado === 'rechazado') return 'rechazado'
   if (c.sunat_estado === 'error') return 'error'
   // Todavía en el margen para corregir: el envío automático lo declara después.
@@ -244,6 +246,7 @@ export default function EstadoSunatPage() {
       if (filtro !== 'todos') {
         if (filtro === 'rechazado' ? !['rechazado', 'error'].includes(clave)
           : filtro === 'aceptado' ? !['aceptado', 'observado'].includes(clave)
+          : filtro === 'pendiente' ? !['pendiente', 'en_proceso'].includes(clave)
           : clave !== filtro) return false
       }
       if (!q) return true
@@ -327,7 +330,7 @@ export default function EstadoSunatPage() {
     { clave: 'todos', titulo: 'Total del periodo', n: comps.length, icono: FileCheck2, color: 'text-gray-700' },
     { clave: 'aceptado', titulo: 'Aceptados por SUNAT', n: (conteo.aceptado ?? 0) + (conteo.observado ?? 0), icono: CheckCircle2, color: 'text-emerald-600' },
     { clave: 'programado', titulo: 'Programados', n: conteo.programado ?? 0, icono: CalendarClock, color: 'text-sky-600' },
-    { clave: 'pendiente', titulo: 'Pendientes de envío', n: conteo.pendiente ?? 0, icono: Clock, color: 'text-amber-600' },
+    { clave: 'pendiente', titulo: 'Pendientes de envío', n: (conteo.pendiente ?? 0) + (conteo.en_proceso ?? 0), icono: Clock, color: 'text-amber-600' },
     { clave: 'rechazado', titulo: 'Rechazados / error', n: (conteo.rechazado ?? 0) + (conteo.error ?? 0), icono: XCircle, color: 'text-red-600' },
     { clave: 'alerta', titulo: 'Para revisar', n: conteo.alerta ?? 0, icono: AlertTriangle, color: 'text-orange-600' },
   ]
@@ -474,7 +477,7 @@ export default function EstadoSunatPage() {
                         <span data-estado={clave} className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold whitespace-nowrap ${est.className}`}>
                           {clave === 'programado' ? `Se declara el ${formatDate(envioDe(c, conf))}` : est.label}
                         </span>
-                        {['programado', 'pendiente', 'error', 'rechazado'].includes(clave) && (
+                        {['programado', 'pendiente', 'error', 'rechazado', 'en_proceso'].includes(clave) && (
                           <p className={`mt-0.5 text-[10px] ${hoy >= venceElPlazo(c.fecha_emision) ? 'font-semibold text-red-700' : 'text-gray-400'}`}>
                             {hoy > venceElPlazo(c.fecha_emision)
                               ? `Plazo SUNAT vencido el ${formatDate(venceElPlazo(c.fecha_emision))}`
@@ -525,7 +528,7 @@ export default function EstadoSunatPage() {
                             </Button>
                           )}
                           {/* Declarar antes de tiempo se puede, si ya llegó su fecha de emisión. */}
-                          {(['pendiente', 'rechazado', 'error', 'pruebas'].includes(clave)
+                          {(['pendiente', 'rechazado', 'error', 'pruebas', 'en_proceso'].includes(clave)
                             || (clave === 'programado' && c.fecha_emision <= hoy)) && (
                             <BotonDeclarar comp={c} estado={conf} onListo={cargar} />
                           )}
