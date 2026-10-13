@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import {
   ShoppingCart, Search, Eye, Loader2, ChevronLeft, ChevronRight, MapPin,
   Package, AlertTriangle, User, Calendar, FileText, Truck, CheckCircle,
-  XCircle, Clock, Plus,
+  XCircle, Clock, Plus, CreditCard,
 } from 'lucide-react'
 import NuevoPedidoDialog from './nuevo-pedido-dialog'
 import { toast } from 'sonner'
@@ -85,6 +85,9 @@ export default function PedidosClient({ pedidosIniciales, desde, hasta }: {
   // se guarda solo, sin esperar a "guardar todos los cambios".
   const [fechaDespachoDraft, setFechaDespachoDraft] = useState('')
   const [guardandoFecha, setGuardandoFecha] = useState(false)
+  // Contado / crédito, editable antes de facturar (Daniel, 13/10).
+  const [tipoPagoDraft, setTipoPagoDraft] = useState<'contado' | 'credito'>('contado')
+  const [guardandoTipoPago, setGuardandoTipoPago] = useState(false)
   // Form para agregar producto
   const [productoSearch, setProductoSearch] = useState('')
   const debouncedProductoSearch = useDebounce(productoSearch, 250)
@@ -124,6 +127,7 @@ export default function PedidosClient({ pedidosIniciales, desde, hasta }: {
   }, [pedidos])
 
   const openDetail = async (p: any) => {
+    setTipoPagoDraft(p.tipo_pago === 'credito' ? 'credito' : 'contado')
     setSelected(p)
     setFechaDespachoDraft(p.fecha_despacho ?? '')
     setDetailOpen(true)
@@ -161,13 +165,14 @@ export default function PedidosClient({ pedidosIniciales, desde, hasta }: {
     // Releer cabecera (totales pueden haber cambiado)
     const { data: ped } = await (supabase as any)
       .from('pedidos')
-      .select('id, subtotal, igv, descuento_monto, descuento_porcentaje, total, incluir_igv, estado, requiere_reposicion, fecha_despacho, vendedor_id, profiles!pedidos_vendedor_id_fkey(id, full_name)')
+      .select('id, subtotal, igv, descuento_monto, descuento_porcentaje, total, incluir_igv, estado, requiere_reposicion, fecha_despacho, tipo_pago, vendedor_id, profiles!pedidos_vendedor_id_fkey(id, full_name)')
       .eq('id', selected.id)
       .maybeSingle()
     if (ped) {
       const p: any = ped
       setSelected({ ...selected, ...p })
       setFechaDespachoDraft(p.fecha_despacho ?? '')
+      setTipoPagoDraft(p.tipo_pago === 'credito' ? 'credito' : 'contado')
       setPedidos((prev) => prev.map((x) => x.id === p.id ? { ...x, ...p } : x))
     }
     setEditItems({})
@@ -311,6 +316,31 @@ export default function PedidosClient({ pedidosIniciales, desde, hasta }: {
     }
     toast.success('Fecha de despacho actualizada', {
       description: data?.anterior ? `De ${formatDate(data.anterior)} a ${formatDate(data.nueva)}` : undefined,
+    })
+    await recargarPedidoActual()
+  }
+
+  /**
+   * Contado o crédito (Daniel, 13/10). La condición se lee en vivo en la
+   * impresión, el XML a SUNAT, la hoja de ruta y la rendición, así que la base
+   * solo deja cambiarla antes de facturar y fuera de toda hoja de ruta
+   * (cambiar_tipo_pago_pedido, migración 144).
+   */
+  const guardarTipoPago = async () => {
+    if (!selected || tipoPagoDraft === (selected.tipo_pago ?? 'contado')) return
+    setGuardandoTipoPago(true)
+    const { data, error } = await (supabase.rpc as any)('cambiar_tipo_pago_pedido', {
+      p_pedido_id: selected.id,
+      p_tipo_pago: tipoPagoDraft,
+    })
+    setGuardandoTipoPago(false)
+    if (error) {
+      toast.error('No se pudo cambiar la condición de pago', { description: error.message, duration: 8000 })
+      setTipoPagoDraft(selected.tipo_pago === 'credito' ? 'credito' : 'contado')
+      return
+    }
+    toast.success('Condición de pago actualizada', {
+      description: `${CONDICION[data?.anterior] ?? data?.anterior} → ${CONDICION[data?.nueva] ?? data?.nueva}`,
     })
     await recargarPedidoActual()
   }
@@ -745,6 +775,38 @@ export default function PedidosClient({ pedidosIniciales, desde, hasta }: {
                     <InfoRow icon={Truck} label="Fecha despacho" value={selected.fecha_despacho ? formatDate(selected.fecha_despacho) : '—'} />
                   )}
                   <InfoRow icon={MapPin} label="Zona" value={selected.clientes?.zonas?.nombre ?? '—'} />
+                  {editMode ? (
+                    <div className="flex items-start gap-2" data-condicion-pago>
+                      <CreditCard className="w-4 h-4 mt-2 shrink-0 text-gray-400" />
+                      <div className="min-w-0 flex-1">
+                        <p className="text-[10px] uppercase tracking-wide text-gray-500">Condición de pago</p>
+                        <div className="flex items-center gap-1.5">
+                          <select
+                            value={tipoPagoDraft}
+                            onChange={(e) => setTipoPagoDraft(e.target.value === 'credito' ? 'credito' : 'contado')}
+                            disabled={guardandoTipoPago}
+                            aria-label="Condición de pago"
+                            className="h-8 w-36 rounded-md border border-gray-300 bg-white px-2 text-xs"
+                          >
+                            <option value="contado">Contado</option>
+                            <option value="credito">Crédito</option>
+                          </select>
+                          {tipoPagoDraft !== (selected.tipo_pago ?? 'contado') && (
+                            <Button
+                              size="sm"
+                              onClick={guardarTipoPago}
+                              disabled={guardandoTipoPago}
+                              className="h-8 bg-[#FBE600] text-black hover:bg-[#E5D100] text-xs font-semibold"
+                            >
+                              {guardandoTipoPago ? 'Guardando…' : 'Guardar'}
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <InfoRow icon={CreditCard} label="Condición de pago" value={CONDICION[selected.tipo_pago ?? 'contado'] ?? '—'} />
+                  )}
                 </div>
 
                 {selected.requiere_autorizacion && (
@@ -1243,6 +1305,8 @@ function VendedorPedido({ pedidoId, estado, vendedorId, vendedorNombre, onCambio
     </div>
   )
 }
+
+const CONDICION: Record<string, string> = { contado: 'Contado', credito: 'Crédito' }
 
 function InfoRow({ icon: Icon, label, value }: { icon: any; label: string; value: string }) {
   return (
