@@ -76,7 +76,7 @@ async function main() {
     const hoy = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Lima' }).format(new Date())
     const xl = await page.evaluate(async (h) => {
       const x = await fetch(`/api/gerencia/registro-ventas/excel?desde=${h.slice(0, 8)}01&hasta=${h}`)
-      const b = new Uint8Array(await x.arrayBuffer()); let s = ''; for (const c of b) s += String.fromCharCode(c)
+      const b = new Uint8Array(await x.arrayBuffer()); let s = ''; for (let i = 0; i < b.length; i++) s += String.fromCharCode(b[i])
       return { status: x.status, b64: btoa(s) }
     }, hoy)
     fs.writeFileSync('.sunat/registro-ventas-prueba.xlsx', Buffer.from(xl.b64, 'base64'))
