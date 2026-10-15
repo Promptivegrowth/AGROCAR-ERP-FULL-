@@ -50,6 +50,8 @@ interface ComprobantePendiente {
   saldo: number
   dias_transcurridos: number
   estado_deuda: 'al_dia' | 'por_vencer' | 'vencido'
+  /** Vendido al contado (pedidos.tipo_pago): se paga primero. */
+  contado: boolean
 }
 
 interface EstadoCuentaCliente {
@@ -157,7 +159,7 @@ export default function CobrosPage() {
       const [compRes, cobRes] = await Promise.all([
         supabase
           .from('comprobantes')
-          .select('id, serie, numero, fecha_emision, total, estado')
+          .select('id, serie, numero, fecha_emision, total, estado, tipo, pedidos(tipo_pago)')
           .eq('cliente_id', cliente.id)
           .neq('estado', 'anulado')
           .order('fecha_emision', { ascending: true }),
@@ -196,6 +198,8 @@ export default function CobrosPage() {
 
       const compPendientes: ComprobantePendiente[] = []
       for (const comp of comprobantes as any[]) {
+        // Una nota de crédito no se paga: no va en la lista de pendientes.
+        if (comp.tipo === 'nota_credito') continue
         const totalComp = Number(comp.total ?? 0)
         const saldoComp = Math.round((totalComp - (aplicadoPorComp.get(comp.id) ?? 0)) * 100) / 100
         if (saldoComp <= 0.0001) continue
@@ -218,8 +222,14 @@ export default function CobrosPage() {
           saldo: saldoComp,
           dias_transcurridos: diasT,
           estado_deuda: estadoDeuda,
+          contado: (comp as any).pedidos?.tipo_pago === 'contado',
         })
       }
+      // El mismo orden en que la base reparte un cobro automático (migración
+      // 145): primero lo vendido al contado —se paga contra entrega—, después
+      // el crédito, cada grupo del más antiguo al más nuevo (Daniel, 14/10).
+      compPendientes.sort((a, b) => Number(b.contado) - Number(a.contado)
+        || a.fecha_emision.localeCompare(b.fecha_emision))
 
       setEstadoCuenta({
         facturado,
@@ -709,7 +719,7 @@ export default function CobrosPage() {
 
                           <p className="text-[10px] text-gray-500 mb-1.5 leading-tight italic">
                             {modoAplicacion === 'fifo'
-                              ? 'Cliente paga sin especificar — el sistema aplica al más antiguo primero (recomendado).'
+                              ? 'Cliente paga sin especificar — el sistema aplica primero a lo vendido al contado y luego al crédito más antiguo (recomendado).'
                               : 'Cliente especifica qué factura pagar. Marca abajo y pon el monto a aplicar.'}
                           </p>
 
@@ -761,6 +771,11 @@ export default function CobrosPage() {
                                         </span>
                                         <span className={`text-[9px] px-1.5 py-0.5 rounded border font-medium ${badgeClass}`}>
                                           {badgeLabel}
+                                        </span>
+                                        <span className={`text-[9px] px-1.5 py-0.5 rounded border font-semibold ${comp.contado
+                                          ? 'bg-sky-50 text-sky-800 border-sky-200' : 'bg-gray-50 text-gray-600 border-gray-200'}`}
+                                          data-condicion={comp.contado ? 'contado' : 'credito'}>
+                                          {comp.contado ? 'Contado' : 'Crédito'}
                                         </span>
                                       </div>
                                       <p className="text-[11px] text-gray-500 mt-0.5">
