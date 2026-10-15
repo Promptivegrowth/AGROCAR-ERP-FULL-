@@ -9,16 +9,22 @@ async function getCobranzasData() {
   const supabase = await createClient()
 
   // 1) Traer todos los clientes con crédito configurado
-  const { data: clientes } = await supabase
+  // De a páginas: Supabase corta en mil filas sin avisar.
+  const clientes = await traerTodo<any>((desde, hasta) => (supabase as any)
     .from('clientes')
     .select('id, razon_social, ruc, dni, telefono, credito_dias, credito_limite, estado')
-    .order('razon_social')
+    .order('razon_social').order('id')
+    .range(desde, hasta))
 
   // 2) Traer comprobantes NO anulados agrupados por cliente
-  const { data: comprobantes } = await supabase
+  // De a páginas (15/10/2026: ya son 932 y se pasan de mil en días; sin
+  // paginar, lo facturado de los que quedaban afuera no sumaba al saldo).
+  const comprobantes = await traerTodo<any>((desde, hasta) => (supabase as any)
     .from('comprobantes')
     .select('id, cliente_id, tipo, serie, numero, fecha_emision, total, estado')
     .neq('estado', 'anulado')
+    .order('id')
+    .range(desde, hasta))
 
   // 3) Traer cobros (pagos aplicados) por cliente + sus aplicaciones a comprobantes
   /*
@@ -33,7 +39,7 @@ async function getCobranzasData() {
     .select(`
       id, numero, cliente_id, fecha, total, efectivo, yape, plin, transferencia, notas, created_at, nro_operacion,
       cobros_aplicaciones(
-        monto_aplicado, es_a_cuenta,
+        comprobante_id, monto_aplicado, es_a_cuenta,
         comprobantes(serie, numero, tipo)
       )
     `)
@@ -48,6 +54,18 @@ async function getCobranzasData() {
     facturadoPorCliente.set(c.cliente_id, (facturadoPorCliente.get(c.cliente_id) ?? 0) + (c.total ?? 0))
     if (!comprobantesPorCliente.has(c.cliente_id)) comprobantesPorCliente.set(c.cliente_id, [])
     comprobantesPorCliente.get(c.cliente_id)!.push(c)
+  }
+
+  // Lo aplicado de verdad a cada comprobante (los cobros vienen completos).
+  const aplicadoPorComp = new Map<string, number>()
+  for (const c of cobros ?? []) {
+    for (const a of c.cobros_aplicaciones ?? []) {
+      if (!a.comprobante_id || a.es_a_cuenta) continue
+      aplicadoPorComp.set(a.comprobante_id, (aplicadoPorComp.get(a.comprobante_id) ?? 0) + Number(a.monto_aplicado ?? 0))
+    }
+  }
+  for (const c of comprobantes ?? []) {
+    c.saldo = Math.max(0, Math.round((Number(c.total ?? 0) - (aplicadoPorComp.get(c.id) ?? 0)) * 100) / 100)
   }
 
   const cobradoPorCliente = new Map<string, number>()
@@ -70,24 +88,17 @@ async function getCobranzasData() {
       (a: any, b: any) => (a.fecha_emision > b.fecha_emision ? 1 : -1)
     )
 
-    // Para calcular "días transcurridos" tomamos el comprobante NO cubierto más antiguo
+    // "Días transcurridos": desde el comprobante impago más antiguo, según lo
+    // aplicado de verdad. Antes se suponía que los pagos cubrían siempre lo
+    // más antiguo; desde que lo vendido al contado se paga primero (145), eso
+    // podía dar "al día" a quien tiene una factura de crédito vieja impaga.
     const creditoDias = cli.credito_dias ?? 0
     let diasTranscurridos = 0
     let estadoDeuda: 'al_dia' | 'por_vencer' | 'vencida_leve' | 'vencida_grave' = 'al_dia'
 
     if (saldo > 0 && comps.length > 0) {
-      // Asumimos FIFO: cubrir con cobros desde los comprobantes más antiguos
-      let pendienteCobros = cobrado
-      let comprobanteMasAntiguoPendiente: any = null
-      for (const c of comps) {
-        const tot = c.total ?? 0
-        if (pendienteCobros >= tot) {
-          pendienteCobros -= tot
-        } else {
-          comprobanteMasAntiguoPendiente = c
-          break
-        }
-      }
+      const comprobanteMasAntiguoPendiente: any =
+        comps.find((c: any) => c.tipo !== 'nota_credito' && Number(c.saldo ?? 0) > 0.005) ?? null
       if (comprobanteMasAntiguoPendiente) {
         const fechaEmi = new Date(comprobanteMasAntiguoPendiente.fecha_emision + 'T00:00:00')
         const diffMs = hoy.getTime() - fechaEmi.getTime()

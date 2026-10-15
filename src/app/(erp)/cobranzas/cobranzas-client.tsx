@@ -55,7 +55,7 @@ const ESTADO_BADGE: Record<EstadoDeuda, { label: string; className: string }> = 
   al_dia: { label: 'Al día', className: 'bg-green-100 text-green-700 border-green-200' },
   por_vencer: { label: 'Por vencer', className: 'bg-yellow-100 text-yellow-700 border-yellow-200' },
   vencida_leve: { label: 'Vencida <7d', className: 'bg-orange-100 text-orange-700 border-orange-200' },
-  vencida_grave: { label: 'Vencida >30d', className: 'bg-red-100 text-red-700 border-red-200' },
+  vencida_grave: { label: 'Vencida >7d', className: 'bg-red-100 text-red-700 border-red-200' },
 }
 
 export default function CobranzasClient({
@@ -312,7 +312,7 @@ export default function CobranzasClient({
               <SelectItem value="al_dia">Al día</SelectItem>
               <SelectItem value="por_vencer">Por vencer</SelectItem>
               <SelectItem value="vencida_leve">Vencida (&lt;7d)</SelectItem>
-              <SelectItem value="vencida_grave">Vencida (&gt;30d)</SelectItem>
+              <SelectItem value="vencida_grave">Vencida (&gt;7d)</SelectItem>
             </SelectContent>
           </Select>
         </CardContent>
@@ -513,6 +513,8 @@ export default function CobranzasClient({
                           hoy.setHours(0, 0, 0, 0)
                           const diasT = Math.floor((hoy.getTime() - fechaEmi.getTime()) / (1000 * 60 * 60 * 24))
                           const vencido = hoy > vencimiento
+                          // Lo aplicado de verdad (page.tsx): un comprobante cobrado no está vencido.
+                          const pagado = comp.saldo !== undefined && Number(comp.saldo) <= 0.005
                           return (
                             <tr key={comp.id} className="hover:bg-gray-50/50">
                               <td className="py-2 px-3 text-gray-600">{formatDate(comp.fecha_emision)}</td>
@@ -523,8 +525,12 @@ export default function CobranzasClient({
                               <td className="py-2 px-3 text-gray-600">{formatDate(vencimiento)}</td>
                               <td className="py-2 px-3 text-gray-600">{diasT}</td>
                               <td className="py-2 px-3">
-                                {vencido ? (
-                                  <Badge className="text-[10px] bg-red-100 text-red-700 border-red-200">Vencido</Badge>
+                                {pagado ? (
+                                  <Badge className="text-[10px] bg-gray-100 text-gray-600 border-gray-200">Pagado</Badge>
+                                ) : vencido ? (
+                                  <Badge className="text-[10px] bg-red-100 text-red-700 border-red-200">
+                                    Vencido{Number(comp.saldo) < Number(comp.total) - 0.005 ? ` · debe ${formatCurrency(Number(comp.saldo))}` : ''}
+                                  </Badge>
                                 ) : (
                                   <Badge className="text-[10px] bg-green-100 text-green-700 border-green-200">Al día</Badge>
                                 )}
