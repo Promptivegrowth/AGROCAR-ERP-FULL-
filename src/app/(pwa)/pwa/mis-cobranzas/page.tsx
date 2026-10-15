@@ -7,6 +7,7 @@ import { ArrowLeft, Loader2, Landmark, Search, Phone, ChevronDown, ChevronUp, Al
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { diasVencidos, fechaVencimientoTexto } from '@/lib/cliente-saldo'
 import { mensajeEstadoCuenta } from '@/lib/mensaje-estado-cuenta'
+import { traerTodo } from '@/lib/supabase/paginar'
 
 interface Doc {
   comp_id: string
@@ -56,13 +57,13 @@ export default function MisCobranzasPage() {
 
     // Comprobantes + aplicaciones de cobro
     const [{ data: comps }, { data: apls }] = await Promise.all([
-      (supabase as any).from('comprobantes')
+      traerTodo<any>((desde, hasta) => (supabase as any).from('comprobantes')
         .select('id, serie, numero, fecha_emision, total, cliente_id')
         .in('cliente_id', ids)
-        .neq('estado', 'anulado'),
-      (supabase as any).from('cobros_aplicaciones')
+        .neq('estado', 'anulado').order('id').range(desde, hasta)).then((data) => ({ data }), () => ({ data: null as any[] | null })),
+      traerTodo<any>((desde, hasta) => (supabase as any).from('cobros_aplicaciones')
         .select('comprobante_id, monto_aplicado, cobros!inner(cliente_id)')
-        .in('cobros.cliente_id', ids),
+        .in('cobros.cliente_id', ids).order('id').range(desde, hasta)).then((data) => ({ data }), () => ({ data: null as any[] | null })),
     ])
 
     const abonadoMap = new Map<string, number>()

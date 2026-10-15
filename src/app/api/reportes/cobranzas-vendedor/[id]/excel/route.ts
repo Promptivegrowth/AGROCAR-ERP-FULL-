@@ -4,6 +4,7 @@ import {
   crearExcelBranded, seccionTitulo, seccionTabla, excelResponse, footerReporte,
 } from '@/lib/excel-export'
 import { diasVencidos, fechaVencimientoTexto } from '@/lib/cliente-saldo'
+import { traerTodo } from '@/lib/supabase/paginar'
 
 export const dynamic = 'force-dynamic'
 
@@ -25,12 +26,12 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   const [compRes, aplRes] = clienteIds.length === 0
     ? [{ data: [] }, { data: [] }]
     : await Promise.all([
-        (supabase as any).from('comprobantes')
+        traerTodo<any>((desde, hasta) => (supabase as any).from('comprobantes')
           .select('id, serie, numero, tipo, fecha_emision, total, estado, cliente_id')
-          .in('cliente_id', clienteIds).neq('estado', 'anulado'),
-        (supabase as any).from('cobros_aplicaciones')
+          .in('cliente_id', clienteIds).neq('estado', 'anulado').order('id').range(desde, hasta)).then((data) => ({ data }), () => ({ data: null as any[] | null })),
+        traerTodo<any>((desde, hasta) => (supabase as any).from('cobros_aplicaciones')
           .select('comprobante_id, monto_aplicado, cobros!inner(cliente_id)')
-          .in('cobros.cliente_id', clienteIds),
+          .in('cobros.cliente_id', clienteIds).order('id').range(desde, hasta)).then((data) => ({ data }), () => ({ data: null as any[] | null })),
       ])
 
   const aplicadoMap = new Map<string, number>()

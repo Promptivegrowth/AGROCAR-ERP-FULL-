@@ -25,6 +25,7 @@ import type { Cliente, Pedido, Cobro } from '@/types'
 import UbigeoSelector, { UBIGEO_EMPTY, type UbigeoValue } from '@/components/ubigeo-selector'
 import { matchUbigeoFromNombres } from '@/lib/ubigeo/match'
 import { clienteVisitaHoy, labelDias } from '@/lib/dias-visita'
+import { traerTodo } from '@/lib/supabase/paginar'
 
 interface ClienteConDeuda extends Cliente {
   deuda_pendiente: number
@@ -198,15 +199,15 @@ export default function ClientesPage() {
       const cobradoPorCliente: Record<string, number> = {}
       if (ids.length > 0) {
         const [{ data: comps }, { data: cobros }] = await Promise.all([
-          supabase
+          traerTodo<any>((desde, hasta) => (supabase as any)
             .from('comprobantes')
             .select('cliente_id, total')
             .in('cliente_id', ids)
-            .neq('estado', 'anulado'),
-          supabase
+            .neq('estado', 'anulado').order('id').range(desde, hasta)).then((data) => ({ data }), () => ({ data: null as any[] | null })),
+          traerTodo<any>((desde, hasta) => (supabase as any)
             .from('cobros')
             .select('cliente_id, total')
-            .in('cliente_id', ids),
+            .in('cliente_id', ids).order('id').range(desde, hasta)).then((data) => ({ data }), () => ({ data: null as any[] | null })),
         ])
         comps?.forEach((c: any) => {
           if (!c.cliente_id) return

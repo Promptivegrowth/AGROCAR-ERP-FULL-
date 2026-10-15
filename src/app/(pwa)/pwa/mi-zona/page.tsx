@@ -7,6 +7,7 @@ import { createClient } from '@/lib/supabase/client'
 import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { labelDias, diaHoy, DIAS, type DiaSemana } from '@/lib/dias-visita'
+import { traerTodo } from '@/lib/supabase/paginar'
 
 interface Zona {
   id: string
@@ -117,8 +118,8 @@ export default function MiZonaPage() {
         const saldoPorCliente = new Map<string, number>()
         if (cIds.length > 0) {
           const [{ data: comps }, { data: cobros }] = await Promise.all([
-            supabase.from('comprobantes').select('cliente_id, total').in('cliente_id', cIds).neq('estado', 'anulado'),
-            supabase.from('cobros').select('cliente_id, total').in('cliente_id', cIds),
+            traerTodo<any>((desde, hasta) => (supabase as any).from('comprobantes').select('cliente_id, total').in('cliente_id', cIds).neq('estado', 'anulado').order('id').range(desde, hasta)).then((data) => ({ data }), () => ({ data: null as any[] | null })),
+            traerTodo<any>((desde, hasta) => (supabase as any).from('cobros').select('cliente_id, total').in('cliente_id', cIds).order('id').range(desde, hasta)).then((data) => ({ data }), () => ({ data: null as any[] | null })),
           ])
           const facturado = new Map<string, number>()
           const cobrado = new Map<string, number>()

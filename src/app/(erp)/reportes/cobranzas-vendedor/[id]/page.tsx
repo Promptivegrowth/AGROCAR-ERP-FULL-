@@ -4,6 +4,7 @@ import { notFound } from 'next/navigation'
 import { diasVencidos, fechaVencimientoTexto } from '@/lib/cliente-saldo'
 import { EMPRESA, SLOGAN_FONT_STACK } from '@/lib/empresa'
 import CobranzasVendedorActions from './cobranzas-vendedor-actions'
+import { traerTodo } from '@/lib/supabase/paginar'
 
 export const dynamic = 'force-dynamic'
 
@@ -38,13 +39,13 @@ async function getData(vendedorId: string) {
   if (clienteIds.length === 0) return { vendedor, clientes: [] as ClienteRow[], totales: { facturado: 0, abonado: 0, saldo: 0, vencido: 0 } }
 
   const [compRes, aplRes] = await Promise.all([
-    (supabase as any).from('comprobantes')
+    traerTodo<any>((desde, hasta) => (supabase as any).from('comprobantes')
       .select('id, serie, numero, tipo, fecha_emision, total, estado, cliente_id, pedidos(numero)')
       .in('cliente_id', clienteIds)
-      .neq('estado', 'anulado'),
-    (supabase as any).from('cobros_aplicaciones')
+      .neq('estado', 'anulado').order('id').range(desde, hasta)).then((data) => ({ data }), () => ({ data: null as any[] | null })),
+    traerTodo<any>((desde, hasta) => (supabase as any).from('cobros_aplicaciones')
       .select('comprobante_id, monto_aplicado, cobros!inner(cliente_id)')
-      .in('cobros.cliente_id', clienteIds),
+      .in('cobros.cliente_id', clienteIds).order('id').range(desde, hasta)).then((data) => ({ data }), () => ({ data: null as any[] | null })),
   ])
 
   const aplicadoMap = new Map<string, number>()
