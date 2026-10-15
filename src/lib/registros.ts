@@ -118,6 +118,34 @@ export function totalesVentas(filas: FilaVenta[]) {
   }
 }
 
+/**
+ * El detalle separado por tipo (Daniel, 14/10): facturas, boletas y documentos
+ * internos —y notas de crédito si las hay— cada uno en su bloque, ordenado por
+ * fecha y correlativo, con su subtotal. Los anulados quedan en la lista (si se
+ * piden) pero no suman.
+ */
+export interface SeccionVentas {
+  tipo: TipoVenta; titulo: string; filas: FilaVenta[]
+  cantidad: number; base: number; igv: number; total: number; cobrado: number; saldo: number
+}
+const ORDEN_SECCIONES: [TipoVenta, string][] = [
+  ['factura', 'Facturas'], ['boleta', 'Boletas'], ['nota_pedido_interna', 'Documentos internos'], ['nota_credito', 'Notas de crédito'],
+]
+export function seccionesPorTipo(filas: FilaVenta[]): SeccionVentas[] {
+  return ORDEN_SECCIONES.map(([tipo, titulo]) => {
+    const del = filas.filter((f) => f.tipo === tipo)
+      .sort((a, b) => a.fecha.localeCompare(b.fecha) || a.serie.localeCompare(b.serie) || a.numero.localeCompare(b.numero))
+    const vigentes = del.filter((f) => !anuladaVenta(f))
+    const suma = (k: (f: FilaVenta) => number) => r2(vigentes.reduce((a, f) => a + k(f), 0))
+    return {
+      tipo, titulo, filas: del, cantidad: vigentes.length,
+      base: suma((f) => f.base), igv: suma((f) => f.igv), total: suma((f) => f.total),
+      cobrado: tipo === 'nota_credito' ? 0 : suma((f) => f.cobrado),
+      saldo: tipo === 'nota_credito' ? 0 : suma((f) => Math.max(0, f.total - f.cobrado)),
+    }
+  }).filter((s) => s.filas.length > 0)
+}
+
 export interface DiaVentas { fecha: string; factura: number; boleta: number; interno: number; nc: number; total: number; documentos: number }
 export function ventasPorDia(filas: FilaVenta[]): DiaVentas[] {
   const m = new Map<string, DiaVentas>()

@@ -9,7 +9,7 @@ import { hoyLima } from '@/lib/fechas-pe'
 import { EMPRESA } from '@/lib/empresa'
 import {
   type FilaVenta, TIPO_VENTA, normalizarVentas, filtrarVentas, totalesVentas, ventasPorDia, ventasPor,
-  anuladaVenta, restarDias, mesAnterior, estadoSunatTexto,
+  anuladaVenta, restarDias, mesAnterior, estadoSunatTexto, seccionesPorTipo,
 } from '@/lib/registros'
 
 /**
@@ -180,7 +180,16 @@ export default function RegistroVentasPage() {
             <tbody className="divide-y divide-gray-100">
               {visibles.length === 0 ? (
                 <tr><td colSpan={13} className="p-8 text-center text-gray-400">{cargando ? 'Cargando…' : 'No hay ventas con estos filtros'}</td></tr>
-              ) : visibles.map((f) => {
+              ) : seccionesPorTipo(visibles).map((sec) => [
+                // Cada tipo en su bloque, por fecha y correlativo (Daniel, 14/10).
+                <tr key={`h-${sec.tipo}`} className="bg-gray-900 text-white" data-seccion={sec.tipo}>
+                  <td colSpan={13} className="px-2 py-1.5 text-[11px] font-bold uppercase tracking-wide">
+                    {sec.titulo} · {sec.cantidad} documento{sec.cantidad === 1 ? '' : 's'}
+                    {sec.filas.length > sec.cantidad ? ` (+${sec.filas.length - sec.cantidad} anulado${sec.filas.length - sec.cantidad === 1 ? '' : 's'})` : ''}
+                    {' · '}del {sec.filas[0].serie}-{sec.filas[0].numero} al {sec.filas[sec.filas.length - 1].serie}-{sec.filas[sec.filas.length - 1].numero}
+                  </td>
+                </tr>,
+                ...sec.filas.map((f) => {
                 const anulado = anuladaVenta(f)
                 const interno = f.tipo === 'nota_pedido_interna'
                 return (
@@ -201,7 +210,17 @@ export default function RegistroVentasPage() {
                     <td className="p-2 text-[10px]">{interno ? 'No aplica' : anulado ? 'Anulado' : estadoSunatTexto(f.sunat_estado)}</td>
                   </tr>
                 )
-              })}
+              }),
+                <tr key={`t-${sec.tipo}`} className="border-b-2 border-gray-300 bg-gray-100 font-semibold" data-subtotal={sec.tipo}>
+                  <td colSpan={7} className="p-2 text-right text-[11px] uppercase">Subtotal {sec.titulo.toLowerCase()}</td>
+                  <td className="p-2 text-right font-mono">{sec.tipo === 'nota_pedido_interna' ? '—' : S(sec.base)}</td>
+                  <td className="p-2 text-right font-mono">{sec.tipo === 'nota_pedido_interna' ? '—' : S(sec.igv)}</td>
+                  <td className="p-2 text-right font-mono">{sec.tipo === 'nota_credito' ? '− ' : ''}{S(sec.total)}</td>
+                  <td className="p-2 text-right font-mono text-emerald-700">{sec.tipo === 'nota_credito' ? '—' : S(sec.cobrado)}</td>
+                  <td className="p-2 text-right font-mono text-red-700">{sec.tipo === 'nota_credito' ? '—' : S(sec.saldo)}</td>
+                  <td />
+                </tr>,
+              ])}
             </tbody>
           </table>
         )}

@@ -3,7 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import { crearExcelBranded, seccionTitulo, seccionTabla, excelResponse, footerReporte } from '@/lib/excel-export'
 import { hoyLima } from '@/lib/fechas-pe'
 import {
-  TIPO_VENTA, normalizarVentas, filtrarVentas, totalesVentas, ventasPorDia, ventasPor, anuladaVenta, estadoSunatTexto,
+  TIPO_VENTA, normalizarVentas, filtrarVentas, totalesVentas, ventasPorDia, ventasPor, anuladaVenta, estadoSunatTexto, seccionesPorTipo,
 } from '@/lib/registros'
 
 /** Excel del registro de ventas (gerencia). Mismos filtros y totales que la pantalla (lib/registros). */
@@ -49,10 +49,14 @@ export async function GET(req: NextRequest) {
     ventasPor(filas, (f) => f.vendedor || 'Sin vendedor').map((g) => [g.nombre, g.documentos, g.factura, g.boleta, g.interno, g.total, g.porCobrar]),
     { columnasMoneda: [2, 3, 4, 5, 6] })
 
-  row = seccionTitulo(sheet, row, `Detalle (${filas.length} documentos)`, 13)
+  // El detalle, cada tipo en su bloque por fecha y correlativo (Daniel, 14/10).
+  for (const sec of seccionesPorTipo(filas)) {
+  const interno = sec.tipo === 'nota_pedido_interna'
+  const nc = sec.tipo === 'nota_credito'
+  row = seccionTitulo(sheet, row, `${sec.titulo} (${sec.cantidad} documentos · del ${sec.filas[0].serie}-${sec.filas[0].numero} al ${sec.filas[sec.filas.length - 1].serie}-${sec.filas[sec.filas.length - 1].numero})`, 13)
   row = seccionTabla(sheet, row,
     ['Fecha', 'Tipo', 'Documento', 'Cliente', 'RUC / DNI', 'Vendedor', 'Condición', 'Valor venta', 'IGV', 'Total', 'Cobrado', 'Saldo', 'Estado'],
-    filas.map((f) => {
+    sec.filas.map((f) => {
       const interno = f.tipo === 'nota_pedido_interna'
       const s = f.tipo === 'nota_credito' ? -1 : 1
       return [f.fecha.split('-').reverse().join('/'), TIPO_VENTA[f.tipo] ?? f.tipo, `${f.serie}-${f.numero}`, f.cliente, f.doc, f.vendedor || '',
@@ -60,7 +64,13 @@ export async function GET(req: NextRequest) {
         f.tipo === 'nota_credito' ? null : f.cobrado, f.tipo === 'nota_credito' ? null : Math.max(0, f.total - f.cobrado),
         anuladaVenta(f) ? 'ANULADO' : interno ? 'No va a SUNAT' : estadoSunatTexto(f.sunat_estado)]
     }),
-    { columnasMoneda: [7, 8, 9, 10, 11] })
+    {
+      columnasMoneda: [7, 8, 9, 10, 11],
+      totalsRow: [`SUBTOTAL ${sec.titulo.toUpperCase()}`, null, null, null, null, null, null,
+        interno ? null : (nc ? -1 : 1) * sec.base, interno ? null : (nc ? -1 : 1) * sec.igv, (nc ? -1 : 1) * sec.total,
+        nc ? null : sec.cobrado, nc ? null : sec.saldo, null],
+    })
+  }
 
   footerReporte(sheet, row)
   return excelResponse(workbook, `registro-ventas-${desde}-a-${hasta}.xlsx`)
