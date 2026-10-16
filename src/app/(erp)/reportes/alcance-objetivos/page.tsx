@@ -50,6 +50,10 @@ const num = (v: number | string | null | undefined, dec = 2) =>
   Number(v ?? 0).toLocaleString('es-PE', { minimumFractionDigits: dec, maximumFractionDigits: dec })
 
 const pct = (v: number | null) => (v === null || v === undefined ? '0.00%' : `${num(v)}%`)
+/** Precio promedio = valor ÷ cantidad (Daniel, 15/10). */
+const precio = (valor: number, cant: number) => (Number(cant) !== 0 ? Number(valor) / Number(cant) : 0)
+/** "todos" en el selector: el objetivo general de la fuerza de ventas. */
+const TODOS = 'todos'
 
 function AlcanceInner() {
   const params = useSearchParams()
@@ -87,7 +91,7 @@ function AlcanceInner() {
     const { data, error } = await (supabase.rpc as any)('alcance_objetivos', {
       p_anio: anio,
       p_mes: mes,
-      p_vendedor_id: vendedorId,
+      p_vendedor_id: vendedorId === TODOS ? null : vendedorId,
       p_solo_con_datos: soloConDatos,
     })
     setLoading(false)
@@ -109,23 +113,23 @@ function AlcanceInner() {
     if (!rep) return
     const filas: string[] = []
     filas.push(`ALCANCE DE OBJETIVOS;PERIODO ${rep.periodo};${rep.vendedor_nombre}`)
-    filas.push('CODIGO;DESCRIPCION;CANT. REAL;CANT. CUOTA;ALC. CANT.;VALOR REAL;VALOR CUOTA;ALC. VALOR')
+    filas.push('CODIGO;DESCRIPCION;CANT. REAL;PRECIO PROM. VENTA;CANT. CUOTA;PRECIO PROM. CUOTA;ALC. CANT.;VALOR REAL;VALOR CUOTA;ALC. VALOR')
     rep.lineas.forEach((l) => {
       filas.push(`LINEA: ${l.codigo} - ${l.nombre};;;;;;;`)
       l.productos.forEach((p) => {
         filas.push([
           p.codigo, `"${p.descripcion.replace(/"/g, "'")}"`,
-          num(p.cant_real), num(p.cant_cuota), pct(p.alc_cant),
+          num(p.cant_real), num(precio(p.valor_real, p.cant_real)), num(p.cant_cuota), num(precio(p.valor_cuota, p.cant_cuota)), pct(p.alc_cant),
           num(p.valor_real), num(p.valor_cuota), pct(p.alc_valor),
         ].join(';'))
       })
       filas.push([
         '', `TOTAL LINEA ${l.codigo} - ${l.nombre}`,
-        num(l.tot_cant_real), num(l.tot_cant_cuota), '',
+        num(l.tot_cant_real), '', num(l.tot_cant_cuota), '', '',
         num(l.tot_valor_real), num(l.tot_valor_cuota), pct(l.alc_valor),
       ].join(';'))
     })
-    filas.push(['', 'TOTAL GENERAL', '', '', '', num(rep.total_valor_real), num(rep.total_valor_cuota), pct(rep.alc_total)].join(';'))
+    filas.push(['', 'TOTAL GENERAL', '', '', '', '', '', num(rep.total_valor_real), num(rep.total_valor_cuota), pct(rep.alc_total)].join(';'))
 
     const blob = new Blob(['﻿' + filas.join('\r\n')], { type: 'text/csv;charset=utf-8;' })
     const a = document.createElement('a')
@@ -179,6 +183,7 @@ function AlcanceInner() {
           <Label className="text-[10px] text-gray-500">Vendedor</Label>
           <select value={vendedorId} onChange={(e) => setVendedorId(e.target.value)}
             className="block mt-1 h-9 px-2 w-full text-sm border border-gray-300 rounded-md bg-white">
+            <option value={TODOS}>Todos los vendedores (objetivo general)</option>
             {vendedores.map((v) => <option key={v.id} value={v.id}>{v.nombre}</option>)}
           </select>
         </div>
@@ -229,7 +234,7 @@ function AlcanceInner() {
           ) : rep.lineas.length === 0 ? (
             <div className="text-center py-16">
               <p className="text-amber-700 font-semibold text-sm">
-                ⚠ Este vendedor no tiene cuotas ni ventas registradas en {MESES[mes-1]} {anio}
+                ⚠ {vendedorId === TODOS ? 'No hay' : 'Este vendedor no tiene'} cuotas ni ventas registradas en {MESES[mes-1]} {anio}
               </p>
               <Link href="/vendedores/cuotas/productos" className="text-blue-700 underline text-xs mt-2 inline-block">
                 → Asignar cuotas por producto
@@ -243,7 +248,9 @@ function AlcanceInner() {
                     <th className="text-left px-1 py-1 font-bold w-[70px]">CÓDIGO</th>
                     <th className="text-left px-1 py-1 font-bold">DESCRIPCIÓN</th>
                     <th className="text-right px-1 py-1 font-bold w-[70px]">CANT. REAL</th>
+                    <th className="text-right px-1 py-1 font-bold w-[70px]">P. PROM. VENTA</th>
                     <th className="text-right px-1 py-1 font-bold w-[70px]">CANT. CUOTA</th>
+                    <th className="text-right px-1 py-1 font-bold w-[70px]">P. PROM. CUOTA</th>
                     <th className="text-right px-1 py-1 font-bold w-[65px]">ALC. CANT.</th>
                     <th className="text-right px-1 py-1 font-bold w-[85px]">VALOR REAL</th>
                     <th className="text-right px-1 py-1 font-bold w-[85px]">VALOR CUOTA</th>
@@ -254,7 +261,7 @@ function AlcanceInner() {
                   {rep.lineas.map((l) => (
                     <Fragment key={`${l.codigo}-${l.nombre}`}>
                       <tr className="linea-header">
-                        <td colSpan={8} className="px-1 pt-2 pb-0.5 font-bold uppercase text-gray-900">
+                        <td colSpan={10} className="px-1 pt-2 pb-0.5 font-bold uppercase text-gray-900">
                           LÍNEA: {l.codigo} - {l.nombre}
                         </td>
                       </tr>
@@ -263,7 +270,9 @@ function AlcanceInner() {
                           <td className="px-1 py-0.5 font-mono text-gray-700">{p.codigo}</td>
                           <td className="px-1 py-0.5">{p.descripcion}</td>
                           <td className="px-1 py-0.5 text-right font-mono">{num(p.cant_real)}</td>
+                          <td className="px-1 py-0.5 text-right font-mono text-gray-600">{num(precio(p.valor_real, p.cant_real))}</td>
                           <td className="px-1 py-0.5 text-right font-mono">{num(p.cant_cuota)}</td>
+                          <td className="px-1 py-0.5 text-right font-mono text-gray-600">{num(precio(p.valor_cuota, p.cant_cuota))}</td>
                           <td className={`px-1 py-0.5 text-right font-mono ${colorPct(p.alc_cant)}`}>{pct(p.alc_cant)}</td>
                           <td className="px-1 py-0.5 text-right font-mono">{num(p.valor_real)}</td>
                           <td className="px-1 py-0.5 text-right font-mono">{num(p.valor_cuota)}</td>
@@ -276,7 +285,9 @@ function AlcanceInner() {
                           TOTAL LÍNEA {l.codigo} - {l.nombre}
                         </td>
                         <td className="px-1 py-0.5 text-right font-mono">{num(l.tot_cant_real)}</td>
+                        <td className="px-1 py-0.5" />
                         <td className="px-1 py-0.5 text-right font-mono">{num(l.tot_cant_cuota)}</td>
+                        <td className="px-1 py-0.5" />
                         <td className="px-1 py-0.5" />
                         <td className="px-1 py-0.5 text-right font-mono">{num(l.tot_valor_real)}</td>
                         <td className="px-1 py-0.5 text-right font-mono">{num(l.tot_valor_cuota)}</td>
@@ -287,6 +298,8 @@ function AlcanceInner() {
                   <tr className="border-t-2 border-black font-bold text-[12px]">
                     <td className="px-1 py-2" />
                     <td className="px-1 py-2 text-right">TOTAL GENERAL</td>
+                    <td className="px-1 py-2" />
+                    <td className="px-1 py-2" />
                     <td className="px-1 py-2" />
                     <td className="px-1 py-2" />
                     <td className="px-1 py-2" />
@@ -303,7 +316,9 @@ function AlcanceInner() {
 
       <div className="text-[11px] text-gray-500 no-print">
         💡 <b>CANT. REAL</b> = unidades/kg vendidos en el mes (las notas de crédito restan).
-        <b> VALOR REAL</b> = venta sin IGV. Los % en verde superan el 100% del objetivo.
+        <b> VALOR REAL</b> = venta con IGV de los comprobantes emitidos en el mes (facturas, boletas y documentos
+        internos), igual que Gestión de vendedores y el Dashboard. <b>P. PROM.</b> = valor ÷ cantidad.
+        Los % en verde superan el 100% del objetivo.
       </div>
     </div>
   )

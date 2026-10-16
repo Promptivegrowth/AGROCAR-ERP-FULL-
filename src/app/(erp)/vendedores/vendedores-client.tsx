@@ -96,6 +96,8 @@ export interface VendedorData {
   email: string
   total_ventas: number
   total_cobrado: number
+  /** Cuota asignada al mes (cuotas por producto/línea). */
+  cuota_mes: number
   pedidos_count: number
   clientes_visitados: number
   ventas_hoy: number
@@ -115,6 +117,9 @@ interface KpisGlobal {
   total_vendedores: number
   ventas_totales_mes: number
   cobros_totales_mes: number
+  cuotas_totales_mes: number
+  /** Venta solo de quienes tienen cuota: contra eso se mide el cumplimiento. */
+  ventas_con_cuota_mes: number
   comisiones_pendientes_pago: number
 }
 
@@ -493,7 +498,7 @@ export default function VendedoresClient({
 
   const exportarCSV = () => {
     const header = [
-      'Vendedor', 'Email', 'Meta del mes', 'Ventas del mes', 'Cobros del mes',
+      'Vendedor', 'Email', 'Cuota del mes', 'Ventas del mes', 'Cumplimiento %', 'Cobros del mes',
       'Pedidos', 'Clientes visitados', 'Comisión calculada',
     ]
     const rows: (string | number)[][] = [header]
@@ -501,8 +506,9 @@ export default function VendedoresClient({
       rows.push([
         v.full_name,
         v.email,
-        v.meta?.monto_meta ?? 0,
+        v.cuota_mes || (v.meta?.monto_meta ?? 0),
         v.total_ventas,
+        (v.cuota_mes || (v.meta?.monto_meta ?? 0)) > 0 ? Number(((v.total_ventas / (v.cuota_mes || (v.meta?.monto_meta ?? 0))) * 100).toFixed(1)) : '',
         v.total_cobrado,
         v.pedidos_count,
         v.clientes_visitados,
@@ -536,10 +542,20 @@ export default function VendedoresClient({
     {
       title: 'Ventas del mes',
       value: formatCurrency(kpis.ventas_totales_mes),
-      desc: 'facturado por la fuerza de ventas',
+      desc: 'todo lo facturado en el mes',
       icon: TrendingUp,
       color: 'text-green-600',
       bg: 'bg-green-50',
+    },
+    {
+      title: 'Cuotas del mes',
+      value: formatCurrency(kpis.cuotas_totales_mes),
+      desc: kpis.cuotas_totales_mes > 0
+        ? `${((kpis.ventas_con_cuota_mes / kpis.cuotas_totales_mes) * 100).toFixed(1)}% de cumplimiento (de quienes tienen cuota)`
+        : 'sin cuotas asignadas',
+      icon: Target,
+      color: 'text-amber-600',
+      bg: 'bg-amber-50',
     },
     {
       title: 'Cobros del mes',
@@ -664,7 +680,7 @@ export default function VendedoresClient({
       </div>
 
       {/* KPIs */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
         {kpiCards.map((kpi) => (
           <Card key={kpi.title} className="border-gray-200 shadow-sm">
             <CardContent className="p-5">
@@ -693,8 +709,11 @@ export default function VendedoresClient({
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
           {vendedoresIniciales.map((v) => {
-            const meta = v.meta?.monto_meta ?? 0
-            const pct = meta > 0 ? Math.min(100, (v.total_ventas / meta) * 100) : 0
+            // El objetivo del mes es la cuota asignada (Daniel, 15/10); la meta
+            // manual queda solo si no hay cuota cargada.
+            const meta = v.cuota_mes > 0 ? v.cuota_mes : (v.meta?.monto_meta ?? 0)
+            const pctReal = meta > 0 ? (v.total_ventas / meta) * 100 : 0
+            const pct = Math.min(100, pctReal)
             const tienePendiente = v.liquidaciones.some(
               (l) => l.estado === 'pendiente' || l.estado === 'aprobada'
             )
@@ -731,13 +750,13 @@ export default function VendedoresClient({
                   {/* Progreso vs meta */}
                   <div>
                     <div className="flex items-center justify-between text-xs mb-1">
-                      <span className="text-gray-500">Progreso meta mensual</span>
+                      <span className="text-gray-500">{v.cuota_mes > 0 ? 'Cumplimiento de cuota del mes' : 'Progreso meta mensual'}</span>
                       {meta > 0 ? (
                         <span className="font-semibold text-gray-800">
-                          {pct.toFixed(0)}% · {formatCurrency(v.total_ventas)} / {formatCurrency(meta)}
+                          {pctReal.toFixed(1)}% · {formatCurrency(v.total_ventas)} / {formatCurrency(meta)}
                         </span>
                       ) : (
-                        <span className="text-gray-400">Sin meta configurada</span>
+                        <span className="text-gray-400">Sin cuota asignada</span>
                       )}
                     </div>
                     <div className="w-full h-2 bg-gray-100 rounded-full overflow-hidden">
@@ -750,7 +769,17 @@ export default function VendedoresClient({
 
                   {/* Mini-stats */}
                   <div className="grid grid-cols-2 gap-2 text-xs">
-                    <div className="p-2 rounded bg-gray-50">
+                    <div className="p-2 rounded bg-amber-50" data-cuota-mes>
+                      <p className="text-gray-500">Cuota del mes</p>
+                      <p className="font-semibold text-gray-800">{v.cuota_mes > 0 ? formatCurrency(v.cuota_mes) : '—'}</p>
+                    </div>
+                    <div className="p-2 rounded bg-amber-50">
+                      <p className="text-gray-500">Cumplimiento</p>
+                      <p className={`font-semibold ${v.cuota_mes > 0 ? (pctReal >= 100 ? 'text-green-700' : pctReal >= 70 ? 'text-amber-700' : 'text-red-700') : 'text-gray-400'}`}>
+                        {v.cuota_mes > 0 ? `${pctReal.toFixed(1)}%` : '—'}
+                      </p>
+                    </div>
+                    <div className="p-2 rounded bg-gray-50" data-ventas-mes>
                       <p className="text-gray-400">Ventas del mes</p>
                       <p className="font-semibold text-gray-800">{formatCurrency(v.total_ventas)}</p>
                     </div>

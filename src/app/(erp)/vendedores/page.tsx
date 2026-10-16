@@ -1,4 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
+import { hoyLima } from '@/lib/fechas-pe'
+import { traerTodo } from '@/lib/supabase/paginar'
 import VendedoresClient, {
   type VendedorData,
   type LiquidacionPendiente,
@@ -11,12 +13,13 @@ export const dynamic = 'force-dynamic'
 async function getVendedoresData() {
   const supabase = await createClient()
 
-  const now = new Date()
-  const anioActual = now.getFullYear()
-  const mesActual = now.getMonth() + 1 // 1-12
-  const hoyStr = now.toISOString().split('T')[0]
-  const inicioMes = new Date(anioActual, mesActual - 1, 1).toISOString().split('T')[0]
-  const finMes = new Date(anioActual, mesActual, 0).toISOString().split('T')[0]
+  // El mes y el día de Lima: con la hora del servidor (UTC), desde las 7 p. m.
+  // ya era mañana y el último día del mes mostraba el mes siguiente.
+  const hoyStr = hoyLima()
+  const anioActual = Number(hoyStr.slice(0, 4))
+  const mesActual = Number(hoyStr.slice(5, 7)) // 1-12
+  const inicioMes = `${hoyStr.slice(0, 8)}01`
+  const finMes = new Date(Date.UTC(anioActual, mesActual, 0)).toISOString().slice(0, 10)
 
   // Promise.allSettled — si UNA query falla (tabla nueva, RLS, timeout, etc.) la página
   // sigue cargando con array vacío para esa fuente, en lugar de hacer crash y dejar al
@@ -29,22 +32,28 @@ async function getVendedoresData() {
       .eq('activo', true)
       .order('full_name'),
     supabase.from('familias').select('id, nombre').order('nombre'),
-    supabase
+    // De a páginas: en octubre ya son más de 900 pedidos y comprobantes.
+    traerTodo<any>((desde, hasta) => (supabase as any)
       .from('pedidos')
       .select('id, vendedor_id, total, fecha_pedido, estado, numero, cliente_id')
       .gte('fecha_pedido', inicioMes)
-      .lte('fecha_pedido', finMes),
-    supabase
+      .lte('fecha_pedido', finMes)
+      .order('id').range(desde, hasta)).then((data) => ({ data })),
+    // El vendedor sale del pedido del comprobante, aunque el pedido sea del mes
+    // anterior (antes quedaban afuera: 3 comprobantes de Daniel por S/ 3,776.38).
+    traerTodo<any>((desde, hasta) => (supabase as any)
       .from('comprobantes')
-      .select('id, pedido_id, cliente_id, total, fecha_emision, estado')
+      .select('id, pedido_id, cliente_id, total, fecha_emision, estado, tipo, pedidos(vendedor_id)')
       .gte('fecha_emision', inicioMes)
       .lte('fecha_emision', finMes)
-      .neq('estado', 'anulado'),
-    supabase
+      .neq('estado', 'anulado')
+      .order('id').range(desde, hasta)).then((data) => ({ data })),
+    traerTodo<any>((desde, hasta) => (supabase as any)
       .from('cobros')
       .select('id, cobrador_id, cliente_id, total, fecha')
       .gte('fecha', inicioMes)
-      .lte('fecha', finMes),
+      .lte('fecha', finMes)
+      .order('id').range(desde, hasta)).then((data) => ({ data })),
     supabase
       .from('gps_checkins' as any)
       .select('id, usuario_id, cliente_id, tipo, created_at')
@@ -81,6 +90,19 @@ async function getVendedoresData() {
     return (v?.data ?? []) as T[]
   }
   const vendedoresRaw = pick<any>(0, 'profiles vendedores')
+
+  /*
+   * Venta, cuota y cobrado del mes por vendedor: la misma fuente que el
+   * Dashboard y Alcance de objetivos (resumen_ventas_cuotas, migración 146).
+   * Daniel, 15/10: aquí decía S/ 45,967.70 y en Alcance S/ 49,744.07.
+   */
+  const { data: resumenRaw } = await (supabase as any).rpc('resumen_ventas_cuotas', { p_desde: inicioMes, p_hasta: finMes })
+  const resumenPorVendedor = new Map<string, { ventas: number; cuota: number; cobrado: number }>()
+  const resumenTodos = (resumenRaw ?? []) as any[]
+  for (const r of resumenTodos) {
+    if (!r.vendedor_id) continue
+    resumenPorVendedor.set(r.vendedor_id, { ventas: Number(r.ventas ?? 0), cuota: Number(r.cuota ?? 0), cobrado: Number(r.cobrado ?? 0) })
+  }
   // Llamar RPC calcular_comision_vendedor por cada vendedor (en paralelo).
   // Esto reemplaza el cálculo manual antiguo que ignoraba la familia.
   const comisionesRpc = await Promise.all(
@@ -123,10 +145,10 @@ async function getVendedoresData() {
   const ventasPorVendedor = new Map<string, number>()
   const comprobantesPorVendedor = new Map<string, any[]>()
   for (const c of (comprobantesMes ?? []) as any[]) {
-    if (!c.pedido_id) continue
-    const ped = pedidosPorId.get(c.pedido_id)
-    if (!ped?.vendedor_id) continue
-    ventasPorVendedor.set(ped.vendedor_id, (ventasPorVendedor.get(ped.vendedor_id) ?? 0) + Number(c.total ?? 0))
+    const ped = { vendedor_id: c.pedidos?.vendedor_id ?? pedidosPorId.get(c.pedido_id)?.vendedor_id ?? null }
+    if (!ped.vendedor_id) continue
+    const signo = c.tipo === 'nota_credito' ? -1 : 1
+    ventasPorVendedor.set(ped.vendedor_id, (ventasPorVendedor.get(ped.vendedor_id) ?? 0) + signo * Number(c.total ?? 0))
     if (!comprobantesPorVendedor.has(ped.vendedor_id)) comprobantesPorVendedor.set(ped.vendedor_id, [])
     comprobantesPorVendedor.get(ped.vendedor_id)!.push({ ...c, vendedor_id: ped.vendedor_id })
   }
@@ -187,9 +209,8 @@ async function getVendedoresData() {
   const ventasHoyPorVendedor = new Map<string, number>()
   for (const c of (comprobantesMes ?? []) as any[]) {
     if (c.fecha_emision !== hoyStr) continue
-    if (!c.pedido_id) continue
-    const ped = pedidosPorId.get(c.pedido_id)
-    if (!ped?.vendedor_id) continue
+    const ped = { vendedor_id: c.pedidos?.vendedor_id ?? pedidosPorId.get(c.pedido_id)?.vendedor_id ?? null }
+    if (!ped.vendedor_id) continue
     ventasHoyPorVendedor.set(ped.vendedor_id, (ventasHoyPorVendedor.get(ped.vendedor_id) ?? 0) + Number(c.total ?? 0))
   }
   const cobradoHoyPorVendedor = new Map<string, number>()
@@ -206,8 +227,11 @@ async function getVendedoresData() {
   }
 
   const vendedoresData: VendedorData[] = vendedores.map((v) => {
-    const total_ventas = ventasPorVendedor.get(v.id) ?? 0
-    const total_cobrado = cobradoPorVendedor.get(v.id) ?? 0
+    const resumen = resumenPorVendedor.get(v.id)
+    const total_ventas = resumen?.ventas ?? ventasPorVendedor.get(v.id) ?? 0
+    const total_cobrado = resumen?.cobrado ?? cobradoPorVendedor.get(v.id) ?? 0
+    // La cuota asignada al mes (Daniel, 15/10).
+    const cuota_mes = resumen?.cuota ?? 0
     const pedidos = pedidosPorVendedor.get(v.id) ?? []
     const pedidos_count = pedidos.length
     const clientes_visitados = clientesPorVendedor.get(v.id)?.size ?? 0
@@ -249,6 +273,7 @@ async function getVendedoresData() {
       email: v.email ?? '',
       total_ventas,
       total_cobrado,
+      cuota_mes,
       pedidos_count,
       clientes_visitados,
       ventas_hoy,
@@ -332,8 +357,13 @@ async function getVendedoresData() {
     })
 
   // KPIs globales
-  const ventas_totales_mes = Array.from(ventasPorVendedor.values()).reduce((a, b) => a + b, 0)
-  const cobros_totales_mes = Array.from(cobradoPorVendedor.values()).reduce((a, b) => a + b, 0)
+  // Totales de arriba: TODA la venta del mes (también la de repartidores en ruta
+  // y la sin vendedor, igual que el Dashboard en "todos") y TODOS los cobros.
+  // El cumplimiento compara la cuota solo con la venta de quienes tienen cuota.
+  const ventas_totales_mes = resumenTodos.reduce((a, r) => a + Number(r.ventas ?? 0), 0)
+  const cobros_totales_mes = (cobrosMes ?? []).reduce((a: number, c: any) => a + Number(c.total ?? 0), 0)
+  const cuotas_totales_mes = resumenTodos.reduce((a, r) => a + Number(r.cuota ?? 0), 0)
+  const ventas_con_cuota_mes = resumenTodos.filter((r) => Number(r.cuota ?? 0) > 0).reduce((a, r) => a + Number(r.ventas ?? 0), 0)
   const comisiones_pendientes_pago = liquidacionesTodas
     .filter((l) => l.estado === 'aprobada')
     .reduce((a, l) => a + Number(l.comision_calculada ?? 0), 0)
@@ -346,6 +376,8 @@ async function getVendedoresData() {
       total_vendedores: vendedoresData.length,
       ventas_totales_mes,
       cobros_totales_mes,
+      cuotas_totales_mes,
+      ventas_con_cuota_mes,
       comisiones_pendientes_pago,
     },
     anioActual,

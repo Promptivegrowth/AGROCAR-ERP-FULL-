@@ -6,6 +6,7 @@ import {
 } from 'recharts'
 import { createClient } from '@/lib/supabase/client'
 import { formatCurrency } from '@/lib/utils'
+import { hoyLima } from '@/lib/fechas-pe'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Target, TrendingUp, TrendingDown, Loader2, Award, Package, FileSpreadsheet } from 'lucide-react'
@@ -15,20 +16,20 @@ const GRAY = '#94a3b8'
 
 export default function CuotasTab() {
   const supabase = createClient()
-  const now = new Date()
   const [loading, setLoading] = useState(true)
   // Rango de fechas, igual que el Análisis zonificado (pedido de Christopher)
-  const primeroDelMes = new Date(now.getFullYear(), now.getMonth(), 1)
-  const [desdeFecha, setDesdeFecha] = useState(primeroDelMes.toISOString().split('T')[0])
-  const [hastaFecha, setHastaFecha] = useState(now.toISOString().split('T')[0])
+  // Fechas de Lima: con la hora UTC, de noche el "hasta" ya era mañana.
+  const hoy = hoyLima()
+  const [desdeFecha, setDesdeFecha] = useState(`${hoy.slice(0, 8)}01`)
+  const [hastaFecha, setHastaFecha] = useState(hoy)
   const [vendedorSel, setVendedorSel] = useState<string>('todos')
   const [familiaSel, setFamiliaSel] = useState<string>('todas')
 
   const [vendedores, setVendedores] = useState<any[]>([])
   const [familias, setFamilias] = useState<any[]>([])
-  const [pedidos, setPedidos] = useState<any[]>([])
-  const [cobros, setCobros] = useState<any[]>([])
-  const [cuotasMonto, setCuotasMonto] = useState<any[]>([])
+  // Venta, cuota y cobrado por vendedor: resumen_ventas_cuotas (migración 146),
+  // la misma regla que Alcance de objetivos y Gestión de vendedores.
+  const [resumen, setResumen] = useState<{ vendedor_id: string; nombre: string; ventas: number; cuota: number; cobrado: number }[]>([])
   // Alcance de objetivos del rango: es la MISMA fuente que el reporte de
   // Gestión de Vendedores, agrupado por línea (familia). Christopher: "la
   // información debe provenir de la gestión de vendedor dentro de alcance de
@@ -51,26 +52,12 @@ export default function CuotasTab() {
       setLoading(true)
       const desde = desdeFecha
       const hasta = hastaFecha
-      const [{ data: peds }, { data: cobs }, { data: m }, { data: cp }] = await Promise.all([
-        (supabase as any)
-          .from('pedidos')
-          .select('id, vendedor_id, fecha_pedido, total, subtotal')
-          .gte('fecha_pedido', desde)
-          .lte('fecha_pedido', hasta)
-          .in('estado', ['facturado','despachado','entregado']),
-        (supabase as any)
-          .from('cobros')
-          .select('cobrador_id, fecha, total')
-          .gte('fecha', desde)
-          .lte('fecha', hasta),
-        // La cuota del vendedor sale del rollup por familia de las cuotas por
-        // producto. Antes se leía `metas_vendedor` y `cuotas_producto`, dos
-        // tablas que están VACÍAS: por eso todo el tablero mostraba cero
-        // aunque Daniel ya tenía sus cuotas cargadas.
-        (supabase as any)
-          .from('cuotas_vendedor_familia')
-          .select('vendedor_id, anio, mes, cuota_monto')
-          .gt('cuota_monto', 0),
+      const [{ data: rs }, { data: cp }] = await Promise.all([
+        (supabase as any).rpc('resumen_ventas_cuotas', {
+          p_desde: desde,
+          p_hasta: hasta,
+          p_familia_id: familiaSel === 'todas' ? null : familiaSel,
+        }),
         (supabase as any).rpc('alcance_objetivos_rango', {
           p_desde: desde,
           p_hasta: hasta,
@@ -78,89 +65,57 @@ export default function CuotasTab() {
           p_familia_id: familiaSel === 'todas' ? null : familiaSel,
         }),
       ])
-      setPedidos(peds ?? [])
-      setCobros(cobs ?? [])
-      setCuotasMonto(m ?? [])
+      setResumen(((rs ?? []) as any[]).map((r) => ({
+        vendedor_id: r.vendedor_id, nombre: r.nombre,
+        ventas: Number(r.ventas ?? 0), cuota: Number(r.cuota ?? 0), cobrado: Number(r.cobrado ?? 0),
+      })))
       setAlcance(cp ?? null)
       setLoading(false)
     })()
   }, [desdeFecha, hastaFecha, vendedorSel, familiaSel])
 
-  /**
-   * Cuota que le corresponde al rango elegido.
-   *
-   * La cuota se asigna por MES, pero el filtro es un rango libre. Sumar los
-   * meses completos que toca el rango inflaría la meta: un rango del 16/07 al
-   * 15/08 sumaría julio y agosto enteros cuando solo cubre media parte de cada
-   * uno. Por eso cada mes aporta en proporción a los días que el rango cubre
-   * de ese mes, y el porcentaje de cumplimiento queda comparable.
+  /*
+   * La cuota es la asignada al mes, COMPLETA (Daniel, 15/10/2026). Antes se
+   * prorrateaba por los días del rango: del 01 al 15/10 mostraba 15/31 de la
+   * cuota y no la que Daniel había asignado.
    */
-  const factorMes = useMemo(() => {
-    const ini = new Date(desdeFecha + 'T12:00:00')
-    const fin = new Date(hastaFecha + 'T12:00:00')
-    return (anio: number, mes: number) => {
-      const primero = new Date(anio, mes - 1, 1)
-      const ultimo = new Date(anio, mes, 0)
-      const desdeEfec = ini > primero ? ini : primero
-      const hastaEfec = fin < ultimo ? fin : ultimo
-      if (hastaEfec < desdeEfec) return 0
-      const dias = Math.floor((hastaEfec.getTime() - desdeEfec.getTime()) / 86400000) + 1
-      return dias / ultimo.getDate()
-    }
-  }, [desdeFecha, hastaFecha])
-
-  const cuotaDelRango = useMemo(() => {
-    const porVendedor = new Map<string, number>()
-    cuotasMonto.forEach((c: any) => {
-      const f = factorMes(Number(c.anio), Number(c.mes))
-      if (f === 0) return
-      const parte = Number(c.cuota_monto ?? 0) * f
-      porVendedor.set(c.vendedor_id, (porVendedor.get(c.vendedor_id) ?? 0) + parte)
-    })
-    return porVendedor
-  }, [cuotasMonto, factorMes])
-
   // Ventas por vendedor + cobranzas
   const perVendedor = useMemo(() => {
-    const lista = vendedorSel === 'todos'
-      ? vendedores
-      : vendedores.filter((v) => v.id === vendedorSel)
-    return lista.map((v) => {
-      const ventas = pedidos.filter((p) => p.vendedor_id === v.id).reduce((a, p) => a + Number(p.total ?? 0), 0)
-      const cobrado = cobros.filter((c) => c.cobrador_id === v.id).reduce((a, c) => a + Number(c.total ?? 0), 0)
-      return {
-        id: v.id,
-        // Solo el primer nombre y el primer apellido: con el nombre completo
-        // las etiquetas del eje no entran y el gráfico oculta algunas —por eso
-        // Daniel Caichihua aparecía sin nombre.
-        nombre: v.full_name.split(' ').slice(0, 2).join(' '),
-        ventas: Math.round(ventas),
-        cuota: Math.round(cuotaDelRango.get(v.id) ?? 0),
-        cobrado: Math.round(cobrado),
-      }
-    })
-  }, [vendedores, pedidos, cobros, cuotaDelRango, vendedorSel])
+    const lista = vendedorSel === 'todos' ? resumen : resumen.filter((r) => r.vendedor_id === vendedorSel)
+    return lista.map((r) => ({
+      id: r.vendedor_id,
+      // Solo el primer nombre y el primer apellido: con el nombre completo
+      // las etiquetas del eje no entran y el gráfico oculta algunas —por eso
+      // Daniel Caichihua aparecía sin nombre.
+      nombre: r.nombre.split(' ').slice(0, 2).join(' '),
+      ventas: Math.round(r.ventas * 100) / 100,
+      cuota: Math.round(r.cuota * 100) / 100,
+      cobrado: Math.round(r.cobrado * 100) / 100,
+    }))
+  }, [resumen, vendedorSel])
 
   const totalVenta = perVendedor.reduce((a, v) => a + v.ventas, 0)
   const totalCuota = perVendedor.reduce((a, v) => a + v.cuota, 0)
   const totalCobrado = perVendedor.reduce((a, v) => a + v.cobrado, 0)
-  const pctCumplimiento = totalCuota > 0 ? (totalVenta / totalCuota) * 100 : 0
+  // El cumplimiento compara la cuota con la venta de quienes TIENEN cuota: en
+  // "todos", la venta de repartidores o de vendedores sin cuota no cuenta.
+  const ventaConCuota = perVendedor.filter((v) => v.cuota > 0).reduce((a, v) => a + v.ventas, 0)
+  const pctCumplimiento = totalCuota > 0 ? (ventaConCuota / totalCuota) * 100 : 0
 
-  // Proyección: se toma el ritmo diario de lo vendido hasta hoy dentro del
-  // rango y se extiende al rango completo. Si el rango ya terminó, la
-  // proyección es lo vendido: no hay nada que proyectar.
-  const diasRango = Math.max(1,
-    Math.floor((new Date(hastaFecha + 'T12:00:00').getTime()
-              - new Date(desdeFecha + 'T12:00:00').getTime()) / 86400000) + 1)
-  const diasTranscurridos = (() => {
-    const fin = new Date(hastaFecha + 'T12:00:00')
-    const hoyD = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 12)
-    const corte = hoyD < fin ? hoyD : fin
-    const d = Math.floor((corte.getTime() - new Date(desdeFecha + 'T12:00:00').getTime()) / 86400000) + 1
-    return Math.max(1, Math.min(d, diasRango))
+  // Proyección al cierre del mes: el ritmo diario de lo vendido hasta hoy
+  // dentro del rango, llevado hasta el último día del mes del "hasta". Si el
+  // mes ya terminó, la proyección es lo vendido.
+  const finDeMes = (() => {
+    const [a, m] = hastaFecha.split('-').map(Number)
+    return new Date(Date.UTC(a, m, 0, 12))
   })()
-  const promedioDiario = totalVenta / diasTranscurridos
-  const proyeccion = promedioDiario * diasRango
+  const desdeD = new Date(desdeFecha + 'T12:00:00Z')
+  const hoyD = new Date(hoy + 'T12:00:00Z')
+  const hastaD = new Date(hastaFecha + 'T12:00:00Z')
+  const corte = hoyD < hastaD ? hoyD : hastaD
+  const diasTranscurridos = Math.max(1, Math.floor((corte.getTime() - desdeD.getTime()) / 86400000) + 1)
+  const diasHastaFinDeMes = Math.max(diasTranscurridos, Math.floor((finDeMes.getTime() - desdeD.getTime()) / 86400000) + 1)
+  const proyeccion = corte < finDeMes ? (ventaConCuota / diasTranscurridos) * diasHastaFinDeMes : ventaConCuota
   const pctProyectado = totalCuota > 0 ? (proyeccion / totalCuota) * 100 : 0
 
   const lineas: any[] = alcance?.lineas ?? []
@@ -182,7 +137,7 @@ export default function CuotasTab() {
     f.push(`Total cuota;${totalCuota.toFixed(2)}`)
     f.push(`Cumplimiento %;${pctCumplimiento.toFixed(1)}`)
     f.push(`Total cobrado;${totalCobrado.toFixed(2)}`)
-    f.push(`Proyeccion fin de rango;${proyeccion.toFixed(2)}`)
+    f.push(`Proyeccion al cierre del mes;${proyeccion.toFixed(2)}`)
     f.push(`Proyeccion %;${pctProyectado.toFixed(1)}`)
     f.push('')
     f.push('POR VENDEDOR')
@@ -193,26 +148,26 @@ export default function CuotasTab() {
     })
     f.push('')
     f.push('ALCANCE DE OBJETIVOS POR LINEA Y PRODUCTO')
-    f.push('Linea;Codigo;Descripcion;Cant. real;Cant. cuota;Alc. cant %;Valor real;Valor cuota;Alc. valor %')
+    f.push('Linea;Codigo;Descripcion;Cant. real;Precio prom. venta;Cant. cuota;Precio prom. cuota;Alc. cant %;Valor real;Valor cuota;Alc. valor %')
     lineas.forEach((l: any) => {
       const linea = `LINEA ${l.codigo} - ${l.nombre}`
       ;(l.productos ?? []).forEach((r: any) => {
         f.push([
           `"${linea}"`, r.codigo, `"${String(r.descripcion ?? '').replace(/"/g, "'")}"`,
-          r.cant_real, r.cant_cuota, r.alc_cant ?? '',
+          r.cant_real, precioProm(r.valor_real, r.cant_real).toFixed(2), r.cant_cuota, precioProm(r.valor_cuota, r.cant_cuota).toFixed(2), r.alc_cant ?? '',
           r.valor_real, r.valor_cuota, r.alc_valor ?? '',
         ].join(';'))
       })
       f.push([
         `"TOTAL ${linea}"`, '', '',
-        l.tot_cant_real, l.tot_cant_cuota, l.alc_cant ?? '',
+        l.tot_cant_real, '', l.tot_cant_cuota, '', l.alc_cant ?? '',
         l.tot_valor_real, l.tot_valor_cuota, l.alc_valor ?? '',
       ].join(';'))
     })
     if (alcance) {
       f.push([
         '"TOTAL GENERAL"', '', '',
-        alcance.total_cant_real, alcance.total_cant_cuota, '',
+        alcance.total_cant_real, '', alcance.total_cant_cuota, '', '',
         alcance.total_valor_real, alcance.total_valor_cuota, alcance.alc_total ?? '',
       ].join(';'))
     }
@@ -263,8 +218,8 @@ export default function CuotasTab() {
           </button>
         </div>
         <p className="text-[10px] text-gray-400 text-center mt-2">
-          La cuota es mensual: cuando el rango cubre parte de un mes, se cuenta
-          la parte proporcional a los días para que el % sea comparable.
+          La cuota es la asignada a cada mes, completa. La venta son los
+          comprobantes emitidos en el rango (con IGV; las notas de crédito restan).
         </p>
       </div>
 
@@ -327,11 +282,12 @@ export default function CuotasTab() {
             <KpiCuota
               label="Cumplimiento Real"
               value={`${pctCumplimiento.toFixed(1)}%`}
+              desc={`${formatCurrency(ventaConCuota)} de quienes tienen cuota`}
               icon={pctCumplimiento >= 100 ? Award : TrendingDown}
               color={pctCumplimiento >= 100 ? 'bg-green-100 text-green-800' : pctCumplimiento >= 70 ? 'bg-yellow-50 text-yellow-700' : 'bg-red-50 text-red-700'}
             />
             <KpiCuota
-              label="Proyección Fin de Rango"
+              label="Proyección al cierre del mes"
               value={`${pctProyectado.toFixed(1)}%`}
               desc={`≈ ${formatCurrency(proyeccion)}`}
               icon={TrendingUp}
@@ -359,18 +315,18 @@ export default function CuotasTab() {
                     <tr>
                       <th className="text-left py-2 px-3 text-[11px] font-bold text-gray-700 uppercase tracking-wide">Código</th>
                       <th className="text-left py-2 px-3 text-[11px] font-bold text-gray-700 uppercase tracking-wide">Descripción</th>
-                      {['Cant. Real', 'Cant. Cuota', 'Alc. Cant.', 'Valor Real', 'Valor Cuota', 'Alc. Valor'].map((h) => (
+                      {['Cant. Real', 'P. Prom. Venta', 'Cant. Cuota', 'P. Prom. Cuota', 'Alc. Cant.', 'Valor Real', 'Valor Cuota', 'Alc. Valor'].map((h) => (
                         <th key={h} className="text-right py-2 px-3 text-[11px] font-bold text-gray-700 uppercase tracking-wide whitespace-nowrap">{h}</th>
                       ))}
                     </tr>
                   </thead>
                   <tbody>
                     {lineas.length === 0 ? (
-                      <tr><td colSpan={8} className="py-8 text-center text-gray-400 text-xs">Sin cuotas ni ventas en el rango</td></tr>
+                      <tr><td colSpan={10} className="py-8 text-center text-gray-400 text-xs">Sin cuotas ni ventas en el rango</td></tr>
                     ) : lineas.map((l: any) => (
                       <Fragment key={l.codigo + l.nombre}>
                         <tr className="bg-gray-800 text-white">
-                          <td colSpan={8} className="py-1.5 px-3 text-[11px] font-bold tracking-wide">
+                          <td colSpan={10} className="py-1.5 px-3 text-[11px] font-bold tracking-wide">
                             LÍNEA {l.codigo} - {l.nombre}
                           </td>
                         </tr>
@@ -379,7 +335,9 @@ export default function CuotasTab() {
                             <td className="py-1.5 px-3 text-xs font-mono text-gray-600 whitespace-nowrap">{r.codigo}</td>
                             <td className="py-1.5 px-3 text-xs text-gray-800">{r.descripcion}</td>
                             <td className="py-1.5 px-3 text-xs text-gray-700 text-right tabular-nums">{num(r.cant_real)}</td>
+                            <td className="py-1.5 px-3 text-xs text-gray-500 text-right tabular-nums">{num(precioProm(r.valor_real, r.cant_real))}</td>
                             <td className="py-1.5 px-3 text-xs text-gray-700 text-right tabular-nums">{num(r.cant_cuota)}</td>
+                            <td className="py-1.5 px-3 text-xs text-gray-500 text-right tabular-nums">{num(precioProm(r.valor_cuota, r.cant_cuota))}</td>
                             <td className={`py-1.5 px-3 text-xs text-right tabular-nums font-semibold ${colorAlc(r.alc_cant)}`}>{pct(r.alc_cant)}</td>
                             <td className="py-1.5 px-3 text-xs text-gray-800 text-right tabular-nums">{num(r.valor_real)}</td>
                             <td className="py-1.5 px-3 text-xs text-gray-700 text-right tabular-nums">{num(r.valor_cuota)}</td>
@@ -391,7 +349,9 @@ export default function CuotasTab() {
                             TOTAL LÍNEA {l.codigo} - {l.nombre}
                           </td>
                           <td className="py-1.5 px-3 text-xs font-bold text-gray-800 text-right tabular-nums">{num(l.tot_cant_real)}</td>
+                          <td className="py-1.5 px-3" />
                           <td className="py-1.5 px-3 text-xs font-bold text-gray-800 text-right tabular-nums">{num(l.tot_cant_cuota)}</td>
+                          <td className="py-1.5 px-3" />
                           <td className={`py-1.5 px-3 text-xs text-right tabular-nums font-bold ${colorAlc(l.alc_cant)}`}>{pct(l.alc_cant)}</td>
                           <td className="py-1.5 px-3 text-xs font-bold text-gray-800 text-right tabular-nums">{num(l.tot_valor_real)}</td>
                           <td className="py-1.5 px-3 text-xs font-bold text-gray-800 text-right tabular-nums">{num(l.tot_valor_cuota)}</td>
@@ -403,7 +363,9 @@ export default function CuotasTab() {
                       <tr className="bg-[#FBE600]">
                         <td colSpan={2} className="py-2 px-3 text-[11px] font-bold text-gray-900 text-right">TOTAL GENERAL</td>
                         <td className="py-2 px-3 text-xs font-bold text-gray-900 text-right tabular-nums">{num(alcance?.total_cant_real)}</td>
+                        <td className="py-2 px-3" />
                         <td className="py-2 px-3 text-xs font-bold text-gray-900 text-right tabular-nums">{num(alcance?.total_cant_cuota)}</td>
+                        <td className="py-2 px-3" />
                         <td className="py-2 px-3" />
                         <td className="py-2 px-3 text-xs font-bold text-gray-900 text-right tabular-nums">{num(alcance?.total_valor_real)}</td>
                         <td className="py-2 px-3 text-xs font-bold text-gray-900 text-right tabular-nums">{num(alcance?.total_valor_cuota)}</td>
@@ -414,11 +376,10 @@ export default function CuotasTab() {
                 </table>
               </div>
               <p className="text-[10px] text-gray-500 px-3 py-2 border-t">
-                Venta facturada del rango: comprobantes emitidos con las notas
-                de crédito restando, igual que el reporte Alcance de objetivos
-                de Gestión de Vendedores. Puede no coincidir con «Total Venta»
-                de arriba, que cuenta los pedidos por su fecha de pedido y no
-                por la fecha de emisión del comprobante.
+                Venta del rango: comprobantes emitidos (con IGV), con las notas
+                de crédito restando; la misma cifra que «Total Venta», Alcance
+                de objetivos y Gestión de vendedores. Precio promedio = valor ÷
+                cantidad. La cuota es la del mes completo.
               </p>
             </CardContent>
           </Card>
@@ -426,6 +387,12 @@ export default function CuotasTab() {
       )}
     </div>
   )
+}
+
+/** Precio promedio: valor ÷ cantidad (0 si no hay cantidad). */
+function precioProm(valor: any, cant: any) {
+  const c = Number(cant ?? 0)
+  return c !== 0 ? Number(valor ?? 0) / c : 0
 }
 
 /** Miles con dos decimales, como en el reporte impreso. */
