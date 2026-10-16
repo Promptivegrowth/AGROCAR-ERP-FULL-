@@ -231,6 +231,9 @@ export async function declararComprobante(
         forma_pago: esCredito ? 'credito' : 'contado',
         fecha_vencimiento: vencimiento,
         cliente: c.clientes,
+        // Para que un medio céntimo de redondeo no deje lo declarado distinto
+        // de lo impreso (ubl.ts, ajusteDeCentimos).
+        total_impreso: Number(c.total),
       },
       emisor: EMISOR_SUNAT,
       items,

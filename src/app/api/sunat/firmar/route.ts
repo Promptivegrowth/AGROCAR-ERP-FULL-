@@ -84,6 +84,8 @@ export async function POST(req: Request) {
         forma_pago: esCredito ? 'credito' : 'contado',
         fecha_vencimiento: vencimiento,
         cliente: c.clientes,
+        // El mismo ajuste de medio céntimo que la declaración (ubl.ts).
+        total_impreso: Number(c.total),
       },
       emisor: EMISOR_SUNAT,
       items,

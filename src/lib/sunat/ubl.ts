@@ -57,6 +57,41 @@ export interface ComprobanteUbl {
   /** Solo si es a crédito: cuándo vence la única cuota. */
   fecha_vencimiento?: string | null
   cliente?: ClienteUbl | null
+  /**
+   * El total que el cliente tiene impreso. Si las líneas, redondeadas, suman
+   * uno o dos céntimos distinto, se ajusta la línea que cayó justo en medio
+   * céntimo para que lo declarado sea lo impreso (ver ajusteDeCentimos).
+   */
+  total_impreso?: number | null
+}
+
+/**
+ * Céntimos de cada línea, ajustados para sumar el total impreso.
+ *
+ * En productos por peso el importe cae a veces justo en la mitad del céntimo
+ * (3.05 kg × 17.70 = 53.985) y la coma flotante lo redondea hacia abajo
+ * (53.98), mientras el total impreso se redondeó sobre la suma (B002-615:
+ * líneas 641.21, impreso 641.22). Declarar otro importe que el impreso no se
+ * puede, así que antes la barrera de totales lo trababa (Luigi, 16/10/2026:
+ * ajustar). Solo se corrigen diferencias de hasta dos céntimos, sumando o
+ * restando uno a las líneas cuyo importe exacto está más cerca de redondear
+ * para ese lado; cualquier diferencia mayor sigue trabándose. El céntimo queda
+ * dentro de la tolerancia por línea de SUNAT.
+ */
+export function ajusteDeCentimos(
+  items: { cantidad: number; precio_unitario: number }[],
+  totalImpreso?: number | null,
+): number[] {
+  const exactos = items.map((it) => Number(it.cantidad) * Number(it.precio_unitario) * 100)
+  const centimos = exactos.map((x) => Math.round(x))
+  if (totalImpreso === undefined || totalImpreso === null) return centimos
+  const falta = Math.round(Number(totalImpreso) * 100) - centimos.reduce((a, c) => a + c, 0)
+  if (falta === 0 || Math.abs(falta) > 2) return centimos
+  // Cuánto "quería" subir cada línea: exacto - redondeado (entre -0.5 y 0.5).
+  const orden = exactos.map((x, i) => ({ i, sesgo: x - centimos[i] }))
+    .sort((a, b) => (falta > 0 ? b.sesgo - a.sesgo : a.sesgo - b.sesgo))
+  for (let k = 0; k < Math.abs(falta) && k < orden.length; k++) centimos[orden[k].i] += Math.sign(falta)
+  return centimos
 }
 
 const esc = (s: unknown): string => String(s ?? '')
@@ -131,6 +166,7 @@ export function construirInvoice(
 
   let gravado = 0
   let igvTotal = 0
+  const centimosLinea = ajusteDeCentimos(items, comprobante.total_impreso)
 
   const lineas = items.map((it, i) => {
     const cantidad = Number(it.cantidad)
@@ -153,7 +189,7 @@ export function construirInvoice(
      * IGV absorbe el céntimo. La diferencia contra el 18% teórico queda dentro
      * de la tolerancia de redondeo que SUNAT admite por línea.
      */
-    const montoConIgv = Math.round(cantidad * precioConIgv * 100) / 100
+    const montoConIgv = centimosLinea[i] / 100
     const valorVenta = Math.round((montoConIgv / factor) * 100) / 100
     const igvLinea = Math.round((montoConIgv - valorVenta) * 100) / 100
 
