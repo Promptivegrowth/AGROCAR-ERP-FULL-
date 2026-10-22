@@ -52,7 +52,7 @@ const NOMBRE_COMPROBANTE: Record<string, string> = {
  * misma forma: la tabla es una sola.
  */
 const COLUMNAS_COMPROBANTE = `
-  id, serie, numero, tipo, fecha_emision, fecha_despacho, created_at, total, estado, cliente_id,
+  id, serie, numero, tipo, fecha_emision, fecha_despacho, created_at, total, estado, cliente_id, pedido_id,
   editado, editado_at, enviado_sunat,
   sunat_estado, sunat_codigo, sunat_mensaje, sunat_modo,
   cliente_externo_nombre, cliente_externo_doc,
@@ -246,6 +246,15 @@ export default function FacturacionPage() {
   const [guiaConductores, setGuiaConductores] = useState<any[]>([])
   const [guiaItems, setGuiaItems] = useState<any[]>([])
   const [editHistorial, setEditHistorial] = useState<any[]>([])
+  /*
+   * Vendedor del comprobante. Daniel, 21/10: "no asigné vendedor y ya lo emití
+   * factura". El vendedor vive en el pedido; las reglas (quién puede, pedido
+   * cancelado, liquidaciones de comisión) las pone asignar_vendedor_pedido.
+   */
+  const [editVendedor, setEditVendedor] = useState<{ pedidoId: string | null; id: string | null; nombre: string | null }>({ pedidoId: null, id: null, nombre: null })
+  const [vendedoresOpts, setVendedoresOpts] = useState<{ id: string; full_name: string }[]>([])
+  const [vendedorElegido, setVendedorElegido] = useState('')
+  const [vendedorGuardando, setVendedorGuardando] = useState(false)
   /*
    * Agregar un producto al comprobante. Daniel: "en editar comprobante no
    * puedo agregar producto". Los productos vienen con el precio de la lista del
@@ -594,6 +603,7 @@ export default function FacturacionPage() {
     setEditComp(comp)
     setEditNota('')
     setEditarOpen(true)
+    cargarVendedorComprobante(comp)
     // Cargar items + historial
     const [{ data: items }, { data: hist }] = await Promise.all([
       supabase.from('comprobantes_items')
@@ -629,6 +639,65 @@ export default function FacturacionPage() {
       nombre: (pr.descripcion || '').trim() || pr.nombre,
       precio: precios.get(pr.id) ?? null,
     })))
+  }
+
+  async function cargarVendedorComprobante(comp: any) {
+    const pedidoId: string | null = comp.pedido_id ?? null
+    setEditVendedor({ pedidoId, id: null, nombre: comp.pedidos?.profiles?.full_name ?? null })
+    setVendedorElegido('')
+    const [{ data: ped }, { data: vends }] = await Promise.all([
+      pedidoId
+        ? (supabase as any).from('pedidos').select('vendedor_id').eq('id', pedidoId).maybeSingle()
+        : Promise.resolve({ data: null }),
+      vendedoresOpts.length ? Promise.resolve({ data: vendedoresOpts }) : (supabase.rpc as any)('vendedores_activos'),
+    ])
+    const lista = (vends ?? []) as { id: string; full_name: string }[]
+    if (!vendedoresOpts.length) setVendedoresOpts(lista)
+    const id: string | null = ped?.vendedor_id ?? null
+    setEditVendedor({ pedidoId, id, nombre: lista.find((v) => v.id === id)?.full_name ?? comp.pedidos?.profiles?.full_name ?? null })
+    setVendedorElegido(id ?? '')
+  }
+
+  /** Asignar o cambiar el vendedor: se guarda en el acto y queda en el historial. */
+  async function guardarVendedorComprobante() {
+    if (!editComp || !editVendedor.pedidoId || !vendedorElegido || vendedorElegido === editVendedor.id) return
+    setVendedorGuardando(true)
+    const { data, error } = await (supabase.rpc as any)('asignar_vendedor_pedido', {
+      p_pedido_id: editVendedor.pedidoId, p_vendedor_id: vendedorElegido,
+    })
+    if (error) {
+      setVendedorGuardando(false)
+      toast.error('No se pudo asignar el vendedor', { description: error.message, duration: 8000 })
+      return
+    }
+    const nuevo = vendedoresOpts.find((v) => v.id === vendedorElegido)?.full_name ?? data?.ahora ?? null
+    // Trazabilidad en cada comprobante del pedido (el vendedor es del pedido).
+    const { data: { user } } = await supabase.auth.getUser()
+    const [{ data: prof }, { data: comps }] = await Promise.all([
+      (supabase as any).from('profiles').select('full_name').eq('id', user?.id ?? '').maybeSingle(),
+      (supabase as any).from('comprobantes').select('id').eq('pedido_id', editVendedor.pedidoId),
+    ])
+    const filas = ((comps ?? []) as { id: string }[]).map((c) => ({
+      comprobante_id: c.id,
+      usuario_id: user?.id ?? null,
+      usuario_nombre: prof?.full_name ?? 'Usuario',
+      usuario_rol: userRole,
+      campo: 'vendedor',
+      valor_anterior: editVendedor.nombre,
+      valor_nuevo: nuevo,
+      nota: editNota.trim() || (editVendedor.id ? 'Cambio de vendedor' : 'Vendedor asignado después de emitir'),
+    }))
+    if (filas.length) await (supabase as any).from('comprobantes_ediciones').insert(filas)
+    const { data: hist } = await (supabase as any).from('comprobantes_ediciones')
+      .select('id, usuario_nombre, usuario_rol, campo, valor_anterior, valor_nuevo, item_descripcion, nota, created_at')
+      .eq('comprobante_id', editComp.id).order('created_at', { ascending: false })
+    setEditHistorial(hist ?? [])
+    setEditVendedor({ ...editVendedor, id: vendedorElegido, nombre: nuevo })
+    setVendedorGuardando(false)
+    toast.success(data?.antes ? `Vendedor cambiado: ${data.antes} → ${nuevo}` : `Vendedor asignado: ${nuevo ?? ''}`, {
+      description: 'Cuenta para sus cuotas, reportes y comisión. No cambia el importe ni lo que se declara a SUNAT.',
+    })
+    loadData()
   }
 
   /** Agregar una línea: se guarda en el acto, con trazabilidad, y mueve el stock. */
@@ -2027,6 +2096,43 @@ export default function FacturacionPage() {
                 >
                   Cambiar cliente
                 </button>
+              </div>
+
+              {/* Vendedor (vive en el pedido): asignable aunque ya se haya emitido */}
+              <div className="bg-gray-50 border border-gray-200 rounded-lg p-3" data-vendedor-comprobante>
+                <p className="text-[10px] font-semibold text-gray-600 uppercase">Vendedor</p>
+                {editVendedor.pedidoId ? (
+                  <div className="flex flex-wrap items-center gap-2 mt-1">
+                    <select
+                      value={vendedorElegido}
+                      onChange={(e) => setVendedorElegido(e.target.value)}
+                      disabled={vendedorGuardando}
+                      aria-label="Vendedor del comprobante"
+                      className="h-8 flex-1 min-w-[180px] max-w-xs rounded-md border border-gray-300 bg-white px-2 text-xs"
+                    >
+                      <option value="">{editVendedor.id ? 'Elegir vendedor…' : '— Sin vendedor asignado —'}</option>
+                      {editVendedor.id && !vendedoresOpts.some((v) => v.id === editVendedor.id) && (
+                        <option value={editVendedor.id}>{editVendedor.nombre ?? 'Vendedor actual'}</option>
+                      )}
+                      {vendedoresOpts.map((v) => <option key={v.id} value={v.id}>{v.full_name}</option>)}
+                    </select>
+                    <Button
+                      size="sm"
+                      onClick={guardarVendedorComprobante}
+                      disabled={vendedorGuardando || !vendedorElegido || vendedorElegido === editVendedor.id}
+                      className="h-8 bg-[#FBE600] text-black hover:bg-[#E5D100] text-xs font-semibold"
+                    >
+                      {vendedorGuardando ? 'Guardando…' : editVendedor.id ? 'Cambiar vendedor' : 'Asignar vendedor'}
+                    </Button>
+                    {!editVendedor.id && <span className="text-[11px] text-amber-700 font-semibold">Este comprobante no tiene vendedor</span>}
+                  </div>
+                ) : (
+                  <p className="text-xs text-gray-500 mt-1">Este comprobante no viene de un pedido: no lleva vendedor.</p>
+                )}
+                <p className="text-[10px] text-gray-500 mt-1">
+                  Se guarda al instante y queda en el historial. Cuenta para cuotas, reportes y comisión del vendedor;
+                  no cambia el importe ni lo declarado a SUNAT.
+                </p>
               </div>
 
               <div>
