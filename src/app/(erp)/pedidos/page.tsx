@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { hoyLima } from '@/lib/fechas-pe'
+import { traerTodo } from '@/lib/supabase/paginar'
 import PedidosClient from './pedidos-client'
 
 export const dynamic = 'force-dynamic'
@@ -14,11 +15,15 @@ export const dynamic = 'force-dynamic'
  * diarios— en un mes el tope de 200 habría empezado a esconder pedidos.
  *
  * Ahora abre en el día de hoy y el rango se cambia desde la cabecera.
+ *
+ * Y trae todo el rango, paginado. Daniel, 27/10: buscando un pedido del 09/10
+ * con el rango del mes no aparecía, y el total decía justo 500: el tope de 500
+ * (los más nuevos primero) escondía los más viejos sin avisar.
  */
 async function getPedidosData(desde: string, hasta: string) {
   const supabase = await createClient()
 
-  const { data: pedidos } = await supabase
+  const pedidos = await traerTodo<any>((a, b) => supabase
     .from('pedidos')
     .select(`
       id, numero, cliente_id, vendedor_id, fecha_pedido, fecha_despacho,
@@ -31,9 +36,10 @@ async function getPedidosData(desde: string, hasta: string) {
     .gte('fecha_pedido', desde)
     .lte('fecha_pedido', hasta)
     .order('created_at', { ascending: false })
-    .limit(500)
+    .order('id')
+    .range(a, b))
 
-  return { pedidos: pedidos ?? [] }
+  return { pedidos }
 }
 
 export default async function PedidosPage({
