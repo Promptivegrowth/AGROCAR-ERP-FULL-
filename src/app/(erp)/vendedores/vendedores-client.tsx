@@ -121,6 +121,8 @@ interface KpisGlobal {
   /** Venta solo de quienes tienen cuota: contra eso se mide el cumplimiento. */
   ventas_con_cuota_mes: number
   comisiones_pendientes_pago: number
+  /** Venta del mes que no es de los vendedores de las tarjetas (repartidores, sin vendedor). */
+  ventas_otros: { nombre: string; rol: string | null; ventas: number }[]
 }
 
 function getIniciales(nombre: string) {
@@ -698,6 +700,26 @@ export default function VendedoresClient({
           </Card>
         ))}
       </div>
+
+      {/* Cómo se compone "Ventas del mes": las tarjetas no son toda la venta */}
+      {kpis.ventas_otros.length > 0 && (
+        <div className="rounded-lg border border-blue-200 bg-blue-50/60 px-4 py-3 text-xs text-blue-900" data-ventas-otros>
+          <p className="font-semibold">
+            Ventas del mes {formatCurrency(kpis.ventas_totales_mes)} = vendedores {formatCurrency(vendedoresIniciales.reduce((a, v) => a + v.total_ventas, 0))}
+            {' '}+ otras ventas {formatCurrency(kpis.ventas_otros.reduce((a, o) => a + o.ventas, 0))}
+          </p>
+          <p className="mt-1">
+            Otras ventas (no cuentan para cuota ni comisión de ningún vendedor):{' '}
+            {kpis.ventas_otros.map((o, i) => (
+              <span key={i}>
+                {i > 0 && ' · '}
+                <strong>{o.nombre}</strong>{o.rol && o.rol !== 'vendedor' ? ` (${o.rol})` : ''} {formatCurrency(o.ventas)}
+              </span>
+            ))}
+            . Las ventas sin vendedor se asignan desde Pedidos o Editar comprobante.
+          </p>
+        </div>
+      )}
 
       {/* Grid cards por vendedor */}
       {vendedoresIniciales.length === 0 ? (

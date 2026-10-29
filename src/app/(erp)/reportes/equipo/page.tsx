@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { formatCurrency, formatDate } from '@/lib/utils'
-import { hoyLima, fechaLima, rangoDiaLima } from '@/lib/fechas-pe'
+import { hoyLima } from '@/lib/fechas-pe'
+import { traerTodo } from '@/lib/supabase/paginar'
 import { EMPRESA, SLOGAN_FONT_STACK } from '@/lib/empresa'
 import EquipoReporteActions from './equipo-reporte-actions'
 
@@ -80,25 +81,43 @@ async function getData(desde: string, hasta: string) {
 
   const personas = ((gente ?? []) as any[]).filter((p) => p.activo !== false)
   const ids = personas.map((p) => p.id)
-  if (ids.length === 0) return { personas: [] as Persona[], desde, hasta }
+  if (ids.length === 0) return { personas: [] as Persona[], desde, hasta, facturadoTotal: 0, facturadoFuera: 0 }
 
-  const [pedRes, compRes, cobRes] = await Promise.all([
-    (supabase as any).from('pedidos')
+  /*
+   * Todo paginado: en un mes hay más de mil pedidos, comprobantes y cobros, y
+   * Supabase corta cada consulta en mil sin avisar. Daniel, 29/10: el total
+   * del equipo decía 1000 pedidos, 1000 comprobantes y 1000 cobros.
+   *
+   * Lo facturado va por fecha de emisión, con las notas de crédito restando:
+   * la misma regla que Gestión de vendedores y Reportes, para que los totales
+   * coincidan. (Antes iba por la hora en que se creó el comprobante.)
+   */
+  const [pedidos, comprobantes, cobros] = await Promise.all([
+    traerTodo<any>((a, b) => (supabase as any).from('pedidos')
       .select('vendedor_id, total, fecha_pedido')
       .gte('fecha_pedido', desde).lte('fecha_pedido', hasta)
-      .in('vendedor_id', ids),
-    // Por el momento de emisión y no por la fecha impresa, que es la del
-    // despacho: se factura hoy lo que se reparte mañana.
-    (supabase as any).from('comprobantes')
-      .select('total, created_at, estado, pedidos(vendedor_id)')
-      .gte('created_at', rangoDiaLima(desde).desde)
-      .lt('created_at', rangoDiaLima(hasta).hasta)
-      .neq('estado', 'anulado'),
-    (supabase as any).from('cobros')
+      .in('vendedor_id', ids)
+      .order('id').range(a, b)),
+    traerTodo<any>((a, b) => (supabase as any).from('comprobantes')
+      .select('total, tipo, fecha_emision, pedidos(vendedor_id)')
+      .gte('fecha_emision', desde).lte('fecha_emision', hasta)
+      .neq('estado', 'anulado')
+      .order('id').range(a, b)),
+    traerTodo<any>((a, b) => (supabase as any).from('cobros')
       .select('cobrador_id, efectivo, yape, plin, transferencia, total, fecha')
       .gte('fecha', desde).lte('fecha', hasta)
-      .in('cobrador_id', ids),
+      .in('cobrador_id', ids)
+      .order('id').range(a, b)),
   ])
+  const pedRes = { data: pedidos }
+  const compRes = { data: comprobantes }
+  const cobRes = { data: cobros }
+  const montoComp = (c: any) => (c.tipo === 'nota_credito' ? -1 : 1) * Number(c.total ?? 0)
+  const facturadoTotal = comprobantes.reduce((a: number, c: any) => a + montoComp(c), 0)
+  const idsSet = new Set(ids)
+  const facturadoFuera = comprobantes
+    .filter((c: any) => !idsSet.has(c.pedidos?.vendedor_id))
+    .reduce((a: number, c: any) => a + montoComp(c), 0)
 
   // Un mapa por persona y día, para no recorrer todo por cada uno
   const porPersona = new Map<string, Map<string, Dia>>()
@@ -117,10 +136,10 @@ async function getData(desde: string, hasta: string) {
     d.pedidos_monto += Number(p.total ?? 0)
   })
   ;((compRes.data ?? []) as any[]).forEach((c) => {
-    const d = dia(c.pedidos?.vendedor_id, fechaLima(c.created_at))
+    const d = dia(c.pedidos?.vendedor_id, c.fecha_emision)
     if (!d) return
     d.comprobantes_count++
-    d.comprobantes_monto += Number(c.total ?? 0)
+    d.comprobantes_monto += montoComp(c)
   })
   ;((cobRes.data ?? []) as any[]).forEach((c) => {
     const d = dia(c.cobrador_id, c.fecha)
@@ -141,7 +160,7 @@ async function getData(desde: string, hasta: string) {
 
   // Primero quien más cobró: es el orden en que Daniel lee el reporte
   armadas.sort((a, b) => b.total.cobros_total - a.total.cobros_total)
-  return { personas: armadas, desde, hasta }
+  return { personas: armadas, desde, hasta, facturadoTotal, facturadoFuera }
 }
 
 const rolLabel = (r: string) =>
@@ -159,7 +178,7 @@ export default async function ReporteEquipoPage({
   desdeDefault.setDate(desdeDefault.getDate() - 13)
   const desde = sp.desde ?? desdeDefault.toISOString().slice(0, 10)
 
-  const { personas } = await getData(desde, hasta)
+  const { personas, facturadoTotal, facturadoFuera } = await getData(desde, hasta)
   const totalEquipo = sumar(personas.flatMap((p) => p.dias))
   const conMovimiento = personas.filter((p) => p.dias.length > 0)
   const sinMovimiento = personas.filter((p) => p.dias.length === 0)
@@ -257,6 +276,12 @@ export default async function ReporteEquipoPage({
                 </tbody>
               </table>
             </div>
+            {Math.abs(facturadoFuera) >= 0.005 && (
+              <p className="text-[11px] text-gray-600 mt-1">
+                Facturado del período (todas las ventas): <strong>{formatCurrency(facturadoTotal)}</strong>
+                {' '}= equipo {formatCurrency(facturadoTotal - facturadoFuera)} + sin vendedor u otros usuarios {formatCurrency(facturadoFuera)}.
+              </p>
+            )}
             {sinMovimiento.length > 0 && (
               <p className="text-[11px] text-gray-500 mt-1">
                 Sin movimiento en el período: {sinMovimiento.map((p) => p.full_name).join(' · ')}

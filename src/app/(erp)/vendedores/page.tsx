@@ -364,6 +364,17 @@ async function getVendedoresData() {
   const cobros_totales_mes = (cobrosMes ?? []).reduce((a: number, c: any) => a + Number(c.total ?? 0), 0)
   const cuotas_totales_mes = resumenTodos.reduce((a, r) => a + Number(r.cuota ?? 0), 0)
   const ventas_con_cuota_mes = resumenTodos.filter((r) => Number(r.cuota ?? 0) > 0).reduce((a, r) => a + Number(r.ventas ?? 0), 0)
+  /*
+   * Lo que entra en "Ventas del mes" pero no es de ningún vendedor de las
+   * tarjetas: repartidores que vendieron en ruta y ventas sin vendedor. Daniel,
+   * 29/10: las tarjetas sumaban S/ 513,607.58 contra S/ 572,203.98; la
+   * diferencia era esto y no se veía en ninguna parte.
+   */
+  const idsTarjetas = new Set(vendedoresData.map((v: any) => v.id))
+  const ventas_otros = resumenTodos
+    .filter((r) => !idsTarjetas.has(r.vendedor_id) && Math.abs(Number(r.ventas ?? 0)) >= 0.005)
+    .map((r) => ({ nombre: String(r.nombre ?? 'SIN VENDEDOR'), rol: (r.rol ?? null) as string | null, ventas: Number(r.ventas ?? 0) }))
+    .sort((a, b) => b.ventas - a.ventas)
   const comisiones_pendientes_pago = liquidacionesTodas
     .filter((l) => l.estado === 'aprobada')
     .reduce((a, l) => a + Number(l.comision_calculada ?? 0), 0)
@@ -379,6 +390,7 @@ async function getVendedoresData() {
       cuotas_totales_mes,
       ventas_con_cuota_mes,
       comisiones_pendientes_pago,
+      ventas_otros,
     },
     anioActual,
     mesActual,

@@ -56,22 +56,35 @@ export default function ReportesPage() {
   const loadReportes = useCallback(async () => {
     setLoading(true)
 
-    let compQuery = supabase
+    /*
+     * La venta con la misma regla que Gestión de vendedores, el Dashboard y
+     * Alcance de objetivos: comprobantes no anulados por fecha de emisión, las
+     * notas de crédito restan y el vendedor es el del pedido. Daniel, 29/10: el
+     * total del periodo salía S/ 325,605.22 contra S/ 572,203.98 del mes, porque
+     * la consulta no iba paginada y Supabase la cortaba en mil comprobantes; y
+     * agrupaba por el vendedor de la ficha del cliente. Los filtros de vendedor
+     * y zona tampoco se aplicaban.
+     */
+    const todos = await traerTodo<any>((a, b) => (supabase as any)
       .from('comprobantes')
       .select(`
-        id, fecha_emision, total, serie, numero,
-        clientes(razon_social, zona_id, vendedor_id)
+        id, fecha_emision, total, tipo,
+        clientes(zona_id),
+        pedidos(vendedor_id, profiles!pedidos_vendedor_id_fkey(full_name, role))
       `)
       .gte('fecha_emision', desde)
       .lte('fecha_emision', hasta)
       .neq('estado', 'anulado')
-
-    const { data: comprobantes } = await compQuery
+      .order('id').range(a, b))
+    const comprobantes = todos.filter((c: any) =>
+      (filterVendedor === 'todos' || c.pedidos?.vendedor_id === filterVendedor)
+      && (filterZona === 'todas' || c.clientes?.zona_id === filterZona))
+    const monto = (c: any) => (c.tipo === 'nota_credito' ? -1 : 1) * Number(c.total ?? 0)
 
     // Ventas por día
     const porDia: Record<string, number> = {}
-    comprobantes?.forEach((c) => {
-      porDia[c.fecha_emision] = (porDia[c.fecha_emision] ?? 0) + (c.total ?? 0)
+    comprobantes.forEach((c: any) => {
+      porDia[c.fecha_emision] = (porDia[c.fecha_emision] ?? 0) + monto(c)
     })
     setVentasPorDia(
       Object.entries(porDia)
@@ -82,25 +95,27 @@ export default function ReportesPage() {
         }))
     )
 
-    // Ventas por vendedor (datos reales: comprobantes agrupados por el vendedor del cliente)
-    const ventasMap = new Map<string, { total: number; pedidos: number }>()
-    comprobantes?.forEach((c: any) => {
-      const vId = c.clientes?.vendedor_id
-      if (!vId) return
-      const cur = ventasMap.get(vId) ?? { total: 0, pedidos: 0 }
-      cur.total += Number(c.total ?? 0)
+    // Ventas por vendedor del pedido. También quien vendió sin ser vendedor
+    // (repartidores en ruta) y lo que no tiene vendedor, para que la tabla
+    // sume lo mismo que el total del periodo.
+    const ventasMap = new Map<string, { nombre: string; rol: string | null; total: number; pedidos: number }>()
+    for (const v of vendedores) {
+      if (filterVendedor === 'todos' || filterVendedor === v.id) ventasMap.set(v.id, { nombre: v.full_name, rol: 'vendedor', total: 0, pedidos: 0 })
+    }
+    comprobantes.forEach((c: any) => {
+      const vId: string = c.pedidos?.vendedor_id ?? ''
+      const cur = ventasMap.get(vId) ?? {
+        nombre: vId ? (c.pedidos?.profiles?.full_name ?? 'Otro usuario') : 'SIN VENDEDOR',
+        rol: vId ? (c.pedidos?.profiles?.role ?? null) : null,
+        total: 0, pedidos: 0,
+      }
+      cur.total += monto(c)
       cur.pedidos += 1
       ventasMap.set(vId, cur)
     })
-    const vendItems = vendedores.map((v) => {
-      const d = ventasMap.get(v.id) ?? { total: 0, pedidos: 0 }
-      return {
-        nombre: v.full_name?.split(' ')[0] ?? v.full_name,
-        total: d.total,
-        pedidos: d.pedidos,
-      }
-    })
-    setVentasPorVendedor(vendItems)
+    const orden = (x: { rol: string | null; nombre: string }) => (x.rol === 'vendedor' ? 0 : x.nombre === 'SIN VENDEDOR' ? 2 : 1)
+    setVentasPorVendedor(Array.from(ventasMap.values())
+      .sort((a, b) => orden(a) - orden(b) || b.total - a.total))
 
     // Cuentas por cobrar (real: facturado - cobrado por cliente)
     /*
@@ -343,7 +358,7 @@ export default function ReportesPage() {
               <table className="w-full text-sm">
                 <thead className="border-b border-gray-100 bg-gray-50/50">
                   <tr>
-                    {['Vendedor', 'Pedidos', 'Total Ventas'].map((h) => (
+                    {['Vendedor', 'Comprobantes', 'Total Ventas'].map((h) => (
                       <th key={h} className="text-left py-2.5 px-4 text-xs font-semibold text-gray-500 uppercase tracking-wide">{h}</th>
                     ))}
                   </tr>
@@ -351,11 +366,21 @@ export default function ReportesPage() {
                 <tbody className="divide-y divide-gray-50">
                   {ventasPorVendedor.map((v, i) => (
                     <tr key={i} className="hover:bg-gray-50/50">
-                      <td className="py-2.5 px-4 font-medium text-gray-800">{v.nombre}</td>
+                      <td className="py-2.5 px-4 font-medium text-gray-800">
+                        {v.nombre}
+                        {v.rol && v.rol !== 'vendedor' && <span className="ml-2 text-[10px] font-semibold uppercase text-gray-500">{v.rol}</span>}
+                      </td>
                       <td className="py-2.5 px-4 text-gray-600">{v.pedidos}</td>
                       <td className="py-2.5 px-4 font-bold text-green-600">{formatCurrency(v.total)}</td>
                     </tr>
                   ))}
+                  {ventasPorVendedor.length > 0 && (
+                    <tr className="bg-gray-50 font-bold">
+                      <td className="py-2.5 px-4 text-gray-800">Total</td>
+                      <td className="py-2.5 px-4 text-gray-700">{ventasPorVendedor.reduce((a, v) => a + v.pedidos, 0)}</td>
+                      <td className="py-2.5 px-4 text-green-700">{formatCurrency(ventasPorVendedor.reduce((a, v) => a + v.total, 0))}</td>
+                    </tr>
+                  )}
                 </tbody>
               </table>
             </CardContent>
