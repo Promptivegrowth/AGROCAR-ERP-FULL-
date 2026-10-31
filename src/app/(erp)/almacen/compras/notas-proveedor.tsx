@@ -91,12 +91,17 @@ export default function NotasProveedor({ compra, items, onCambio }: {
       ? { incluir: faltantes.has(it.id), cantidad: String(faltantes.get(it.id) ?? 0), precio: String(Number(it.precio_unitario)) }
       : { incluir: false, cantidad: String(Number(it.cantidad_recibida ?? it.cantidad)), precio: '' }])))
   }
-  const cambiarTipo = (modo: Modo) => { setTipo(modo); prepararLineas(modo) }
+  // El motivo viene escrito según el tipo; si el usuario lo cambió, se respeta.
+  const MOTIVO_DEFECTO: Record<Modo, string> = { debito: 'Diferencia de precio', credito: 'Diferencia de precio', faltante: 'Faltante en la recepción' }
+  const cambiarTipo = (modo: Modo) => {
+    if (!motivo.trim() || Object.values(MOTIVO_DEFECTO).includes(motivo)) setMotivo(MOTIVO_DEFECTO[modo])
+    setTipo(modo); prepararLineas(modo)
+  }
 
   const abrir = () => {
     const modo: Modo = faltantes.size > 0 ? 'faltante' : 'debito'
     setTipo(modo); setNumero(''); setFecha(hoyLima()); setTotalDoc('')
-    setMotivo(modo === 'faltante' ? 'Faltante en la recepción' : '')
+    setMotivo(MOTIVO_DEFECTO[modo])
     prepararLineas(modo)
     setAbierto(true)
   }
@@ -126,6 +131,10 @@ export default function NotasProveedor({ compra, items, onCambio }: {
     if (calculo.marcadas.length === 0) { toast.error('Marca al menos un producto'); return }
     for (const f of calculo.marcadas) {
       if (!Number.isFinite(f.precio)) { toast.error(`Falta el precio correcto de ${nombreDe(f.it)}`); return }
+    }
+    if (!(total > 0)) {
+      toast.error('Falta el total de la nota', { description: 'Escríbelo en "Total de la nota (S/)", arriba a la derecha, tal como figura en el documento.' })
+      return
     }
     if (!cuadra) {
       toast.error('No cuadra con el documento', { description: `Lo cargado suma ${formatCurrency(calculo.suma)} y el total de la nota es ${formatCurrency(total)}.` })
@@ -250,7 +259,7 @@ export default function NotasProveedor({ compra, items, onCambio }: {
               </div>
               <div>
                 <Label className="text-xs">Número</Label>
-                <Input value={numero} onChange={(e) => setNumero(e.target.value)} placeholder="F001-00000082" className="mt-1 h-9" aria-label="Número de la nota" />
+                <Input value={numero} onChange={(e) => setNumero(e.target.value)} placeholder="Ej.: F001-00000082" className="mt-1 h-9" aria-label="Número de la nota" />
               </div>
               <div>
                 <Label className="text-xs">Fecha de emisión</Label>
@@ -258,12 +267,13 @@ export default function NotasProveedor({ compra, items, onCambio }: {
               </div>
               <div>
                 <Label className="text-xs">Total de la nota (S/)</Label>
-                <Input type="number" step="0.01" min="0" value={totalDoc} onChange={(e) => setTotalDoc(e.target.value)} placeholder="554.40" className="mt-1 h-9" aria-label="Total de la nota" />
+                <Input type="number" step="0.01" min="0" value={totalDoc} onChange={(e) => setTotalDoc(e.target.value)} placeholder="Escribe el total"
+                  className={`mt-1 h-9 ${calculo.marcadas.length > 0 && !(total > 0) ? 'border-red-400 ring-1 ring-red-300' : ''}`} aria-label="Total de la nota" />
               </div>
             </div>
             <div>
               <Label className="text-xs">Motivo</Label>
-              <Input value={motivo} onChange={(e) => setMotivo(e.target.value)} placeholder="Diferencia de precio" className="mt-1 h-9" aria-label="Motivo" />
+              <Input value={motivo} onChange={(e) => setMotivo(e.target.value)} placeholder="Ej.: diferencia de precio" className="mt-1 h-9" aria-label="Motivo" />
             </div>
 
             <div className="border border-gray-200 rounded-lg overflow-x-auto">
@@ -318,6 +328,11 @@ export default function NotasProveedor({ compra, items, onCambio }: {
                 Suma de los productos: {formatCurrency(calculo.suma)} · Total de la nota: {formatCurrency(total)}
                 {cuadra ? ' ✓ cuadra' : calculo.marcadas.length ? ' — no cuadra todavía' : ''}
               </p>
+              {calculo.marcadas.length > 0 && !(total > 0) && (
+                <p className="mt-0.5 font-semibold text-red-700" data-falta-total>
+                  Falta escribir el Total de la nota (arriba, a la derecha), tal como figura en el documento del proveedor.
+                </p>
+              )}
               {total > 0 && <p className="mt-0.5">Se registra con base {formatCurrency(base)} + IGV {formatCurrency(r2(total - base))} en el Registro de compras.</p>}
               <p className="mt-0.5">
                 {tipo === 'faltante'
@@ -328,7 +343,7 @@ export default function NotasProveedor({ compra, items, onCambio }: {
 
             <div className="flex justify-end gap-2 pt-1">
               <Button variant="outline" onClick={() => setAbierto(false)} disabled={guardando}>Cancelar</Button>
-              <Button onClick={guardar} disabled={guardando || !cuadra} className="bg-violet-600 hover:bg-violet-700 text-white gap-2" data-guardar-nota>
+              <Button onClick={guardar} disabled={guardando} className="bg-violet-600 hover:bg-violet-700 text-white gap-2" data-guardar-nota>
                 {guardando && <Loader2 className="w-4 h-4 animate-spin" />}
                 Registrar {TIPO[tipo].toLowerCase()}
               </Button>
