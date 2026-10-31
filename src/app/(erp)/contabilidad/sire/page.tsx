@@ -100,7 +100,8 @@ export default function SirePage() {
         Number(f.base_imponible).toFixed(2),
         Number(f.igv).toFixed(2),
         Number(f.total).toFixed(2),
-        f.estado === 'anulada' ? '2' : '1',
+        // Las compras anuladas quedan como 'anulado'; las notas del proveedor como 'anulada'.
+        f.estado === 'anulada' || f.estado === 'anulado' ? '2' : '1',
       ].join('|'))
     }
     const blob = new Blob([lineas.join('\r\n')], { type: 'text/plain;charset=utf-8' })

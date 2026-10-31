@@ -21,7 +21,7 @@ import {
  */
 
 const S = (v: number) => formatCurrency(v)
-const ESTADO: Record<string, string> = { registrada: 'Registrada', recibida: 'Recibida', aplicada: 'Aplicada', anulada: 'Anulada' }
+const ESTADO: Record<string, string> = { registrada: 'Registrada', recibida: 'Recibida', aplicada: 'Aplicada', anulada: 'Anulada', anulado: 'Anulada' }
 
 export default function RegistroComprasPage() {
   const supabase = createClient()
@@ -62,7 +62,7 @@ export default function RegistroComprasPage() {
     <button type="button" onClick={() => setVista(k)} data-vista={k}
       className={`rounded-md px-3 py-1.5 text-xs font-semibold ${vista === k ? 'bg-gray-900 text-white' : 'bg-white text-gray-600 hover:bg-gray-100'}`}>{t}</button>
   )
-  const nVigentes = tot.porTipo.factura.cantidad + tot.porTipo.interno.cantidad + tot.porTipo.regulariza.cantidad
+  const nVigentes = tot.porTipo.factura.cantidad + tot.porTipo.interno.cantidad + tot.porTipo.regulariza.cantidad + tot.notas
 
   return (
     <div className="space-y-4" data-registro-compras>
@@ -137,7 +137,7 @@ export default function RegistroComprasPage() {
         </div>
         <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-blue-900" data-kpi="factura">
           <p className="text-xs font-semibold">CON FACTURA</p><p className="text-lg font-bold">{S(tot.conComprobante)}</p>
-          <p className="text-[11px] opacity-70">{tot.porTipo.factura.cantidad + tot.porTipo.regulariza.cantidad} documento(s){tot.porTipo.regulariza.cantidad ? ` · ${tot.porTipo.regulariza.cantidad} regulariza internos` : ''}</p>
+          <p className="text-[11px] opacity-70">{tot.porTipo.factura.cantidad + tot.porTipo.regulariza.cantidad} documento(s){tot.porTipo.regulariza.cantidad ? ` · ${tot.porTipo.regulariza.cantidad} regulariza internos` : ''}{tot.notas ? ` · ${tot.notas} nota(s) del proveedor` : ''}</p>
         </div>
         <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-amber-900" data-kpi="interno">
           <p className="text-xs font-semibold">DOC. INTERNOS (SIN COMPROBANTE)</p><p className="text-lg font-bold">{S(tot.sinComprobante)}</p>
@@ -170,7 +170,10 @@ export default function RegistroComprasPage() {
                 <tr key={f.id} className={anuladaCompra(f) ? 'text-gray-400 line-through' : ''} data-fila-compra>
                   <td className="p-2 whitespace-nowrap">{formatDate(f.fecha)}</td>
                   <td className="p-2">{TIPO_COMPRA[f.tipo]}</td>
-                  <td className="p-2 font-mono whitespace-nowrap">{f.documento}</td>
+                  <td className="p-2 font-mono whitespace-nowrap">
+                    {f.documento}
+                    {f.referencia && <span className="block text-[10px] text-gray-500 no-underline">Ref. {f.referencia}</span>}
+                  </td>
                   <td className="p-2 max-w-[260px] truncate" title={f.proveedor}>{f.proveedor}</td>
                   <td className="p-2 font-mono">{f.ruc || '—'}</td>
                   <td className="p-2 text-right font-mono">{S(f.base)}</td>
@@ -224,7 +227,8 @@ export default function RegistroComprasPage() {
         )}
       </div>
       <p className="text-[11px] text-gray-500">
-        Lo anulado no suma. Crédito fiscal = IGV de facturas (incluidas las que regularizan documentos internos). Los documentos internos
+        Lo anulado no suma. Crédito fiscal = IGV de facturas (incluidas las que regularizan documentos internos) y de las notas de débito
+        del proveedor; las notas de crédito restan. Los documentos internos
         no tienen comprobante: sin IGV y fuera del Registro de Compras de SUNAT.
       </p>
     </div>

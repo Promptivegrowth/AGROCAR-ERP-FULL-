@@ -12,6 +12,7 @@ import { createClient } from '@/lib/supabase/client'
 import { useDebounce } from '@/lib/hooks/use-debounce'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { hoyLima } from '@/lib/fechas-pe'
+import NotasProveedor from './notas-proveedor'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card, CardContent } from '@/components/ui/card'
@@ -338,7 +339,7 @@ export default function ComprasPage() {
         supabase
           .from('compras_items')
           .select(`
-            id, cantidad, precio_unitario, subtotal,
+            id, cantidad, cantidad_recibida, precio_unitario, subtotal,
             productos(id, codigo, nombre, descripcion, unidades_medida(simbolo)),
             lotes(id, numero_lote, fecha_vencimiento)
           `)
@@ -1423,6 +1424,11 @@ export default function ComprasPage() {
                   </span>
                 </div>
               </div>
+
+              {/* Notas de débito / crédito del proveedor (compra aplicada) */}
+              {!editMode && (
+                <NotasProveedor compra={detailCompra} items={detailItems} onCambio={() => loadData()} />
+              )}
 
               {/* Acciones según estado */}
               <div className="flex flex-wrap justify-end gap-2 pt-3 border-t border-gray-100">

@@ -20,10 +20,12 @@ export interface FilaVenta {
   base: number; igv: number; total: number; cobrado: number
   sunat_estado: string | null; motivo_anulacion: string | null
 }
-export type TipoCompra = 'factura' | 'interno' | 'regulariza'
+export type TipoCompra = 'factura' | 'interno' | 'regulariza' | 'nota_debito' | 'nota_credito'
 export interface FilaCompra {
   id: string; fecha: string; documento: string; tipo: TipoCompra; estado: string
   proveedor: string; ruc: string; base: number; igv: number; total: number; lineas: number
+  /** En las notas del proveedor: la factura a la que corrigen. */
+  referencia?: string | null
 }
 
 export const TIPO_VENTA: Record<TipoVenta, string> = {
@@ -31,7 +33,15 @@ export const TIPO_VENTA: Record<TipoVenta, string> = {
 }
 export const TIPO_COMPRA: Record<TipoCompra, string> = {
   factura: 'Factura', interno: 'Doc. interno', regulariza: 'Factura (regulariza internos)',
+  nota_debito: 'Nota de débito', nota_credito: 'Nota de crédito',
 }
+/**
+ * Columna en que suma cada documento. Las notas del proveedor (migración 150)
+ * corrigen una factura: van con lo "con factura". Las de crédito llegan con
+ * importes negativos y restan.
+ */
+const columnaCompra = (t: TipoCompra): 'factura' | 'interno' | 'regulariza' =>
+  t === 'nota_debito' || t === 'nota_credito' ? 'factura' : t
 
 const n = (v: unknown) => Number(v ?? 0)
 const r2 = (v: number) => Math.round(v * 100) / 100
@@ -51,7 +61,8 @@ const ESTADO_SUNAT: Record<string, string> = {
   en_proceso: 'En proceso en SUNAT', enviando: 'Enviando',
 }
 export const estadoSunatTexto = (e: string | null) => (e ? ESTADO_SUNAT[e] ?? e : 'Pendiente')
-export const anuladaCompra = (f: FilaCompra) => f.estado === 'anulada'
+// Las compras anuladas quedan como 'anulado'; las notas del proveedor como 'anulada'.
+export const anuladaCompra = (f: FilaCompra) => f.estado === 'anulada' || f.estado === 'anulado'
 /** Signo con que suma: las notas de crédito restan. */
 export const signo = (f: FilaVenta) => (f.tipo === 'nota_credito' ? -1 : 1)
 
@@ -183,7 +194,9 @@ export function ventasPor(filas: FilaVenta[], clave: (f: FilaVenta) => string): 
 
 // ── Totales compras ────────────────────────────────────────────────────────
 export function totalesCompras(filas: FilaCompra[]) {
-  const porTipo: Record<TipoCompra, TotalTipo> = { factura: vacio(), interno: vacio(), regulariza: vacio() }
+  const porTipo: Record<TipoCompra, TotalTipo> = {
+    factura: vacio(), interno: vacio(), regulariza: vacio(), nota_debito: vacio(), nota_credito: vacio(),
+  }
   const anuladas = { cantidad: 0, total: 0 }
   let total = 0
   for (const f of filas) {
@@ -195,9 +208,11 @@ export function totalesCompras(filas: FilaCompra[]) {
   return {
     porTipo, total: r2(total), anuladas,
     // Con comprobante: facturas (incluidas las que regularizan internos).
-    conComprobante: r2(porTipo.factura.total + porTipo.regulariza.total),
-    valorCompra: r2(porTipo.factura.base + porTipo.regulariza.base),
-    creditoFiscal: r2(porTipo.factura.igv + porTipo.regulariza.igv),
+    // Las notas del proveedor corrigen facturas: van acá (las de crédito restan).
+    conComprobante: r2(porTipo.factura.total + porTipo.regulariza.total + porTipo.nota_debito.total + porTipo.nota_credito.total),
+    valorCompra: r2(porTipo.factura.base + porTipo.regulariza.base + porTipo.nota_debito.base + porTipo.nota_credito.base),
+    creditoFiscal: r2(porTipo.factura.igv + porTipo.regulariza.igv + porTipo.nota_debito.igv + porTipo.nota_credito.igv),
+    notas: porTipo.nota_debito.cantidad + porTipo.nota_credito.cantidad,
     sinComprobante: r2(porTipo.interno.total),
   }
 }
@@ -208,7 +223,7 @@ export function comprasPorProveedor(filas: FilaCompra[]): GrupoCompras[] {
   for (const f of filas) {
     if (anuladaCompra(f)) continue
     const g = m.get(f.proveedor) ?? { nombre: f.proveedor, ruc: f.ruc, documentos: 0, factura: 0, interno: 0, regulariza: 0, igv: 0, total: 0 }
-    g[f.tipo] += f.total
+    g[columnaCompra(f.tipo)] += f.total
     g.igv += f.igv
     g.total += f.total
     g.documentos++
@@ -223,7 +238,7 @@ export function comprasPorDia(filas: FilaCompra[]): DiaCompras[] {
   for (const f of filas) {
     if (anuladaCompra(f)) continue
     const d = m.get(f.fecha) ?? { fecha: f.fecha, factura: 0, interno: 0, regulariza: 0, total: 0, documentos: 0 }
-    d[f.tipo] += f.total
+    d[columnaCompra(f.tipo)] += f.total
     d.total += f.total
     d.documentos++
     m.set(f.fecha, d)
