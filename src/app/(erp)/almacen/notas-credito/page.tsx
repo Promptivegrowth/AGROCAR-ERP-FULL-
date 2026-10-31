@@ -24,7 +24,9 @@ interface NCRow {
   subtotal: number
   igv: number
   total: number
-  estado: 'emitida' | 'anulada'
+  /** regularizada: el proveedor ya emitió su nota de crédito por el faltante (migración 152). */
+  estado: 'emitida' | 'anulada' | 'regularizada'
+  notas_proveedor?: { numero: string } | null
   compra_id: string
   proveedor_id: string
   compras: { numero_factura_proveedor: string | null; fecha: string; estado: string } | null
@@ -51,6 +53,7 @@ export default function NotasCreditoComprasPage() {
       .from('notas_credito_compras')
       .select(`
         id, numero, fecha_emision, motivo, subtotal, igv, total, estado,
+        notas_proveedor(numero),
         compra_id, proveedor_id,
         compras(numero_factura_proveedor, fecha, estado),
         proveedores(razon_social, ruc)
@@ -115,14 +118,16 @@ export default function NotasCreditoComprasPage() {
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <Card className="border-gray-200 shadow-sm">
           <CardContent className="p-4">
-            <p className="text-xs text-gray-500 uppercase tracking-wide">Total emitidas</p>
+            <p className="text-xs text-gray-500 uppercase tracking-wide">Pendientes de nota del proveedor</p>
             <p className="text-2xl font-bold text-amber-600 mt-1">{formatCurrency(totalEmitidas)}</p>
-            <p className="text-[11px] text-gray-400 mt-0.5">acumulado, sin anuladas</p>
+            <p className="text-[11px] text-gray-400 mt-0.5">
+              faltantes por reclamar · {notas.filter((n) => n.estado === 'regularizada').length} ya regularizada(s)
+            </p>
           </CardContent>
         </Card>
         <Card className="border-gray-200 shadow-sm">
           <CardContent className="p-4">
-            <p className="text-xs text-gray-500 uppercase tracking-wide">Cantidad emitidas</p>
+            <p className="text-xs text-gray-500 uppercase tracking-wide">Cantidad pendientes</p>
             <p className="text-2xl font-bold text-gray-900 mt-1">{cantidadEmitidas}</p>
             <p className="text-[11px] text-gray-400 mt-0.5">documentos vigentes</p>
           </CardContent>
@@ -207,9 +212,11 @@ export default function NotasCreditoComprasPage() {
                         <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
                           nc.estado === 'emitida'
                             ? 'bg-amber-100 text-amber-700'
-                            : 'bg-gray-100 text-gray-500'
-                        }`}>
-                          {nc.estado === 'emitida' ? 'Emitida' : 'Anulada'}
+                            : nc.estado === 'regularizada'
+                              ? 'bg-green-100 text-green-700'
+                              : 'bg-gray-100 text-gray-500'
+                        }`} title={nc.estado === 'regularizada' ? 'El proveedor emitió su nota de crédito por este faltante' : undefined}>
+                          {nc.estado === 'emitida' ? 'Pendiente' : nc.estado === 'regularizada' ? `Regularizada${nc.notas_proveedor?.numero ? ` · ${nc.notas_proveedor.numero}` : ''}` : 'Anulada'}
                         </span>
                       </td>
                       <td className="py-3 px-4">
