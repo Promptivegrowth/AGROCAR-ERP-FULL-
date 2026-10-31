@@ -62,7 +62,7 @@ export default function RegistroComprasPage() {
     <button type="button" onClick={() => setVista(k)} data-vista={k}
       className={`rounded-md px-3 py-1.5 text-xs font-semibold ${vista === k ? 'bg-gray-900 text-white' : 'bg-white text-gray-600 hover:bg-gray-100'}`}>{t}</button>
   )
-  const nVigentes = tot.porTipo.factura.cantidad + tot.porTipo.interno.cantidad + tot.porTipo.regulariza.cantidad + tot.notas
+  const nVigentes = tot.porTipo.factura.cantidad + tot.porTipo.interno.cantidad + tot.porTipo.regulariza.cantidad + tot.notas + tot.fletes
 
   return (
     <div className="space-y-4" data-registro-compras>
@@ -137,11 +137,11 @@ export default function RegistroComprasPage() {
         </div>
         <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-blue-900" data-kpi="factura">
           <p className="text-xs font-semibold">CON FACTURA</p><p className="text-lg font-bold">{S(tot.conComprobante)}</p>
-          <p className="text-[11px] opacity-70">{tot.porTipo.factura.cantidad + tot.porTipo.regulariza.cantidad} documento(s){tot.porTipo.regulariza.cantidad ? ` · ${tot.porTipo.regulariza.cantidad} regulariza internos` : ''}{tot.notas ? ` · ${tot.notas} nota(s) del proveedor` : ''}</p>
+          <p className="text-[11px] opacity-70">{tot.porTipo.factura.cantidad + tot.porTipo.regulariza.cantidad} documento(s){tot.porTipo.regulariza.cantidad ? ` · ${tot.porTipo.regulariza.cantidad} regulariza internos` : ''}{tot.notas ? ` · ${tot.notas} nota(s) del proveedor` : ''}{tot.porTipo.flete.cantidad ? ` · ${tot.porTipo.flete.cantidad} flete(s)` : ''}</p>
         </div>
         <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-amber-900" data-kpi="interno">
           <p className="text-xs font-semibold">DOC. INTERNOS (SIN COMPROBANTE)</p><p className="text-lg font-bold">{S(tot.sinComprobante)}</p>
-          <p className="text-[11px] opacity-70">{tot.porTipo.interno.cantidad} documento(s)</p>
+          <p className="text-[11px] opacity-70">{tot.porTipo.interno.cantidad} documento(s){tot.porTipo.flete_sin_factura.cantidad ? ` · ${tot.porTipo.flete_sin_factura.cantidad} flete(s) sin factura` : ''}</p>
         </div>
         <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-emerald-900" data-kpi="igv">
           <p className="text-xs font-semibold">IGV CRÉDITO FISCAL</p><p className="text-lg font-bold">{S(tot.creditoFiscal)}</p>
@@ -228,8 +228,8 @@ export default function RegistroComprasPage() {
       </div>
       <p className="text-[11px] text-gray-500">
         Lo anulado no suma. Crédito fiscal = IGV de facturas (incluidas las que regularizan documentos internos) y de las notas de débito
-        del proveedor; las notas de crédito restan. Los documentos internos
-        no tienen comprobante: sin IGV y fuera del Registro de Compras de SUNAT.
+        del proveedor y del flete con factura; las notas de crédito restan. Los documentos internos y el flete con recibo por honorarios
+        o sin comprobante no tienen IGV y quedan fuera del Registro de Compras de SUNAT.
       </p>
     </div>
   )

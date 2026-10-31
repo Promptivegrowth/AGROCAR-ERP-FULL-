@@ -21,7 +21,7 @@ export async function GET(req: NextRequest) {
     anuladas: q.get('anuladas') === '1', buscar: q.get('buscar') ?? '',
   })
   const t = totalesCompras(filas)
-  const n = t.porTipo.factura.cantidad + t.porTipo.interno.cantidad + t.porTipo.regulariza.cantidad
+  const n = t.porTipo.factura.cantidad + t.porTipo.interno.cantidad + t.porTipo.regulariza.cantidad + t.notas + t.fletes
 
   const { workbook, sheet, startRow } = await crearExcelBranded({
     titulo: 'Registro de compras', subtitulo: 'Reporte gerencial', periodo: { desde, hasta }, sheetName: 'Compras',
@@ -31,6 +31,10 @@ export async function GET(req: NextRequest) {
   row = seccionTabla(sheet, row, ['Concepto', 'Documentos', 'Valor compra', 'IGV', 'Total'], [
     ['Facturas', t.porTipo.factura.cantidad, t.porTipo.factura.base, t.porTipo.factura.igv, t.porTipo.factura.total],
     ['Facturas que regularizan internos', t.porTipo.regulariza.cantidad, t.porTipo.regulariza.base, t.porTipo.regulariza.igv, t.porTipo.regulariza.total],
+    ['Notas de débito del proveedor', t.porTipo.nota_debito.cantidad, t.porTipo.nota_debito.base, t.porTipo.nota_debito.igv, t.porTipo.nota_debito.total],
+    ['Notas de crédito del proveedor', t.porTipo.nota_credito.cantidad, t.porTipo.nota_credito.base, t.porTipo.nota_credito.igv, t.porTipo.nota_credito.total],
+    ['Flete con factura', t.porTipo.flete.cantidad, t.porTipo.flete.base, t.porTipo.flete.igv, t.porTipo.flete.total],
+    ['Flete sin factura (recibo por honorarios o sin comprobante)', t.porTipo.flete_sin_factura.cantidad, t.porTipo.flete_sin_factura.base, null, t.porTipo.flete_sin_factura.total],
     ['Documentos internos (sin comprobante)', t.porTipo.interno.cantidad, t.porTipo.interno.base, null, t.porTipo.interno.total],
   ], { columnasMoneda: [2, 3, 4], totalsRow: ['TOTAL COMPRAS', n, null, t.creditoFiscal, t.total] })
 

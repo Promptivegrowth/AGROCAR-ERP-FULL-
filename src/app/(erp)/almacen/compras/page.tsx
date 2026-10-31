@@ -13,6 +13,7 @@ import { useDebounce } from '@/lib/hooks/use-debounce'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { hoyLima } from '@/lib/fechas-pe'
 import NotasProveedor from './notas-proveedor'
+import GastosCompra from './gastos-compra'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card, CardContent } from '@/components/ui/card'
@@ -1428,6 +1429,11 @@ export default function ComprasPage() {
               {/* Notas de débito / crédito del proveedor (compra aplicada) */}
               {!editMode && (
                 <NotasProveedor compra={detailCompra} items={detailItems} onCambio={() => loadData()} />
+              )}
+
+              {/* Flete y otros gastos prorrateados al costo (compra aplicada) */}
+              {!editMode && (
+                <GastosCompra compra={detailCompra} items={detailItems} onCambio={() => loadData()} />
               )}
 
               {/* Acciones según estado */}

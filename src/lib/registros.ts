@@ -20,7 +20,7 @@ export interface FilaVenta {
   base: number; igv: number; total: number; cobrado: number
   sunat_estado: string | null; motivo_anulacion: string | null
 }
-export type TipoCompra = 'factura' | 'interno' | 'regulariza' | 'nota_debito' | 'nota_credito'
+export type TipoCompra = 'factura' | 'interno' | 'regulariza' | 'nota_debito' | 'nota_credito' | 'flete' | 'flete_sin_factura'
 export interface FilaCompra {
   id: string; fecha: string; documento: string; tipo: TipoCompra; estado: string
   proveedor: string; ruc: string; base: number; igv: number; total: number; lineas: number
@@ -34,6 +34,7 @@ export const TIPO_VENTA: Record<TipoVenta, string> = {
 export const TIPO_COMPRA: Record<TipoCompra, string> = {
   factura: 'Factura', interno: 'Doc. interno', regulariza: 'Factura (regulariza internos)',
   nota_debito: 'Nota de débito', nota_credito: 'Nota de crédito',
+  flete: 'Flete (factura)', flete_sin_factura: 'Flete (sin factura)',
 }
 /**
  * Columna en que suma cada documento. Las notas del proveedor (migración 150)
@@ -41,7 +42,7 @@ export const TIPO_COMPRA: Record<TipoCompra, string> = {
  * importes negativos y restan.
  */
 const columnaCompra = (t: TipoCompra): 'factura' | 'interno' | 'regulariza' =>
-  t === 'nota_debito' || t === 'nota_credito' ? 'factura' : t
+  t === 'nota_debito' || t === 'nota_credito' || t === 'flete' ? 'factura' : t === 'flete_sin_factura' ? 'interno' : t
 
 const n = (v: unknown) => Number(v ?? 0)
 const r2 = (v: number) => Math.round(v * 100) / 100
@@ -196,6 +197,7 @@ export function ventasPor(filas: FilaVenta[], clave: (f: FilaVenta) => string): 
 export function totalesCompras(filas: FilaCompra[]) {
   const porTipo: Record<TipoCompra, TotalTipo> = {
     factura: vacio(), interno: vacio(), regulariza: vacio(), nota_debito: vacio(), nota_credito: vacio(),
+    flete: vacio(), flete_sin_factura: vacio(),
   }
   const anuladas = { cantidad: 0, total: 0 }
   let total = 0
@@ -209,11 +211,13 @@ export function totalesCompras(filas: FilaCompra[]) {
     porTipo, total: r2(total), anuladas,
     // Con comprobante: facturas (incluidas las que regularizan internos).
     // Las notas del proveedor corrigen facturas: van acá (las de crédito restan).
-    conComprobante: r2(porTipo.factura.total + porTipo.regulariza.total + porTipo.nota_debito.total + porTipo.nota_credito.total),
-    valorCompra: r2(porTipo.factura.base + porTipo.regulariza.base + porTipo.nota_debito.base + porTipo.nota_credito.base),
-    creditoFiscal: r2(porTipo.factura.igv + porTipo.regulariza.igv + porTipo.nota_debito.igv + porTipo.nota_credito.igv),
+    // El flete con factura (migración 153) también; el que no tiene factura, con lo sin comprobante.
+    conComprobante: r2(porTipo.factura.total + porTipo.regulariza.total + porTipo.nota_debito.total + porTipo.nota_credito.total + porTipo.flete.total),
+    valorCompra: r2(porTipo.factura.base + porTipo.regulariza.base + porTipo.nota_debito.base + porTipo.nota_credito.base + porTipo.flete.base),
+    creditoFiscal: r2(porTipo.factura.igv + porTipo.regulariza.igv + porTipo.nota_debito.igv + porTipo.nota_credito.igv + porTipo.flete.igv),
     notas: porTipo.nota_debito.cantidad + porTipo.nota_credito.cantidad,
-    sinComprobante: r2(porTipo.interno.total),
+    fletes: porTipo.flete.cantidad + porTipo.flete_sin_factura.cantidad,
+    sinComprobante: r2(porTipo.interno.total + porTipo.flete_sin_factura.total),
   }
 }
 
