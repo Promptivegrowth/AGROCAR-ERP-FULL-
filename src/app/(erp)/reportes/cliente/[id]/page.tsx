@@ -24,7 +24,7 @@ async function getData(clienteId: string, desde: string, hasta: string) {
         id, serie, numero, tipo, fecha_emision, subtotal, igv, total, estado, created_at,
         comprobantes_items(
           id, descripcion, cantidad, precio_unitario, subtotal,
-          productos(id, codigo, nombre, descripcion, familias(nombre))
+          productos(id, codigo, nombre, descripcion, peso_kg, unidades_medida(simbolo), familias(nombre))
         )
       `)
       .eq('cliente_id', clienteId)
@@ -45,10 +45,11 @@ async function getData(clienteId: string, desde: string, hasta: string) {
   const totalFacturado = comprobantes.reduce((a, c) => a + Number(c.total ?? 0), 0)
   const totalCobrado = cobros.reduce((a, c) => a + Number(c.total ?? 0), 0)
 
-  // Top productos comprados (sumando todas las líneas)
+  // Top productos comprados (sumando todas las líneas). El peso es cantidad ×
+  // peso por unidad del producto, como en despacho y en la guía (Daniel, 02/11).
   const productosMap = new Map<string, {
-    codigo: string; nombre: string; familia: string;
-    cantidad: number; monto: number; veces: number
+    codigo: string; nombre: string; familia: string; um: string;
+    cantidad: number; peso: number | null; monto: number; veces: number
   }>()
   comprobantes.forEach((c) => {
     ;(c.comprobantes_items ?? []).forEach((it: any) => {
@@ -59,9 +60,12 @@ async function getData(clienteId: string, desde: string, hasta: string) {
         // corta: "SALCHICHAS" no decía cuál compró (Daniel, 10/10).
         nombre: it.productos?.descripcion?.trim() || it.productos?.nombre || it.descripcion || '—',
         familia: it.productos?.familias?.nombre ?? '—',
-        cantidad: 0, monto: 0, veces: 0,
+        um: it.productos?.unidades_medida?.simbolo ?? '',
+        cantidad: 0, peso: null, monto: 0, veces: 0,
       }
       acc.cantidad += Number(it.cantidad ?? 0)
+      const pesoU = Number(it.productos?.peso_kg ?? 0)
+      if (pesoU > 0) acc.peso = (acc.peso ?? 0) + Number(it.cantidad ?? 0) * pesoU
       acc.monto += Number(it.subtotal ?? 0)
       acc.veces += 1
       productosMap.set(key, acc)
@@ -70,7 +74,10 @@ async function getData(clienteId: string, desde: string, hasta: string) {
   const topProductos = Array.from(productosMap.values())
     .sort((a, b) => b.monto - a.monto)
 
-  return { cliente, comprobantes, totalFacturado, totalCobrado, topProductos }
+  const totalPeso = topProductos.reduce((a, p) => a + (p.peso ?? 0), 0)
+  const sinPeso = topProductos.filter((p) => p.peso == null).length
+
+  return { cliente, comprobantes, totalFacturado, totalCobrado, topProductos, totalPeso, sinPeso }
 }
 
 export default async function ClienteReportePage({
@@ -87,7 +94,7 @@ export default async function ClienteReportePage({
 
   const data = await getData(id, desde, hasta)
   if (!data) return notFound()
-  const { cliente, comprobantes, totalFacturado, totalCobrado, topProductos } = data
+  const { cliente, comprobantes, totalFacturado, totalCobrado, topProductos, totalPeso, sinPeso } = data
   const saldo = Math.max(0, totalFacturado - totalCobrado)
 
   return (
@@ -234,6 +241,7 @@ export default async function ClienteReportePage({
                     <th className="text-left p-2">Familia</th>
                     <th className="text-right p-2">Veces</th>
                     <th className="text-right p-2">Cantidad</th>
+                    <th className="text-right p-2">Peso (kg)</th>
                     <th className="text-right p-2">Monto</th>
                   </tr>
                 </thead>
@@ -244,12 +252,25 @@ export default async function ClienteReportePage({
                       <td className="p-2">{p.nombre}</td>
                       <td className="p-2 text-gray-600 truncate max-w-[140px]">{p.familia}</td>
                       <td className="p-2 text-right">{p.veces}</td>
-                      <td className="p-2 text-right font-mono">{p.cantidad.toFixed(2)}</td>
+                      <td className="p-2 text-right font-mono">{p.cantidad.toFixed(2)}{p.um ? ` ${p.um}` : ''}</td>
+                      <td className="p-2 text-right font-mono" data-peso>{p.peso != null ? p.peso.toFixed(2) : '—'}</td>
                       <td className="p-2 text-right font-mono font-semibold">{formatCurrency(p.monto)}</td>
                     </tr>
                   ))}
                 </tbody>
+                <tfoot>
+                  <tr className="bg-gray-100 font-bold border-t-2 border-gray-400">
+                    <td colSpan={3} className="p-2 text-right">TOTAL</td>
+                    <td className="p-2 text-right">{topProductos.reduce((a, p) => a + p.veces, 0)}</td>
+                    <td className="p-2"></td>
+                    <td className="p-2 text-right font-mono" data-peso-total>{totalPeso.toFixed(2)} kg</td>
+                    <td className="p-2 text-right font-mono">{formatCurrency(topProductos.reduce((a, p) => a + p.monto, 0))}</td>
+                  </tr>
+                </tfoot>
               </table>
+              {sinPeso > 0 && (
+                <p className="text-[10px] text-gray-500 mt-1">{sinPeso} producto(s) sin peso configurado en Maestros → Productos: no suman al peso total.</p>
+              )}
             </div>
           )}
         </div>

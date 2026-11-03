@@ -701,7 +701,7 @@ export default function ComprasPage() {
 
       {/* Dialog Nueva Compra */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-w-6xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Registrar Nueva Compra</DialogTitle>
           </DialogHeader>
@@ -873,8 +873,9 @@ export default function ComprasPage() {
                     const requiereLote = prod?.tiene_lote || prod?.tiene_vencimiento
                     return (
                       <div key={field.id} className="p-3 bg-white relative">
-                        <div className="grid grid-cols-12 gap-2 items-start">
-                          <div className="col-span-4">
+                        {/* Producto con más ancho: el nombre completo se veía cortado (Daniel, 02/11). */}
+                        <div className="grid grid-cols-12 gap-2 items-start pr-5">
+                          <div className="col-span-5">
                             <Label className="text-[10px] text-gray-500">Producto</Label>
                             <div className="relative mt-1">
                               <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-gray-400 z-10" />
@@ -889,6 +890,7 @@ export default function ComprasPage() {
                                 }}
                                 onClick={() => setShowProductoDropdownIdx(idx)}
                                 onBlur={() => setTimeout(() => setShowProductoDropdownIdx((cur) => cur === idx ? null : cur), 200)}
+                                title={prod ? (prod.descripcion?.trim() || prod.nombre) : undefined}
                                 className="h-8 text-xs pl-7"
                               />
                               {showProductoDropdownIdx === idx && (() => {
@@ -902,7 +904,7 @@ export default function ComprasPage() {
                                   : productos
                                 if (lista.length === 0) return null
                                 return (
-                                  <div className="absolute top-full left-0 right-0 bg-white border border-gray-200 rounded-lg shadow-xl z-50 mt-1 max-h-72 overflow-y-auto">
+                                  <div className="absolute top-full left-0 w-[34rem] max-w-[calc(100vw-4rem)] bg-white border border-gray-200 rounded-lg shadow-xl z-50 mt-1 max-h-72 overflow-y-auto">
                                     {lista.slice(0, 50).map((p: any) => {
                                       const stockN = Number(p.stock_cantidad ?? 0)
                                       return (
@@ -918,7 +920,7 @@ export default function ComprasPage() {
                                           className="w-full text-left px-3 py-1.5 hover:bg-green-50 border-b border-gray-100 last:border-0 flex items-center justify-between gap-2"
                                         >
                                           <div className="min-w-0 flex-1">
-                                            <div className="text-xs font-medium text-gray-900 truncate">
+                                            <div className="text-xs font-medium text-gray-900 whitespace-normal break-words">
                                               {p.descripcion?.trim() || p.nombre}
                                               {(p.tiene_lote || p.tiene_vencimiento) && (
                                                 <span className="ml-1 text-[10px] text-amber-600">· lote</span>
@@ -1028,14 +1030,13 @@ export default function ComprasPage() {
                                 : `${formatCurrency(precio)} c/u`}
                             </p>
                           </div>
-                          <div className="col-span-1 pt-5">
-                            {fields.length > 1 && (
-                              <button type="button" onClick={() => remove(idx)} className="text-red-400 hover:text-red-600">
-                                <X className="w-3.5 h-3.5" />
-                              </button>
-                            )}
-                          </div>
                         </div>
+                        {fields.length > 1 && (
+                          <button type="button" onClick={() => remove(idx)} title="Quitar producto"
+                            className="absolute right-2 top-8 text-red-400 hover:text-red-600">
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        )}
 
                         {/* Inputs de lote / vencimiento */}
                         {requiereLote && (

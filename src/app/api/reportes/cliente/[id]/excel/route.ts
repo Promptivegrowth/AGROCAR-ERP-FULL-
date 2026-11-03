@@ -27,7 +27,7 @@ export async function GET(
       .select(`
         id, serie, numero, tipo, fecha_emision, subtotal, igv, total,
         comprobantes_items(cantidad, precio_unitario, subtotal, descripcion,
-          productos(codigo, nombre, descripcion, familias(nombre)))
+          productos(codigo, nombre, descripcion, peso_kg, unidades_medida(simbolo), familias(nombre)))
       `)
       .eq('cliente_id', id)
       .gte('fecha_emision', desde).lte('fecha_emision', hasta)
@@ -51,9 +51,13 @@ export async function GET(
         codigo: it.productos?.codigo ?? '—',
         nombre: it.productos?.descripcion?.trim() || it.productos?.nombre || it.descripcion || '—',
         familia: it.productos?.familias?.nombre ?? '—',
-        cantidad: 0, monto: 0, veces: 0,
+        um: it.productos?.unidades_medida?.simbolo ?? '',
+        cantidad: 0, peso: null as number | null, monto: 0, veces: 0,
       }
       acc.cantidad += Number(it.cantidad ?? 0)
+      // Peso = cantidad × peso por unidad del producto (como en la pantalla).
+      const pesoU = Number(it.productos?.peso_kg ?? 0)
+      if (pesoU > 0) acc.peso = (acc.peso ?? 0) + Number(it.cantidad ?? 0) * pesoU
       acc.monto += Number(it.subtotal ?? 0)
       acc.veces += 1
       productosMap.set(key, acc)
@@ -104,9 +108,14 @@ export async function GET(
   if (topProductos.length > 0) {
     row = seccionTitulo(sheet, row, `Productos comprados (${topProductos.length})`)
     row = seccionTabla(sheet, row,
-      ['Código', 'Producto', 'Familia', 'Veces', 'Cantidad', 'Monto'],
-      topProductos.map((p) => [p.codigo, p.nombre, p.familia, p.veces, p.cantidad, p.monto]),
-      { columnasMoneda: [5] },
+      ['Código', 'Producto', 'Familia', 'Veces', 'Cantidad', 'Unidad', 'Peso (kg)', 'Monto'],
+      topProductos.map((p) => [p.codigo, p.nombre, p.familia, p.veces, p.cantidad, p.um, p.peso != null ? Math.round(p.peso * 100) / 100 : null, p.monto]),
+      {
+        columnasMoneda: [7],
+        totalsRow: ['', 'TOTAL', '', topProductos.reduce((a, p) => a + p.veces, 0), '', '',
+          Math.round(topProductos.reduce((a, p) => a + (p.peso ?? 0), 0) * 100) / 100,
+          topProductos.reduce((a, p) => a + p.monto, 0)],
+      },
     )
   }
 
