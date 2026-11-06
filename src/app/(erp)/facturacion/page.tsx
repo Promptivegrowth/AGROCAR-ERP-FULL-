@@ -216,6 +216,8 @@ export default function FacturacionPage() {
   const [anularOpen, setAnularOpen] = useState(false)
   const [anularComp, setAnularComp] = useState<any>(null)
   const [anularMotivo, setAnularMotivo] = useState('')
+  // ¿La venta existió? (migración 154). Sin respuesta por defecto: hay que elegir.
+  const [anularVentaExiste, setAnularVentaExiste] = useState<boolean | null>(null)
   const [anularSaving, setAnularSaving] = useState(false)
   // Guía de remisión
   const [guiaOpen, setGuiaOpen] = useState(false)
@@ -944,6 +946,7 @@ export default function FacturacionPage() {
   function abrirAnular(comp: any) {
     setAnularComp(comp)
     setAnularMotivo('')
+    setAnularVentaExiste(comp.pedido_id ? null : true)
     setAnularOpen(true)
   }
 
@@ -953,10 +956,15 @@ export default function FacturacionPage() {
       toast.error('Motivo muy corto', { description: 'Ingresa al menos 5 caracteres explicando el motivo de la anulación.' })
       return
     }
+    if (anularVentaExiste === null) {
+      toast.error('Indica qué pasa con la venta', { description: '¿Se vuelve a emitir o la venta no existió?' })
+      return
+    }
     setAnularSaving(true)
-    const { error } = await (supabase.rpc as any)('anular_comprobante', {
+    const { data, error } = await (supabase.rpc as any)('anular_comprobante', {
       p_comprobante_id: anularComp.id,
       p_motivo: anularMotivo.trim(),
+      p_venta_existe: anularVentaExiste,
     })
     setAnularSaving(false)
     if (error) {
@@ -964,7 +972,10 @@ export default function FacturacionPage() {
       return
     }
     toast.success(`Comprobante ${anularComp.serie}-${String(anularComp.numero).padStart(8, '0')} anulado`, {
-      description: 'El correlativo se conserva. El pedido vuelve a "enviado" para re-facturar si quieres.',
+      description: data?.estado_pedido === 'cancelado'
+        ? 'El pedido quedó cancelado y la mercadería volvió al stock: no se vuelve a facturar.'
+        : 'El correlativo se conserva. El pedido vuelve a pendiente para facturarlo de nuevo.',
+      duration: 10000,
     })
     setAnularOpen(false)
     setAnularComp(null)
@@ -2740,10 +2751,22 @@ export default function FacturacionPage() {
                 <ul className="list-disc list-inside mt-1.5 space-y-0.5">
                   <li>El correlativo se conserva (SUNAT lo exige).</li>
                   <li>El comprobante queda marcado como <strong>ANULADO</strong>.</li>
-                  <li>El pedido asociado vuelve a estado <strong>&ldquo;enviado&rdquo;</strong> para que puedas re-facturarlo.</li>
                   <li>Esta acción queda registrada con tu nombre y fecha.</li>
                 </ul>
               </div>
+              {anularComp.pedido_id && (
+                <div className="space-y-1.5" data-anular-destino>
+                  <Label className="text-sm font-semibold">¿Qué pasa con la venta? *</Label>
+                  <label className={`flex items-start gap-2 rounded-lg border p-2.5 text-xs cursor-pointer ${anularVentaExiste === true ? 'border-blue-400 bg-blue-50' : 'border-gray-200'}`}>
+                    <input type="radio" name="anular-destino" className="mt-0.5" checked={anularVentaExiste === true} onChange={() => setAnularVentaExiste(true)} />
+                    <span><strong>Se vuelve a emitir</strong> (datos mal: cliente, cantidad, precio…). El pedido vuelve a pendiente y sale en la próxima facturación.</span>
+                  </label>
+                  <label className={`flex items-start gap-2 rounded-lg border p-2.5 text-xs cursor-pointer ${anularVentaExiste === false ? 'border-red-400 bg-red-50' : 'border-gray-200'}`}>
+                    <input type="radio" name="anular-destino" className="mt-0.5" checked={anularVentaExiste === false} onChange={() => setAnularVentaExiste(false)} />
+                    <span><strong>La venta no existió</strong> (registrada dos veces o no entregada). El pedido se cancela y la mercadería vuelve al stock.</span>
+                  </label>
+                </div>
+              )}
               <div>
                 <Label className="text-sm font-semibold">
                   Motivo de anulación * <span className="text-gray-400 font-normal text-xs">(mín. 5 caracteres)</span>
@@ -2763,7 +2786,7 @@ export default function FacturacionPage() {
                 </Button>
                 <Button
                   onClick={confirmarAnulacion}
-                  disabled={anularSaving || anularMotivo.trim().length < 5}
+                  disabled={anularSaving || anularMotivo.trim().length < 5 || anularVentaExiste === null}
                   className="bg-red-600 hover:bg-red-700 text-white"
                 >
                   {anularSaving && <Loader2 className="w-4 h-4 animate-spin mr-1" />}
