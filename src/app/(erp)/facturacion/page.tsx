@@ -2759,11 +2759,11 @@ export default function FacturacionPage() {
                   <Label className="text-sm font-semibold">¿Qué pasa con la venta? *</Label>
                   <label className={`flex items-start gap-2 rounded-lg border p-2.5 text-xs cursor-pointer ${anularVentaExiste === true ? 'border-blue-400 bg-blue-50' : 'border-gray-200'}`}>
                     <input type="radio" name="anular-destino" className="mt-0.5" checked={anularVentaExiste === true} onChange={() => setAnularVentaExiste(true)} />
-                    <span><strong>Se vuelve a emitir</strong> (datos mal: cliente, cantidad, precio…). El pedido vuelve a pendiente y sale en la próxima facturación.</span>
+                    <span><strong>Se vuelve a emitir</strong> (datos mal, o rechazado por SUNAT). El pedido vuelve a pendiente para emitirlo de nuevo; si ya tenía un cobro, pasa solo al comprobante nuevo.</span>
                   </label>
                   <label className={`flex items-start gap-2 rounded-lg border p-2.5 text-xs cursor-pointer ${anularVentaExiste === false ? 'border-red-400 bg-red-50' : 'border-gray-200'}`}>
                     <input type="radio" name="anular-destino" className="mt-0.5" checked={anularVentaExiste === false} onChange={() => setAnularVentaExiste(false)} />
-                    <span><strong>La venta no existió</strong> (registrada dos veces o no entregada). El pedido se cancela y la mercadería vuelve al stock.</span>
+                    <span><strong>La venta no existió</strong> (registrada dos veces o no entregada). El pedido se cancela y la mercadería vuelve al stock. No se puede si el comprobante ya tiene un cobro.</span>
                   </label>
                 </div>
               )}
