@@ -1217,7 +1217,7 @@ export default function FacturacionPage() {
     const pedSubtotal = Number(pedido.subtotal ?? 0)
     const pedIgv = Number(pedido.igv ?? 0)
     const pedTotal = Number(pedido.total ?? 0)
-    const incluirIgv = pedido.incluir_igv !== false
+    const incluirIgv = pedido.incluir_igv !== false || tipo !== 'nota_pedido_interna'
     const igvCalc = pedIgv > 0 ? pedIgv
       : (incluirIgv ? pedTotal - pedTotal / factorIgv(igvPct) : 0)
     const subtotalCalc = pedIgv > 0 ? pedSubtotal : (incluirIgv ? pedTotal - igvCalc : pedTotal)
@@ -1298,7 +1298,7 @@ export default function FacturacionPage() {
     const pedSubtotal = Number(pedidoSeleccionado.subtotal ?? 0)
     const pedIgv = Number(pedidoSeleccionado.igv ?? 0)
     const pedTotal = Number(pedidoSeleccionado.total ?? 0)
-    const incluirIgv = pedidoSeleccionado.incluir_igv !== false
+    const incluirIgv = pedidoSeleccionado.incluir_igv !== false || tipoComprobante !== 'nota_pedido_interna'
     // Si el pedido no tiene igv pero incluir_igv=true, calcular a partir del total (legacy)
     const igvCalc = pedIgv > 0 ? pedIgv
       : (incluirIgv ? pedTotal - pedTotal / factorIgv(igvPct) : 0)
@@ -1993,10 +1993,16 @@ export default function FacturacionPage() {
                   <span className="font-medium">{pedidoSeleccionado.clientes?.razon_social}</span>
                 </div>
                 {(() => {
-                  const st = Number(pedidoSeleccionado.subtotal ?? 0)
-                  const ig = Number(pedidoSeleccionado.igv ?? 0)
+                  const stPedido = Number(pedidoSeleccionado.subtotal ?? 0)
+                  const igPedido = Number(pedidoSeleccionado.igv ?? 0)
                   const tt = Number(pedidoSeleccionado.total ?? 0)
-                  const incIgv = pedidoSeleccionado.incluir_igv !== false
+                  // Factura y boleta van a SUNAT siempre con IGV (migración 156):
+                  // si el pedido vino "sin IGV", el total se toma con IGV incluido.
+                  const sinIgvPedido = pedidoSeleccionado.incluir_igv === false
+                  const forzado = sinIgvPedido && tipoComprobante !== 'nota_pedido_interna'
+                  const incIgv = !sinIgvPedido || forzado
+                  const st = forzado ? tt / 1.18 : stPedido
+                  const ig = forzado ? tt - tt / 1.18 : igPedido
                   return (
                     <>
                       <div className="border-t border-gray-200 pt-1.5 mt-1.5" />
@@ -2011,6 +2017,12 @@ export default function FacturacionPage() {
                         <span className="font-semibold">Total:</span>
                         <span className="font-bold text-green-600">{formatCurrency(tt)}</span>
                       </div>
+                      {forzado && (
+                        <p className="text-[11px] text-blue-700 bg-blue-50 border border-blue-200 rounded px-2 py-1 mt-1" data-igv-forzado>
+                          El pedido se registró &ldquo;sin IGV&rdquo;, pero una {tipoComprobante === 'factura' ? 'factura' : 'boleta'} va a SUNAT siempre con IGV:
+                          se emite con el IGV incluido en el mismo total.
+                        </p>
+                      )}
                     </>
                   )
                 })()}
@@ -2035,15 +2047,11 @@ export default function FacturacionPage() {
                 </p>
               </div>
 
-              <div>
-                <Label>Serie</Label>
-                <Input
-                  value={serie}
-                  onChange={(e) => setSerie(e.target.value.toUpperCase())}
-                  className="mt-1 font-mono"
-                  maxLength={4}
-                />
-              </div>
+              {/* La serie y el número los asigna la base al emitir (migración 116):
+                  este casillero mostraba una serie que no se usaba (B001). */}
+              <p className="text-xs text-gray-500" data-serie-auto>
+                La serie y el número los asigna el sistema al emitir.
+              </p>
 
               <div className="flex items-center gap-2 bg-yellow-50 border border-yellow-200 rounded-lg px-3 py-2">
                 <AlertCircle className="w-4 h-4 text-yellow-500 flex-shrink-0" />
