@@ -5,6 +5,7 @@ import { Search, Plus, Minus, Trash2, AlertCircle, Loader2, Package, User as Use
 import { toast } from 'sonner'
 import { createClient } from '@/lib/supabase/client'
 import { useDebounce } from '@/lib/hooks/use-debounce'
+import { usePuedeCambiarIgv } from '@/lib/hooks/use-puede-cambiar-igv'
 import { formatCurrency } from '@/lib/utils'
 import { hoyLima } from '@/lib/fechas-pe'
 import { Button } from '@/components/ui/button'
@@ -92,6 +93,8 @@ export default function NuevoPedidoDialog({ open, onOpenChange, onCreated }: Pro
   const [fechaDespacho, setFechaDespacho] = useState('')
   const [descuento, setDescuento] = useState('')
   const [incluirIgv, setIncluirIgv] = useState(true)
+  // Solo gerencia y administración pueden registrar una venta sin IGV (Daniel, 07/11).
+  const puedeIgv = usePuedeCambiarIgv()
   const [notas, setNotas] = useState('')
   const [guardando, setGuardando] = useState(false)
 
@@ -796,10 +799,11 @@ export default function NuevoPedidoDialog({ open, onOpenChange, onCreated }: Pro
                       </div>
                     )}
                   </div>
+                  {puedeIgv && (
                   <div className="flex items-end justify-between bg-blue-50 border border-blue-100 rounded-lg px-3 py-2">
                     <div>
                       <p className="text-xs font-medium text-blue-900">Aplica IGV (18%)</p>
-                      <p className="text-[10px] text-blue-700">Desactivar para operaciones sin IGV</p>
+                      <p className="text-[10px] text-blue-700">Desactivar para operaciones sin IGV · solo gerencia y administración</p>
                     </div>
                     <button
                       type="button"
@@ -809,6 +813,7 @@ export default function NuevoPedidoDialog({ open, onOpenChange, onCreated }: Pro
                       <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${incluirIgv ? 'translate-x-5' : 'translate-x-1'}`} />
                     </button>
                   </div>
+                  )}
                 </div>
 
                 <div>

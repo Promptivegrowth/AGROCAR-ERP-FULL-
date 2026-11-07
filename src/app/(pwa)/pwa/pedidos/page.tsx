@@ -5,6 +5,7 @@ import Image from 'next/image'
 import { ShoppingCart, Search, Plus, Minus, Trash2, AlertCircle, CheckCircle, Loader2, Package } from 'lucide-react'
 import { toast } from 'sonner'
 import { createClient } from '@/lib/supabase/client'
+import { puedeCambiarIgv } from '@/lib/hooks/use-puede-cambiar-igv'
 import { useDebounce } from '@/lib/hooks/use-debounce'
 import { hoyLima } from '@/lib/fechas-pe'
 import { construirLinkWhatsapp, esTelefonoPeruanoValido } from '@/lib/whatsapp'
@@ -1337,6 +1338,9 @@ ${lineasDatosPago().join('\n')}`,
                     )}
                   </div>
 
+                  {/* Solo gerencia y administración pueden vender sin IGV (Daniel, 07/11):
+                      un pedido "sin IGV" terminó en la boleta B002-1692 rechazada por SUNAT. */}
+                  {puedeCambiarIgv(userRole) && (
                   <div className="flex items-center justify-between bg-blue-50 border border-blue-100 rounded-lg px-3 py-2">
                     <div>
                       <p className="text-sm font-medium text-blue-900">Aplica IGV (18%)</p>
@@ -1350,6 +1354,7 @@ ${lineasDatosPago().join('\n')}`,
                       <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${incluirIgv ? 'translate-x-6' : 'translate-x-1'}`} />
                     </button>
                   </div>
+                  )}
 
                   <div className="bg-gray-50 rounded-xl p-3 space-y-1.5">
                     <div className="flex justify-between text-sm text-gray-500">

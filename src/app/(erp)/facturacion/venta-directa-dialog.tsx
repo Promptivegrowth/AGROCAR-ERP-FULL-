@@ -5,6 +5,7 @@ import { Search, Plus, Minus, Trash2, AlertCircle, Loader2, Package, Receipt, Ba
 import { toast } from 'sonner'
 import { createClient } from '@/lib/supabase/client'
 import { useDebounce } from '@/lib/hooks/use-debounce'
+import { usePuedeCambiarIgv } from '@/lib/hooks/use-puede-cambiar-igv'
 import { formatCurrency } from '@/lib/utils'
 import { hoyLima } from '@/lib/fechas-pe'
 import { Button } from '@/components/ui/button'
@@ -98,6 +99,8 @@ export default function VentaDirectaDialog({ open, onOpenChange, onCreated }: Pr
   const [tipoComprobante, setTipoComprobante] = useState<'factura' | 'boleta' | 'nota_pedido_interna'>('boleta')
   const [serie, setSerie] = useState('B002')
   const [incluirIgv, setIncluirIgv] = useState(true)
+  // Solo gerencia y administración pueden registrar una venta sin IGV (Daniel, 07/11).
+  const puedeIgv = usePuedeCambiarIgv()
   const [notas, setNotas] = useState('')
 
   // Vendedor asignado a esta venta (opcional) — importante para comisiones
@@ -827,10 +830,11 @@ export default function VentaDirectaDialog({ open, onOpenChange, onCreated }: Pr
                       {siguientesCorr[tipoComprobante] ?? '—'}
                     </div>
                   </div>
+                  {puedeIgv && (
                   <div className="flex items-end justify-between bg-blue-50 border border-blue-100 rounded-lg px-3 py-2">
                     <div>
                       <p className="text-xs font-medium text-blue-900">Aplica IGV (18%)</p>
-                      <p className="text-[10px] text-blue-700">Precios incluyen/no IGV</p>
+                      <p className="text-[10px] text-blue-700">Precios incluyen/no IGV · solo gerencia y administración</p>
                     </div>
                     <button
                       type="button"
@@ -840,6 +844,7 @@ export default function VentaDirectaDialog({ open, onOpenChange, onCreated }: Pr
                       <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${incluirIgv ? 'translate-x-5' : 'translate-x-1'}`} />
                     </button>
                   </div>
+                  )}
                 </div>
 
                 {/* Vendedor asignado — se usa para comisiones y reportes */}
