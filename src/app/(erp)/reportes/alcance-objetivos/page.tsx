@@ -8,6 +8,7 @@ import Link from 'next/link'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { EMPRESA, SLOGAN_FONT_STACK } from '@/lib/empresa'
+import { rangoInicial, atajosRango, fechaCorta } from '@/lib/rango-reporte'
 
 interface ProductoFila {
   codigo: string
@@ -32,8 +33,8 @@ interface Linea {
 }
 
 interface Reporte {
-  anio: number
-  mes: number
+  desde: string
+  hasta: string
   periodo: string
   vendedor_nombre: string
   lineas: Linea[]
@@ -42,9 +43,7 @@ interface Reporte {
   alc_total: number | null
 }
 
-interface Vendedor { id: string; nombre: string }
-
-const MESES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Setiembre','Octubre','Noviembre','Diciembre']
+interface Vendedor { id: string; nombre: string; rol: string }
 
 const num = (v: number | string | null | undefined, dec = 2) =>
   Number(v ?? 0).toLocaleString('es-PE', { minimumFractionDigits: dec, maximumFractionDigits: dec })
@@ -52,17 +51,24 @@ const num = (v: number | string | null | undefined, dec = 2) =>
 const pct = (v: number | null) => (v === null || v === undefined ? '0.00%' : `${num(v)}%`)
 /** Precio promedio = valor ÷ cantidad (Daniel, 15/10). */
 const precio = (valor: number, cant: number) => (Number(cant) !== 0 ? Number(valor) / Number(cant) : 0)
-/** "todos" en el selector: el objetivo general de la fuerza de ventas. */
+/**
+ * Grupos del selector. La venta directa de los repartidores es "venta
+ * adicional": no tiene cuota y se puede ver aparte (Daniel, 06/11).
+ */
 const TODOS = 'todos'
+const GRUPOS: Record<string, { grupo: string | null; etiqueta: string }> = {
+  [TODOS]: { grupo: null, etiqueta: 'Todos (vendedores y repartidores)' },
+  'grupo:vendedores': { grupo: 'vendedores', etiqueta: 'Solo vendedores (fuerza de ventas)' },
+  'grupo:repartidores': { grupo: 'repartidores', etiqueta: 'Repartidores (venta adicional)' },
+}
 
 function AlcanceInner() {
   const params = useSearchParams()
   const router = useRouter()
   const supabase = createClient()
-  const ahora = new Date()
-
-  const [anio, setAnio] = useState(parseInt(params.get('anio') ?? '') || ahora.getFullYear())
-  const [mes, setMes] = useState(parseInt(params.get('mes') ?? '') || ahora.getMonth() + 1)
+  const inicial = rangoInicial(params)
+  const [desde, setDesde] = useState(inicial.desde)
+  const [hasta, setHasta] = useState(inicial.hasta)
   const [vendedorId, setVendedorId] = useState(params.get('vendedor') ?? '')
   const [soloConDatos, setSoloConDatos] = useState(true)
   const [vendedores, setVendedores] = useState<Vendedor[]>([])
@@ -74,30 +80,32 @@ function AlcanceInner() {
     ;(async () => {
       const { data } = await (supabase as any)
         .from('profiles')
-        .select('id, full_name, email')
-        .eq('role', 'vendedor')
+        .select('id, full_name, email, role')
+        .in('role', ['vendedor', 'repartidor'])
         .eq('activo', true)
         .order('full_name')
-      const vs = (data ?? []).map((v: any) => ({ id: v.id, nombre: v.full_name || v.email }))
+      const vs: Vendedor[] = (data ?? []).map((v: any) => ({ id: v.id, nombre: v.full_name || v.email, rol: v.role }))
       setVendedores(vs)
-      if (!vendedorId && vs.length > 0) setVendedorId(vs[0].id)
+      if (!vendedorId && vs.length > 0) setVendedorId(vs.find((v) => v.rol === 'vendedor')?.id ?? vs[0].id)
     })()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   const cargar = useCallback(async () => {
-    if (!vendedorId) return
+    if (!vendedorId || !desde || !hasta || hasta < desde) return
     setLoading(true)
-    const { data, error } = await (supabase.rpc as any)('alcance_objetivos', {
-      p_anio: anio,
-      p_mes: mes,
-      p_vendedor_id: vendedorId === TODOS ? null : vendedorId,
+    const grupo = GRUPOS[vendedorId]
+    const { data, error } = await (supabase.rpc as any)('alcance_objetivos_rango', {
+      p_desde: desde,
+      p_hasta: hasta,
+      p_vendedor_id: grupo ? null : vendedorId,
+      p_grupo: grupo?.grupo ?? null,
       p_solo_con_datos: soloConDatos,
     })
     setLoading(false)
     if (error) { setRep(null); return }
     setRep(data as Reporte)
-  }, [supabase, anio, mes, vendedorId, soloConDatos])
+  }, [supabase, desde, hasta, vendedorId, soloConDatos])
 
   useEffect(() => { cargar() }, [cargar])
 
@@ -134,7 +142,7 @@ function AlcanceInner() {
     const blob = new Blob(['﻿' + filas.join('\r\n')], { type: 'text/csv;charset=utf-8;' })
     const a = document.createElement('a')
     a.href = URL.createObjectURL(blob)
-    a.download = `alcance_objetivos_${rep.periodo}_${rep.vendedor_nombre.replace(/\s+/g, '_')}.csv`
+    a.download = `alcance_objetivos_${rep.desde}_a_${rep.hasta}_${rep.vendedor_nombre.replace(/[^\w]+/g, '_')}.csv`
     a.click()
     URL.revokeObjectURL(a.href)
   }
@@ -183,21 +191,28 @@ function AlcanceInner() {
           <Label className="text-[10px] text-gray-500">Vendedor</Label>
           <select value={vendedorId} onChange={(e) => setVendedorId(e.target.value)}
             className="block mt-1 h-9 px-2 w-full text-sm border border-gray-300 rounded-md bg-white">
-            <option value={TODOS}>Todos los vendedores (objetivo general)</option>
-            {vendedores.map((v) => <option key={v.id} value={v.id}>{v.nombre}</option>)}
+            {Object.entries(GRUPOS).map(([k, g]) => <option key={k} value={k}>{g.etiqueta}</option>)}
+            <optgroup label="Vendedores">
+              {vendedores.filter((v) => v.rol === 'vendedor').map((v) => <option key={v.id} value={v.id}>{v.nombre}</option>)}
+            </optgroup>
+            <optgroup label="Repartidores (venta adicional)">
+              {vendedores.filter((v) => v.rol === 'repartidor').map((v) => <option key={v.id} value={v.id}>{v.nombre}</option>)}
+            </optgroup>
           </select>
         </div>
         <div>
-          <Label className="text-[10px] text-gray-500">Mes</Label>
-          <select value={mes} onChange={(e) => setMes(parseInt(e.target.value))}
-            className="block mt-1 h-9 px-2 text-sm border border-gray-300 rounded-md bg-white">
-            {MESES.map((m, i) => <option key={i+1} value={i+1}>{m}</option>)}
-          </select>
+          <Label className="text-[10px] text-gray-500">Desde</Label>
+          <Input type="date" value={desde} max={hasta} onChange={(e) => setDesde(e.target.value)} className="w-40 h-9 text-sm mt-1" aria-label="Desde" />
         </div>
         <div>
-          <Label className="text-[10px] text-gray-500">Año</Label>
-          <Input type="number" value={anio} onChange={(e) => setAnio(parseInt(e.target.value) || ahora.getFullYear())}
-            className="w-24 h-9 text-sm" min={2024} max={2100} />
+          <Label className="text-[10px] text-gray-500">Hasta</Label>
+          <Input type="date" value={hasta} min={desde} onChange={(e) => setHasta(e.target.value)} className="w-40 h-9 text-sm mt-1" aria-label="Hasta" />
+        </div>
+        <div className="flex gap-1 h-9 items-center">
+          {atajosRango().map((a) => (
+            <button key={a.etiqueta} type="button" onClick={() => { setDesde(a.desde); setHasta(a.hasta) }}
+              className="text-[11px] px-2 py-1 rounded border border-gray-300 hover:bg-gray-50">{a.etiqueta}</button>
+          ))}
         </div>
         <label className="flex items-center gap-2 text-xs text-gray-700 h-9 cursor-pointer">
           <input type="checkbox" checked={!soloConDatos} onChange={(e) => setSoloConDatos(!e.target.checked)}
@@ -225,7 +240,7 @@ function AlcanceInner() {
               </div>
             </div>
             <p className="mt-2 text-xs font-bold uppercase">
-              VENDEDOR: {rep.vendedor_nombre}
+              {vendedores.find((v) => v.id === vendedorId)?.rol === 'repartidor' ? 'REPARTIDOR (VENTA ADICIONAL)' : 'VENDEDOR'}: {rep.vendedor_nombre}
             </p>
           </div>
 
@@ -234,7 +249,7 @@ function AlcanceInner() {
           ) : rep.lineas.length === 0 ? (
             <div className="text-center py-16">
               <p className="text-amber-700 font-semibold text-sm">
-                ⚠ {vendedorId === TODOS ? 'No hay' : 'Este vendedor no tiene'} cuotas ni ventas registradas en {MESES[mes-1]} {anio}
+                ⚠ {GRUPOS[vendedorId] ? 'No hay' : 'No tiene'} cuotas ni ventas registradas del {fechaCorta(desde)} al {fechaCorta(hasta)}
               </p>
               <Link href="/vendedores/cuotas/productos" className="text-blue-700 underline text-xs mt-2 inline-block">
                 → Asignar cuotas por producto
@@ -315,10 +330,11 @@ function AlcanceInner() {
       )}
 
       <div className="text-[11px] text-gray-500 no-print">
-        💡 <b>CANT. REAL</b> = unidades/kg vendidos en el mes (las notas de crédito restan).
-        <b> VALOR REAL</b> = venta con IGV de los comprobantes emitidos en el mes (facturas, boletas y documentos
+        💡 <b>CANT. REAL</b> = unidades/kg vendidos en el rango (las notas de crédito restan).
+        <b> VALOR REAL</b> = venta con IGV de los comprobantes emitidos en el rango (facturas, boletas y documentos
         internos), igual que Gestión de vendedores y el Dashboard. <b>P. PROM.</b> = valor ÷ cantidad.
-        Los % en verde superan el 100% del objetivo.
+        <b> CUOTA</b> = la cuota completa de cada mes que toca el rango. La venta directa de los repartidores es
+        venta adicional: no tiene cuota. Los % en verde superan el 100% del objetivo.
       </div>
     </div>
   )

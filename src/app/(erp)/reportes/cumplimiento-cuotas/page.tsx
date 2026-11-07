@@ -9,10 +9,13 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { formatCurrency } from '@/lib/utils'
 import { EMPRESA, SLOGAN_FONT_STACK } from '@/lib/empresa'
+import { rangoInicial, atajosRango, fechaCorta } from '@/lib/rango-reporte'
 
 interface Fila {
   vendedor_id: string
   vendedor_nombre: string
+  /** vendedor: tiene cuota. repartidor: su venta directa es venta adicional, sin cuota (Daniel, 06/11). */
+  rol: 'vendedor' | 'repartidor'
   familia_id: string
   familia_nombre: string
   cuota_monto: number
@@ -22,35 +25,46 @@ interface Fila {
   diferencia: number
 }
 
-const MESES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Setiembre','Octubre','Noviembre','Diciembre']
-
 function CumplimientoInner() {
   const params = useSearchParams()
   const router = useRouter()
   const supabase = createClient()
-  const ahora = new Date()
-  const [anio, setAnio] = useState(parseInt(params.get('anio') ?? '') || ahora.getFullYear())
-  const [mes, setMes] = useState(parseInt(params.get('mes') ?? '') || ahora.getMonth() + 1)
+  const inicial = rangoInicial(params)
+  const [desde, setDesde] = useState(inicial.desde)
+  const [hasta, setHasta] = useState(inicial.hasta)
   const [filas, setFilas] = useState<Fila[]>([])
   const [loading, setLoading] = useState(true)
   const [vista, setVista] = useState<'matriz' | 'vendedor' | 'familia'>('matriz')
 
   const cargar = useCallback(async () => {
+    if (!desde || !hasta || hasta < desde) return
     setLoading(true)
-    const { data } = await (supabase.rpc as any)('cumplimiento_cuotas_mes', {
-      p_anio: anio, p_mes: mes,
+    const { data } = await (supabase.rpc as any)('cumplimiento_cuotas_rango', {
+      p_desde: desde, p_hasta: hasta,
     })
     setFilas(((data?.filas ?? []) as Fila[]))
     setLoading(false)
-  }, [supabase, anio, mes])
+  }, [supabase, desde, hasta])
 
   useEffect(() => { cargar() }, [cargar])
 
+  // Los vendedores (con cuota) y aparte los repartidores que vendieron en el rango.
   const vendedores = useMemo(() => {
     const m = new Map<string, string>()
-    filas.forEach((f) => m.set(f.vendedor_id, f.vendedor_nombre))
+    filas.filter((f) => f.rol !== 'repartidor').forEach((f) => m.set(f.vendedor_id, f.vendedor_nombre))
     return Array.from(m.entries()).map(([id, nombre]) => ({ id, nombre })).sort((a, b) => a.nombre.localeCompare(b.nombre))
   }, [filas])
+  const filasVend = useMemo(() => filas.filter((f) => f.rol !== 'repartidor'), [filas])
+  const filasRep = useMemo(() => filas.filter((f) => f.rol === 'repartidor'), [filas])
+  const repartidores = useMemo(() => {
+    const m = new Map<string, { id: string; nombre: string; vendido: number; comprobantes: number }>()
+    filasRep.forEach((f) => {
+      const x = m.get(f.vendedor_id) ?? { id: f.vendedor_id, nombre: f.vendedor_nombre, vendido: 0, comprobantes: 0 }
+      x.vendido += Number(f.vendido_monto)
+      m.set(f.vendedor_id, x)
+    })
+    return Array.from(m.values()).filter((x) => Math.abs(x.vendido) > 0.004).sort((a, b) => b.vendido - a.vendido)
+  }, [filasRep])
 
   const familias = useMemo(() => {
     const m = new Map<string, string>()
@@ -60,37 +74,44 @@ function CumplimientoInner() {
 
   const cell = (vid: string, fid: string) => filas.find((f) => f.vendedor_id === vid && f.familia_id === fid)
 
-  // KPIs globales
+  // KPIs globales: el cumplimiento es de los vendedores; la venta de los
+  // repartidores se suma aparte como venta adicional.
   const kpis = useMemo(() => {
-    const cuota = filas.reduce((a, f) => a + Number(f.cuota_monto), 0)
-    const vendido = filas.reduce((a, f) => a + Number(f.vendido_monto), 0)
+    const cuota = filasVend.reduce((a, f) => a + Number(f.cuota_monto), 0)
+    const vendido = filasVend.reduce((a, f) => a + Number(f.vendido_monto), 0)
+    const adicional = filasRep.reduce((a, f) => a + Number(f.vendido_monto), 0)
     return {
       cuota,
       vendido,
+      adicional,
+      totalVenta: vendido + adicional,
       pct: cuota > 0 ? (vendido / cuota) * 100 : 0,
       diff: vendido - cuota,
     }
-  }, [filas])
+  }, [filasVend, filasRep])
 
   // Resumen por vendedor
   const resumenVendedor = useMemo(() => {
     return vendedores.map((v) => {
-      const fs = filas.filter((f) => f.vendedor_id === v.id)
+      const fs = filasVend.filter((f) => f.vendedor_id === v.id)
       const cuota = fs.reduce((a, f) => a + Number(f.cuota_monto), 0)
       const vendido = fs.reduce((a, f) => a + Number(f.vendido_monto), 0)
       return { ...v, cuota, vendido, pct: cuota > 0 ? (vendido / cuota) * 100 : null }
     }).sort((a, b) => (b.pct ?? -1) - (a.pct ?? -1))
-  }, [vendedores, filas])
+  }, [vendedores, filasVend])
 
   // Resumen por familia
   const resumenFamilia = useMemo(() => {
     return familias.map((f) => {
-      const fs = filas.filter((x) => x.familia_id === f.id)
+      const fs = filasVend.filter((x) => x.familia_id === f.id)
       const cuota = fs.reduce((a, x) => a + Number(x.cuota_monto), 0)
       const vendido = fs.reduce((a, x) => a + Number(x.vendido_monto), 0)
-      return { ...f, cuota, vendido, pct: cuota > 0 ? (vendido / cuota) * 100 : null }
+      const adicional = filasRep.filter((x) => x.familia_id === f.id).reduce((a, x) => a + Number(x.vendido_monto), 0)
+      return { ...f, cuota, vendido, adicional, pct: cuota > 0 ? (vendido / cuota) * 100 : null }
     }).sort((a, b) => (b.pct ?? -1) - (a.pct ?? -1))
-  }, [familias, filas])
+  }, [familias, filasVend, filasRep])
+  const adicionalDe = (rid: string, fid: string) =>
+    filasRep.filter((f) => f.vendedor_id === rid && f.familia_id === fid).reduce((a, f) => a + Number(f.vendido_monto), 0)
 
   const colorPct = (pct: number | null) => {
     if (pct === null) return 'text-gray-400'
@@ -126,7 +147,7 @@ function CumplimientoInner() {
             Cumplimiento de Cuotas
           </h1>
           <p className="text-sm text-gray-500 mt-0.5">
-            Cuota objetivo vs vendido real · {MESES[mes-1]} {anio}
+            Cuota objetivo vs vendido real · del {fechaCorta(desde)} al {fechaCorta(hasta)} · con la venta adicional de los repartidores
           </p>
         </div>
         <Link href={`/vendedores/cuotas`}
@@ -142,16 +163,18 @@ function CumplimientoInner() {
       {/* Filtros */}
       <div className="bg-white border border-gray-200 rounded-lg p-3 flex flex-wrap items-end gap-3 no-print">
         <div>
-          <Label className="text-[10px] text-gray-500">Mes</Label>
-          <select value={mes} onChange={(e) => setMes(parseInt(e.target.value))}
-            className="block mt-1 h-9 px-2 text-sm border border-gray-300 rounded-md bg-white">
-            {MESES.map((m, i) => <option key={i+1} value={i+1}>{m}</option>)}
-          </select>
+          <Label className="text-[10px] text-gray-500">Desde</Label>
+          <Input type="date" value={desde} max={hasta} onChange={(e) => setDesde(e.target.value)} className="w-40 h-9 text-sm mt-1" aria-label="Desde" />
         </div>
         <div>
-          <Label className="text-[10px] text-gray-500">Año</Label>
-          <Input type="number" value={anio} onChange={(e) => setAnio(parseInt(e.target.value) || ahora.getFullYear())}
-            className="w-24 h-9 text-sm" min={2024} max={2100} />
+          <Label className="text-[10px] text-gray-500">Hasta</Label>
+          <Input type="date" value={hasta} min={desde} onChange={(e) => setHasta(e.target.value)} className="w-40 h-9 text-sm mt-1" aria-label="Hasta" />
+        </div>
+        <div className="flex gap-1 h-9 items-center">
+          {atajosRango().map((a) => (
+            <button key={a.etiqueta} type="button" onClick={() => { setDesde(a.desde); setHasta(a.hasta) }}
+              className="text-[11px] px-2 py-1 rounded border border-gray-300 hover:bg-gray-50">{a.etiqueta}</button>
+          ))}
         </div>
         <div className="flex-1" />
         <div className="flex gap-1 rounded-md bg-gray-100 p-0.5">
@@ -175,19 +198,19 @@ function CumplimientoInner() {
           </div>
           <div className="text-right text-xs">
             <p className="font-bold">CUMPLIMIENTO DE CUOTAS</p>
-            <p>{MESES[mes-1]} {anio}</p>
+            <p>Del {fechaCorta(desde)} al {fechaCorta(hasta)}</p>
           </div>
         </div>
       </div>
 
       {/* KPIs globales */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
         <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
           <p className="text-xs uppercase font-semibold text-blue-700">CUOTA TOTAL</p>
           <p className="text-xl font-bold text-blue-900">{formatCurrency(kpis.cuota)}</p>
         </div>
         <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-3">
-          <p className="text-xs uppercase font-semibold text-emerald-700">VENDIDO REAL</p>
+          <p className="text-xs uppercase font-semibold text-emerald-700">VENDIDO VENDEDORES</p>
           <p className="text-xl font-bold text-emerald-900">{formatCurrency(kpis.vendido)}</p>
         </div>
         <div className={`rounded-lg p-3 border-2 ${kpis.pct >= 100 ? 'bg-green-50 border-green-300' : kpis.pct >= 80 ? 'bg-amber-50 border-amber-300' : 'bg-red-50 border-red-300'}`}>
@@ -202,14 +225,24 @@ function CumplimientoInner() {
             {formatCurrency(Math.abs(kpis.diff))}
           </p>
         </div>
+        <div className="bg-violet-50 border border-violet-200 rounded-lg p-3" data-venta-adicional>
+          <p className="text-xs uppercase font-semibold text-violet-700">VENTA ADICIONAL</p>
+          <p className="text-xl font-bold text-violet-900">{formatCurrency(kpis.adicional)}</p>
+          <p className="text-[10px] text-violet-700">venta directa de repartidores</p>
+        </div>
+        <div className="bg-gray-900 text-white rounded-lg p-3" data-venta-total>
+          <p className="text-xs uppercase font-semibold text-gray-300">VENTA TOTAL</p>
+          <p className="text-xl font-bold">{formatCurrency(kpis.totalVenta)}</p>
+          <p className="text-[10px] text-gray-400">vendedores + adicional</p>
+        </div>
       </div>
 
       {/* Contenido según vista */}
       {loading ? (
         <div className="flex items-center justify-center py-12"><Loader2 className="w-6 h-6 animate-spin text-gray-400" /></div>
-      ) : kpis.cuota === 0 ? (
+      ) : kpis.cuota === 0 && repartidores.length === 0 ? (
         <div className="text-center py-16 bg-white border border-amber-200 rounded-lg">
-          <p className="text-amber-700 font-semibold">⚠ Sin cuotas asignadas para este mes</p>
+          <p className="text-amber-700 font-semibold">⚠ Sin cuotas asignadas para este rango</p>
           <Link href="/vendedores/cuotas" className="text-blue-700 underline text-sm mt-2 inline-block">
             → Asigna cuotas aquí
           </Link>
@@ -231,8 +264,8 @@ function CumplimientoInner() {
               </thead>
               <tbody>
                 {vendedores.map((v) => {
-                  const cuotaV = filas.filter((f) => f.vendedor_id === v.id).reduce((a, f) => a + Number(f.cuota_monto), 0)
-                  const vendidoV = filas.filter((f) => f.vendedor_id === v.id).reduce((a, f) => a + Number(f.vendido_monto), 0)
+                  const cuotaV = filasVend.filter((f) => f.vendedor_id === v.id).reduce((a, f) => a + Number(f.cuota_monto), 0)
+                  const vendidoV = filasVend.filter((f) => f.vendedor_id === v.id).reduce((a, f) => a + Number(f.vendido_monto), 0)
                   const pctV = cuotaV > 0 ? (vendidoV / cuotaV) * 100 : null
                   return (
                     <tr key={v.id} className="border-b border-gray-100">
@@ -256,6 +289,57 @@ function CumplimientoInner() {
                     </tr>
                   )
                 })}
+                {repartidores.length > 0 && (
+                  <>
+                    <tr className="bg-violet-50 border-y border-violet-200">
+                      <td colSpan={familias.length + 2} className="p-2 text-[11px] font-bold uppercase text-violet-800 sticky left-0">
+                        Venta adicional · venta directa de repartidores (sin cuota)
+                      </td>
+                    </tr>
+                    {repartidores.map((rp) => (
+                      <tr key={rp.id} className="border-b border-gray-100" data-repartidor={rp.nombre}>
+                        <td className="p-2 font-semibold sticky left-0 bg-white border-r z-10">
+                          {rp.nombre}<span className="ml-1 text-[9px] font-semibold uppercase text-violet-600">repartidor</span>
+                        </td>
+                        {familias.map((f) => {
+                          const v = adicionalDe(rp.id, f.id)
+                          return (
+                            <td key={f.id} className="p-1 text-center text-[10px] text-violet-900">
+                              {Math.abs(v) > 0.004 ? formatCurrency(v) : <span className="text-gray-300">—</span>}
+                            </td>
+                          )
+                        })}
+                        <td className="p-2 text-center font-semibold text-violet-900 bg-violet-50">{formatCurrency(rp.vendido)}</td>
+                      </tr>
+                    ))}
+                  </>
+                )}
+                <tr className="border-t-2 border-gray-400 bg-gray-50 font-semibold">
+                  <td className="p-2 sticky left-0 bg-gray-50 border-r z-10">Vendedores</td>
+                  {familias.map((f) => {
+                    const v = filasVend.filter((x) => x.familia_id === f.id).reduce((a, x) => a + Number(x.vendido_monto), 0)
+                    return <td key={f.id} className="p-1 text-center text-[10px]">{formatCurrency(v)}</td>
+                  })}
+                  <td className="p-2 text-center">{formatCurrency(kpis.vendido)}</td>
+                </tr>
+                {repartidores.length > 0 && (
+                  <tr className="bg-violet-50 font-semibold text-violet-900">
+                    <td className="p-2 sticky left-0 bg-violet-50 border-r z-10">Venta adicional</td>
+                    {familias.map((f) => {
+                      const v = filasRep.filter((x) => x.familia_id === f.id).reduce((a, x) => a + Number(x.vendido_monto), 0)
+                      return <td key={f.id} className="p-1 text-center text-[10px]">{Math.abs(v) > 0.004 ? formatCurrency(v) : '—'}</td>
+                    })}
+                    <td className="p-2 text-center">{formatCurrency(kpis.adicional)}</td>
+                  </tr>
+                )}
+                <tr className="bg-gray-900 text-white font-bold">
+                  <td className="p-2 sticky left-0 bg-gray-900 border-r z-10">VENTA TOTAL</td>
+                  {familias.map((f) => {
+                    const v = filas.filter((x) => x.familia_id === f.id).reduce((a, x) => a + Number(x.vendido_monto), 0)
+                    return <td key={f.id} className="p-1 text-center text-[10px]">{formatCurrency(v)}</td>
+                  })}
+                  <td className="p-2 text-center" data-total-matriz>{formatCurrency(kpis.totalVenta)}</td>
+                </tr>
               </tbody>
             </table>
           </div>
@@ -288,6 +372,24 @@ function CumplimientoInner() {
                   </td>
                 </tr>
               ))}
+              {repartidores.map((rp) => (
+                <tr key={rp.id} className="border-b border-gray-100 bg-violet-50/60">
+                  <td className="p-2 text-gray-400 font-mono">·</td>
+                  <td className="p-2 font-semibold">{rp.nombre} <span className="text-[10px] font-semibold uppercase text-violet-600">repartidor · venta adicional</span></td>
+                  <td className="p-2 text-right font-mono text-gray-400">—</td>
+                  <td className="p-2 text-right font-mono">{formatCurrency(rp.vendido)}</td>
+                  <td className="p-2 text-right font-mono text-gray-400">—</td>
+                  <td className="p-2 text-right text-xs text-violet-700">sin cuota</td>
+                </tr>
+              ))}
+              <tr className="bg-gray-900 text-white font-bold">
+                <td className="p-2" />
+                <td className="p-2">VENTA TOTAL (vendedores + adicional)</td>
+                <td className="p-2 text-right font-mono">{formatCurrency(kpis.cuota)}</td>
+                <td className="p-2 text-right font-mono">{formatCurrency(kpis.totalVenta)}</td>
+                <td className="p-2" />
+                <td className="p-2" />
+              </tr>
             </tbody>
           </table>
         </div>
@@ -302,6 +404,7 @@ function CumplimientoInner() {
                 <th className="text-right p-2 font-semibold w-32">Vendido</th>
                 <th className="text-right p-2 font-semibold w-32">Diferencia</th>
                 <th className="text-right p-2 font-semibold w-24">% Cump.</th>
+                <th className="text-right p-2 font-semibold w-32 text-violet-700">Venta adicional</th>
               </tr>
             </thead>
             <tbody>
@@ -317,6 +420,7 @@ function CumplimientoInner() {
                   <td className={`p-2 text-right font-bold text-lg ${colorPct(f.pct)}`}>
                     {f.pct !== null ? f.pct.toFixed(0) + '%' : '—'}
                   </td>
+                  <td className="p-2 text-right font-mono text-violet-800">{Math.abs(f.adicional) > 0.004 ? formatCurrency(f.adicional) : '—'}</td>
                 </tr>
               ))}
             </tbody>

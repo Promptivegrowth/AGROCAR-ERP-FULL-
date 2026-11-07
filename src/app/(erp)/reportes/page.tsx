@@ -154,15 +154,18 @@ export default function ReportesPage() {
       .filter((c: any) => c.saldo > 0)
     setCuentasPorCobrar(deudas)
 
-    // Visitas del período
-    const { data: vData } = await supabase
+    // Visitas del período. La relación es por usuario_id: con el nombre viejo
+    // (vendedor_id) la consulta fallaba y la pestaña salía vacía.
+    const vData = await traerTodo<any>((a, b) => (supabase as any)
       .from('gps_checkins')
       .select(`
         id, tipo, created_at,
-        profiles!gps_checkins_vendedor_id_fkey(full_name)
+        profiles!gps_checkins_usuario_id_fkey(full_name)
       `)
       .gte('created_at', `${desde}T00:00:00`)
       .lte('created_at', `${hasta}T23:59:59`)
+      .order('id')
+      .range(a, b))
 
     const visitasPorVendedor: Record<string, { visitas: number; efectivas: number }> = {}
     vData?.forEach((v: any) => {
@@ -374,6 +377,19 @@ export default function ReportesPage() {
                       <td className="py-2.5 px-4 font-bold text-green-600">{formatCurrency(v.total)}</td>
                     </tr>
                   ))}
+                  {/* La venta directa de los repartidores es venta adicional (Daniel, 06/11). */}
+                  {ventasPorVendedor.some((v) => v.rol === 'repartidor') && (['vendedor', 'repartidor'] as const).map((rol) => {
+                    const del = ventasPorVendedor.filter((v) => v.rol === rol)
+                    return (
+                      <tr key={rol} className={rol === 'repartidor' ? 'bg-violet-50 font-semibold' : 'bg-gray-50/70 font-semibold'} data-subtotal={rol}>
+                        <td className={`py-2 px-4 ${rol === 'repartidor' ? 'text-violet-800' : 'text-gray-700'}`}>
+                          {rol === 'repartidor' ? 'Venta adicional (repartidores)' : 'Subtotal vendedores'}
+                        </td>
+                        <td className="py-2 px-4 text-gray-600">{del.reduce((a, v) => a + v.pedidos, 0)}</td>
+                        <td className={`py-2 px-4 ${rol === 'repartidor' ? 'text-violet-800' : 'text-gray-800'}`}>{formatCurrency(del.reduce((a, v) => a + v.total, 0))}</td>
+                      </tr>
+                    )
+                  })}
                   {ventasPorVendedor.length > 0 && (
                     <tr className="bg-gray-50 font-bold">
                       <td className="py-2.5 px-4 text-gray-800">Total</td>
