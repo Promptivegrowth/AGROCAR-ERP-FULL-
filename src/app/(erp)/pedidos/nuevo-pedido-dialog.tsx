@@ -160,13 +160,6 @@ export default function NuevoPedidoDialog({ open, onOpenChange, onCreated }: Pro
       if (cancelled) return
       setClientes((cls ?? []) as Cliente[])
       setVendedores((vds ?? []).map((v: any) => ({ id: v.id, full_name: v.full_name })))
-      // Un vendedor que arma el pedido desde el escritorio lo tiene a su nombre
-      // de entrada, y puede elegir otro vendedor (Javier, 09/11).
-      const { data: { user } } = await supabase.auth.getUser()
-      if (user && !cancelled && (vds ?? []).some((v: any) => v.id === user.id)) {
-        setAsignarVendedor(true)
-        setVendedorId(user.id)
-      }
       setProductos((prods ?? []).map((p: any) => ({
         id: p.id, codigo: p.codigo, nombre: p.nombre, descripcion: p.descripcion,
         tiene_lote: !!p.tiene_lote, tiene_vencimiento: !!p.tiene_vencimiento, precio: 0,
