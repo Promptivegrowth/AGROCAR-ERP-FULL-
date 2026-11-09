@@ -165,12 +165,10 @@ export default function VentaDirectaDialog({ open, onOpenChange, onCreated }: Pr
           .select('id, codigo, nombre, descripcion, tiene_lote, tiene_vencimiento, activo')
           .eq('activo', true)
           .order('nombre'),
-        (supabase as any)
-          .from('profiles')
-          .select('id, full_name, email')
-          .eq('role', 'vendedor')
-          .eq('activo', true)
-          .order('full_name'),
+        // Por RPC, como en el nuevo pedido: los permisos de profiles solo dejan
+        // ver a otros usuarios a gerencia y administración, y para caja o
+        // facturación la lista de vendedores salía vacía (migración 126).
+        (supabase.rpc as any)('vendedores_activos'),
         (supabase as any)
           .from('series_correlativos')
           .select('tipo_comprobante, serie, correlativo_actual, padding_digitos')
