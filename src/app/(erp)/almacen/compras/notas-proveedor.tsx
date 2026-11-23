@@ -14,6 +14,10 @@
  * menos peso del facturado. Stock y costo ya quedaron bien al validar la
  * recepción; la nota solo se registra como documento (Registro de compras y
  * SIRE) y cierra la nota interna del faltante. registrar_nota_faltante, 152.
+ *
+ * Y la nota de crédito por DEVOLUCIÓN (Ti-Cay F004-00016881, 23/11): la
+ * mercadería sí entró y vuelve al proveedor, así que sale del stock al precio
+ * de compra. registrar_nota_devolucion, migración 160.
  */
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
@@ -36,9 +40,15 @@ interface ItemCompra {
 
 interface Linea { incluir: boolean; cantidad: string; precio: string }
 
-const TIPO = { debito: 'Nota de débito', credito: 'Nota de crédito', faltante: 'Nota de crédito por faltante' } as const
+const TIPO = {
+  debito: 'Nota de débito', credito: 'Nota de crédito', faltante: 'Nota de crédito por faltante',
+  devolucion: 'Nota de crédito por devolución',
+} as const
 type Modo = keyof typeof TIPO
-const tituloNota = (n: any) => (n.motivo_tipo === 'faltante' ? TIPO.faltante : TIPO[n.tipo as 'debito' | 'credito'])
+const tituloNota = (n: any) => (n.motivo_tipo === 'faltante' ? TIPO.faltante
+  : n.motivo_tipo === 'devolucion' ? TIPO.devolucion : TIPO[n.tipo as 'debito' | 'credito'])
+/** Modos que acreditan unidades al precio facturado (no un precio nuevo). */
+const porCantidad = (m: Modo) => m === 'faltante' || m === 'devolucion'
 const r2 = (v: number) => Math.round(v * 100) / 100
 const nombreDe = (it: ItemCompra) => it.productos?.descripcion?.trim() || it.productos?.nombre || '—'
 
@@ -86,13 +96,34 @@ export default function NotasProveedor({ compra, items, onCambio }: {
     return m
   }, [notas, items])
 
+  // Lo que todavía se puede devolver: lo recibido menos lo ya devuelto.
+  const devolvibles = useMemo(() => {
+    const devuelto = new Map<string, number>()
+    for (const n of notas) {
+      if (n.estado !== 'aplicada' || n.motivo_tipo !== 'devolucion') continue
+      for (const i of n.notas_proveedor_items ?? []) devuelto.set(i.compra_item_id, (devuelto.get(i.compra_item_id) ?? 0) + Number(i.cantidad))
+    }
+    const m = new Map<string, number>()
+    for (const it of items) {
+      const d = Number(it.cantidad_recibida ?? it.cantidad) - (devuelto.get(it.id) ?? 0)
+      if (d > 0.0001) m.set(it.id, Math.round(d * 10000) / 10000)
+    }
+    return m
+  }, [notas, items])
+
   const prepararLineas = (modo: Modo) => {
     setLineas(Object.fromEntries(items.map((it) => [it.id, modo === 'faltante'
       ? { incluir: faltantes.has(it.id), cantidad: String(faltantes.get(it.id) ?? 0), precio: String(Number(it.precio_unitario)) }
-      : { incluir: false, cantidad: String(Number(it.cantidad_recibida ?? it.cantidad)), precio: '' }])))
+      : modo === 'devolucion'
+        // Se marca lo que trae la nota y se escribe cuánto se devolvió.
+        ? { incluir: false, cantidad: '', precio: String(Number(it.precio_unitario)) }
+        : { incluir: false, cantidad: String(Number(it.cantidad_recibida ?? it.cantidad)), precio: '' }])))
   }
   // El motivo viene escrito según el tipo; si el usuario lo cambió, se respeta.
-  const MOTIVO_DEFECTO: Record<Modo, string> = { debito: 'Diferencia de precio', credito: 'Diferencia de precio', faltante: 'Faltante en la recepción' }
+  const MOTIVO_DEFECTO: Record<Modo, string> = {
+    debito: 'Diferencia de precio', credito: 'Diferencia de precio', faltante: 'Faltante en la recepción',
+    devolucion: 'Devolución de mercadería',
+  }
   const cambiarTipo = (modo: Modo) => {
     if (!motivo.trim() || Object.values(MOTIVO_DEFECTO).includes(motivo)) setMotivo(MOTIVO_DEFECTO[modo])
     setTipo(modo); prepararLineas(modo)
@@ -112,8 +143,8 @@ export default function NotasProveedor({ compra, items, onCambio }: {
       const l = lineas[it.id]
       const cant = Number(l?.cantidad || 0)
       const precio = l?.precio === '' || l?.precio == null ? NaN : Number(l.precio)
-      // Por faltante se acredita la cantidad al precio facturado.
-      const dif = tipo === 'faltante' ? -Number(it.precio_unitario) : Number.isFinite(precio) ? precio - Number(it.precio_unitario) : NaN
+      // Por faltante o devolución se acredita la cantidad al precio facturado.
+      const dif = porCantidad(tipo) ? -Number(it.precio_unitario) : Number.isFinite(precio) ? precio - Number(it.precio_unitario) : NaN
       return { it, l, cant, precio, dif, importe: Number.isFinite(dif) ? r2(cant * dif) : 0 }
     })
     const marcadas = filas.filter((f) => f.l?.incluir)
@@ -140,8 +171,21 @@ export default function NotasProveedor({ compra, items, onCambio }: {
       toast.error('No cuadra con el documento', { description: `Lo cargado suma ${formatCurrency(calculo.suma)} y el total de la nota es ${formatCurrency(total)}.` })
       return
     }
+    if (tipo === 'devolucion') {
+      for (const f of calculo.marcadas) {
+        const max = devolvibles.get(f.it.id) ?? 0
+        if (!(f.cant > 0)) { toast.error(`Escribe cuánto se devolvió de ${nombreDe(f.it)}`); return }
+        if (f.cant > max + 0.0001) { toast.error(`${nombreDe(f.it)}: se pueden devolver hasta ${max}`, { description: 'Lo recibido menos lo ya devuelto.' }); return }
+      }
+    }
     setGuardando(true)
-    const { data, error } = tipo === 'faltante'
+    const { data, error } = tipo === 'devolucion'
+      ? await (supabase.rpc as any)('registrar_nota_devolucion', {
+          p_compra_id: compra.id, p_numero: numero, p_fecha: fecha, p_motivo: motivo,
+          p_items: calculo.marcadas.map((f) => ({ compra_item_id: f.it.id, cantidad: f.cant })),
+          p_total_documento: total,
+        })
+      : tipo === 'faltante'
       ? await (supabase.rpc as any)('registrar_nota_faltante', {
           p_compra_id: compra.id, p_numero: numero, p_fecha: fecha, p_motivo: motivo,
           p_items: calculo.marcadas.map((f) => ({ compra_item_id: f.it.id, cantidad: f.cant })),
@@ -154,6 +198,19 @@ export default function NotasProveedor({ compra, items, onCambio }: {
         })
     setGuardando(false)
     if (error) { toast.error('No se pudo registrar la nota', { description: error.message, duration: 10000 }); return }
+    if (tipo === 'devolucion') {
+      const stocks = ((data?.productos ?? []) as any[]).map((p) => `${p.producto}: stock ${Number(p.stock_anterior)} → ${Number(p.stock_nuevo)}`).join(' · ')
+      const negativo = ((data?.productos ?? []) as any[]).some((p) => Number(p.stock_nuevo) < 0)
+      toast.success(`Nota de crédito ${data?.numero} registrada`, {
+        description: `${formatCurrency(Number(data?.total))} en el Registro de compras. Salió del stock lo devuelto: ${stocks}.`
+          + (negativo ? ' El stock quedó negativo: revisa el conteo físico.' : ''),
+        duration: 15000,
+      })
+      setAbierto(false)
+      await cargar()
+      onCambio()
+      return
+    }
     if (tipo === 'faltante') {
       toast.success(`Nota de crédito ${data?.numero} registrada`, {
         description: `${formatCurrency(Number(data?.total))} en el Registro de compras. No cambia stock ni costo: ya entró solo lo recibido.${data?.regulariza_interna ? ' La nota interna del faltante quedó regularizada.' : ''}`,
@@ -175,11 +232,14 @@ export default function NotasProveedor({ compra, items, onCambio }: {
   }
 
   const anular = async (n: any) => {
-    const m = prompt(`¿Anular la ${tituloNota(n).toLowerCase()} ${n.numero}?${n.motivo_tipo === 'faltante' ? '' : ' Se devuelve el costo.'} Indica el motivo:`)
+    const m = prompt(`¿Anular la ${tituloNota(n).toLowerCase()} ${n.numero}?${n.motivo_tipo === 'faltante' ? '' : n.motivo_tipo === 'devolucion' ? ' Lo devuelto vuelve al stock.' : ' Se devuelve el costo.'} Indica el motivo:`)
     if (!m?.trim()) return
     const { error } = await (supabase.rpc as any)('anular_nota_proveedor', { p_nota_id: n.id, p_motivo: m.trim() })
     if (error) { toast.error('No se pudo anular', { description: error.message }); return }
-    toast.success(`Nota ${n.numero} anulada`, { description: n.motivo_tipo === 'faltante' ? 'La nota interna del faltante volvió a quedar pendiente.' : 'El costo volvió a como estaba.' })
+    toast.success(`Nota ${n.numero} anulada`, {
+      description: n.motivo_tipo === 'faltante' ? 'La nota interna del faltante volvió a quedar pendiente.'
+        : n.motivo_tipo === 'devolucion' ? 'Lo devuelto volvió al stock.' : 'El costo volvió a como estaba.',
+    })
     await cargar()
     onCambio()
   }
@@ -192,7 +252,7 @@ export default function NotasProveedor({ compra, items, onCambio }: {
         <div>
           <p className="text-sm font-semibold text-violet-900">Notas de débito / crédito del proveedor</p>
           <p className="text-[11px] text-violet-800">
-            Para diferencias de precio o faltantes después de aplicar la compra. La factura no se modifica: la nota se registra aparte.
+            Para diferencias de precio, faltantes o devoluciones después de aplicar la compra. La factura no se modifica: la nota se registra aparte.
             {faltantes.size > 0 && <strong> Esta compra tiene un faltante en la recepción sin nota del proveedor.</strong>}
           </p>
         </div>
@@ -220,7 +280,9 @@ export default function NotasProveedor({ compra, items, onCambio }: {
           {(n.notas_proveedor_items ?? []).map((i: any, k: number) => (
             <p key={k} className="text-gray-700 mt-0.5">
               {i.productos?.descripcion?.trim() || i.productos?.nombre}: {Number(i.cantidad)} u.
-              {n.motivo_tipo === 'faltante' ? ` no recibidas × ${formatCurrency(i.precio_facturado)}` : ` · facturado ${formatCurrency(i.precio_facturado)} → correcto ${formatCurrency(i.precio_correcto)}`}
+              {n.motivo_tipo === 'faltante' ? ` no recibidas × ${formatCurrency(i.precio_facturado)}`
+                : n.motivo_tipo === 'devolucion' ? ` devueltas × ${formatCurrency(i.precio_facturado)}`
+                : ` · facturado ${formatCurrency(i.precio_facturado)} → correcto ${formatCurrency(i.precio_correcto)}`}
               {i.costo_anterior != null && Number(i.unidades_en_stock) > 0 && (
                 <span className="text-violet-700"> · costo {Number(i.costo_anterior).toFixed(2)} → {Number(i.costo_nuevo).toFixed(2)}</span>
               )}
@@ -229,8 +291,10 @@ export default function NotasProveedor({ compra, items, onCambio }: {
           {n.estado === 'aplicada' && (
             <div className="flex items-center justify-between gap-2 mt-1">
               <p className="text-[11px] text-gray-500">
-                {n.motivo_tipo === 'faltante' ? 'Solo documento: el stock y el costo ya quedaron bien al recibir.' : <>Al stock {formatCurrency(Math.abs(Number(n.importe_a_stock)))}</>}
-                {n.motivo_tipo !== 'faltante' && Number(n.importe_a_costo_ventas) !== 0 && ` · al costo de ventas (ya vendido) ${formatCurrency(Math.abs(Number(n.importe_a_costo_ventas)))}`}
+                {n.motivo_tipo === 'faltante' ? 'Solo documento: el stock y el costo ya quedaron bien al recibir.'
+                  : n.motivo_tipo === 'devolucion' ? 'Lo devuelto salió del stock al precio de compra.'
+                  : <>Al stock {formatCurrency(Math.abs(Number(n.importe_a_stock)))}</>}
+                {!porCantidad(n.motivo_tipo) && Number(n.importe_a_costo_ventas) !== 0 && ` · al costo de ventas (ya vendido) ${formatCurrency(Math.abs(Number(n.importe_a_costo_ventas)))}`}
               </p>
               <button type="button" onClick={() => anular(n)} className="text-[11px] font-semibold text-red-600 hover:underline">Anular</button>
             </div>
@@ -254,6 +318,9 @@ export default function NotasProveedor({ compra, items, onCambio }: {
                   <option value="credito">Nota de crédito (baja el precio)</option>
                   <option value="faltante" disabled={faltantes.size === 0}>
                     Nota de crédito por faltante{faltantes.size === 0 ? ' (no hay faltante)' : ''}
+                  </option>
+                  <option value="devolucion" disabled={devolvibles.size === 0}>
+                    Nota de crédito por devolución (sale del stock)
                   </option>
                 </select>
               </div>
@@ -284,7 +351,7 @@ export default function NotasProveedor({ compra, items, onCambio }: {
                     <th className="p-2 text-left">Producto</th>
                     <th className="p-2 text-right">Cantidad</th>
                     <th className="p-2 text-right">P. facturado</th>
-                    <th className="p-2 text-right">{tipo === 'faltante' ? 'Faltante' : 'P. correcto'}</th>
+                    <th className="p-2 text-right">{tipo === 'faltante' ? 'Faltante' : tipo === 'devolucion' ? 'Se puede devolver' : 'P. correcto'}</th>
                     <th className="p-2 text-right">Diferencia</th>
                   </tr>
                 </thead>
@@ -305,6 +372,8 @@ export default function NotasProveedor({ compra, items, onCambio }: {
                       <td className="p-2 text-right">
                         {tipo === 'faltante' ? (
                           <span className="font-mono text-gray-600">{faltantes.has(it.id) ? Number(faltantes.get(it.id)) : '—'}</span>
+                        ) : tipo === 'devolucion' ? (
+                          <span className="font-mono text-gray-600">{devolvibles.has(it.id) ? Number(devolvibles.get(it.id)) : '—'}</span>
                         ) : (
                           <input type="number" step="any" min="0" value={l?.precio ?? ''} disabled={!l?.incluir} aria-label={`Precio correcto ${nombreDe(it)}`}
                             onChange={(e) => setLineas({ ...lineas, [it.id]: { ...l!, precio: e.target.value } })}
@@ -320,7 +389,9 @@ export default function NotasProveedor({ compra, items, onCambio }: {
             <p className="text-[11px] text-gray-500">
               {tipo === 'faltante'
                 ? 'La cantidad es lo que acredita la nota (normalmente, todo el faltante). Se valoriza al precio facturado, con IGV.'
-                : 'Precios con IGV, igual que en la compra. Marca solo los productos que trae la nota.'}
+                : tipo === 'devolucion'
+                  ? 'Marca los productos devueltos y escribe la cantidad que figura en la nota. Se valoriza al precio facturado, con IGV.'
+                  : 'Precios con IGV, igual que en la compra. Marca solo los productos que trae la nota.'}
             </p>
 
             <div className={`rounded-lg p-3 text-xs ${cuadra ? 'bg-green-50 border border-green-200 text-green-900' : 'bg-amber-50 border border-amber-200 text-amber-900'}`} data-cuadre>
@@ -337,6 +408,8 @@ export default function NotasProveedor({ compra, items, onCambio }: {
               <p className="mt-0.5">
                 {tipo === 'faltante'
                   ? 'No cambia stock ni costo: al validar la recepción ya entró solo lo que llegó. La nota resta en el Registro de compras.'
+                  : tipo === 'devolucion'
+                  ? 'Lo devuelto sale del stock al precio de compra y queda en el kárdex. La nota resta en el Registro de compras.'
                   : `${tipo === 'debito' ? 'Sube' : 'Baja'} el costo de las unidades que siguen en stock; lo que corresponde a unidades ya vendidas va al costo de ventas.`}
               </p>
             </div>
