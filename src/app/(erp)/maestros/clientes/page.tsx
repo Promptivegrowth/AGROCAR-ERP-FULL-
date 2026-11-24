@@ -543,8 +543,9 @@ export default function ClientesPage() {
           await (supabase as any).from('proveedores').insert(provPayload)
         }
       } else if (proveedorExistente) {
-        // Si se desmarca, eliminar el proveedor (cascade OK porque no hay compras con este proveedor_id en la demo)
-        await (supabase as any).from('proveedores').delete().eq('id', proveedorExistente.id)
+        // Si se desmarca, solo se desvincula: el proveedor puede tener compras,
+        // notas y fletes, y borrarlo fallaba sin avisar o perdía su ficha.
+        await (supabase as any).from('proveedores').update({ cliente_id: null }).eq('id', proveedorExistente.id)
       }
 
       toast.success(editingCliente ? 'Cliente actualizado' : 'Cliente creado', {

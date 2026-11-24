@@ -70,6 +70,26 @@ export default function ProveedoresPage() {
   const [ubigeoVal, setUbigeoVal] = useState<UbigeoValue>(UBIGEO_EMPTY)
   const paisCfg = PAIS_CONFIG[pais]
 
+  // También es cliente (Daniel, 24/11): el inverso del "También es proveedor"
+  // de Clientes. Crea su ficha de cliente (o la vincula si ya existe con ese
+  // RUC); apagarlo solo la desvincula, no borra al cliente.
+  const [tambienCliente, setTambienCliente] = useState(false)
+  const [tiposCliente, setTiposCliente] = useState<{ id: string; nombre: string }[]>([])
+  const [listasPrecio, setListasPrecio] = useState<{ id: string; nombre: string }[]>([])
+  const [tipoClienteId, setTipoClienteId] = useState('')
+  const [listaPrecioId, setListaPrecioId] = useState('')
+  const cargarOpcionesCliente = async () => {
+    if (tiposCliente.length > 0) return
+    const [{ data: tc }, { data: lp }] = await Promise.all([
+      (supabase as any).from('tipos_cliente').select('id, nombre').order('nombre'),
+      (supabase as any).from('listas_precio').select('id, nombre').eq('activo', true).order('nombre'),
+    ])
+    setTiposCliente(tc ?? [])
+    setListasPrecio(lp ?? [])
+    // Como El Catalán y Ti-Cay, los proveedores que también compran son mayoristas.
+    setTipoClienteId((tc ?? []).find((x: any) => x.nombre === 'MAYORISTA')?.id ?? (tc ?? [])[0]?.id ?? '')
+  }
+
   const { register, handleSubmit, reset, setValue, formState: { errors } } = useForm<ProveedorFormData>({
     resolver: zodResolver(proveedorSchema) as any,
   })
@@ -119,6 +139,9 @@ export default function ProveedoresPage() {
     setPais('PE')
     setRucInput('')
     setUbigeoVal(UBIGEO_EMPTY)
+    setTambienCliente(false)
+    setListaPrecioId('')
+    void cargarOpcionesCliente()
     reset({ activo: true, pais: 'PE', razon_social: '', ruc: '', direccion: '', telefono: '', email: '', contacto: '', banco: '', cuenta_bancaria: '', cci: '', condiciones_pago: '' })
     setDialogOpen(true)
   }
@@ -126,6 +149,9 @@ export default function ProveedoresPage() {
   const openEdit = (p: any) => {
     setEditingProveedor(p)
     setActivo(p.activo)
+    setTambienCliente(!!p.cliente_id)
+    setListaPrecioId('')
+    void cargarOpcionesCliente()
     setPais((p.pais as PaisCode) ?? 'PE')
     setRucInput(p.ruc ?? '')
     setUbigeoVal({
@@ -207,10 +233,12 @@ export default function ProveedoresPage() {
             : `${data.razon_social} se guardó correctamente.`,
         })
       } else {
-        const { error } = await (supabase.from('proveedores') as any).insert(payload)
+        const { data: nuevo, error } = await (supabase.from('proveedores') as any).insert(payload).select('id').single()
         if (error) throw error
         toast.success('Proveedor creado', { description: `${data.razon_social} se registró correctamente.` })
+        if (tambienCliente && nuevo?.id) await vincularCliente(nuevo.id, null, data)
       }
+      if (editingProveedor) await vincularCliente(editingProveedor.id, editingProveedor.cliente_id ?? null, data)
 
       setDialogOpen(false)
       loadProveedores()
@@ -219,6 +247,52 @@ export default function ProveedoresPage() {
     } finally {
       setSaving(false)
     }
+  }
+
+  /**
+   * Prende o apaga "También es cliente". Al prender: si ya hay un cliente con
+   * ese RUC se vincula; si no, se crea su ficha. Al apagar solo se desvincula:
+   * el cliente puede tener ventas y no se borra.
+   */
+  const vincularCliente = async (proveedorId: string, clienteActual: string | null, data: ProveedorFormData) => {
+    if (!tambienCliente) {
+      if (clienteActual) {
+        await (supabase as any).from('proveedores').update({ cliente_id: null }).eq('id', proveedorId)
+        toast.message('Ya no figura también como cliente', { description: 'Su ficha de cliente se mantiene, solo se desvinculó.' })
+      }
+      return
+    }
+    if (clienteActual) return
+    const ruc = (data.ruc ?? '').trim()
+    let clienteId: string | null = null
+    if (ruc) {
+      const { data: existente } = await (supabase as any).from('clientes').select('id').eq('ruc', ruc).limit(1).maybeSingle()
+      clienteId = existente?.id ?? null
+    }
+    if (!clienteId) {
+      if (!tipoClienteId) { toast.error('Elige el tipo de cliente'); return }
+      const { data: cli, error } = await (supabase as any).from('clientes').insert({
+        razon_social: data.razon_social,
+        ruc: ruc || null,
+        direccion: data.direccion || null,
+        telefono: data.telefono || null,
+        email: data.email || null,
+        contacto: data.contacto || null,
+        ubigeo: ubigeoVal.ubigeo,
+        departamento: ubigeoVal.departamento,
+        provincia: ubigeoVal.provincia,
+        distrito: ubigeoVal.distrito,
+        tipo_cliente_id: tipoClienteId,
+        lista_precio_id: listaPrecioId || null,
+        // Con RUC (cualquier prefijo) se le factura; si no, boleta.
+        tipo_comprobante_preferido: /^\d{11}$/.test(ruc) ? 'factura' : 'boleta',
+        estado: 'activo',
+      }).select('id').single()
+      if (error) { toast.error('El proveedor se guardó, pero no se pudo crear su ficha de cliente', { description: error.message }); return }
+      clienteId = cli.id
+    }
+    await (supabase as any).from('proveedores').update({ cliente_id: clienteId }).eq('id', proveedorId)
+    toast.success('También figura como cliente', { description: 'Ya se le pueden hacer pedidos y facturarle desde Clientes.' })
   }
 
   const toggleActivo = async (p: any) => {
@@ -503,6 +577,42 @@ export default function ProveedoresPage() {
                   <Input {...register('condiciones_pago')} placeholder="Contado, 30 días..." className="mt-1 h-9" />
                 </div>
               </div>
+            </div>
+
+            {/* También es cliente: el inverso del "También es proveedor" de Clientes */}
+            <div className="border-t border-gray-100 pt-3" data-tambien-cliente>
+              <div className="flex items-center justify-between">
+                <div>
+                  <Label className="text-sm">👥 También es Cliente</Label>
+                  <p className="text-[11px] text-gray-400">Registra al proveedor también como cliente para venderle.</p>
+                </div>
+                <Switch checked={tambienCliente} onCheckedChange={setTambienCliente} aria-label="También es cliente" />
+              </div>
+              {tambienCliente && editingProveedor?.cliente_id && (
+                <p className="mt-2 text-[11px] text-blue-700">Ya está vinculado a su ficha de cliente: los cambios de nombre, RUC y dirección se copian ahí.</p>
+              )}
+              {tambienCliente && !editingProveedor?.cliente_id && (
+                <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-3 p-3 bg-blue-50 rounded-lg border border-blue-100">
+                  <div>
+                    <Label className="text-xs">Tipo de cliente</Label>
+                    <select value={tipoClienteId} onChange={(e) => setTipoClienteId(e.target.value)} aria-label="Tipo de cliente"
+                      className="mt-1 h-9 w-full rounded-md border border-gray-300 bg-white px-2 text-sm">
+                      {tiposCliente.map((x) => <option key={x.id} value={x.id}>{x.nombre}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <Label className="text-xs">Lista de precios</Label>
+                    <select value={listaPrecioId} onChange={(e) => setListaPrecioId(e.target.value)} aria-label="Lista de precios"
+                      className="mt-1 h-9 w-full rounded-md border border-gray-300 bg-white px-2 text-sm">
+                      <option value="">La de siempre</option>
+                      {listasPrecio.map((x) => <option key={x.id} value={x.id}>Lista {x.nombre}</option>)}
+                    </select>
+                  </div>
+                  <p className="sm:col-span-2 text-[11px] text-blue-800">
+                    Si ya existe un cliente con este RUC, se vincula; si no, se crea su ficha. Zona y vendedor se completan en Clientes.
+                  </p>
+                </div>
+              )}
             </div>
 
             <div className="flex items-center gap-2">
